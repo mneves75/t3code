@@ -80,11 +80,11 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 With several accounts for one provider, enable **Rotate accounts for new threads** in
 **Settings → General** on web and desktop, or **Settings → Thread behavior** on mobile. It is
-off by default and set per environment.
+off by default and saved on each environment.
 
 A new thread then starts on whichever of that provider's accounts has the most usage left,
 keeping your model and model options. Accounts that report the same usage, or none, take
-turns. The model picker shows the account before you send.
+turns starting threads. The model picker shows the account before you send.
 
 Pick an account in the model picker to use it for that thread instead. A project with its
 own configured model keeps that model's account. Only signed-in subscription accounts that

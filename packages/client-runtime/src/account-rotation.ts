@@ -5,8 +5,21 @@ import {
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
+import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
+
+/**
+ * Whether new threads in this project rotate accounts. A project's own default
+ * model names the account it wants, so rotation leaves that project alone.
+ */
+export function rotatesAccountsForProject(
+  project: Pick<ResolvedProjectSettings, "settings" | "sources">,
+): boolean {
+  return (
+    project.settings.rotateProviderAccounts && project.sources.defaultModelSelection !== "project"
+  );
+}
 
 /**
  * A subscription account that can start a thread on `model` right now. An
@@ -30,7 +43,7 @@ function canRotate(provider: ServerProvider, model: string): boolean {
  * How full the account's fullest window is, 0..100. No provider says which
  * window a model draws from, so every window counts. A window that reset
  * before `asOf` holds nothing, and an account that reports no window is taken
- * as empty: its turn then comes from `threads` alone.
+ * as empty: its turn then comes from thread starts alone.
  */
 function usedPercent(provider: ServerProvider, asOf: number): number {
   let used = 0;
@@ -41,42 +54,49 @@ function usedPercent(provider: ServerProvider, asOf: number): number {
   return used;
 }
 
+export interface AccountRotationInput {
+  readonly selection: Pick<ModelSelection, "instanceId" | "model">;
+  readonly environmentId: EnvironmentId;
+  /** `environmentId`'s providers. */
+  readonly providers: ReadonlyArray<ServerProvider>;
+  /** May span environments; instance ids repeat across machines, so only `environmentId`'s count. */
+  readonly threads: ReadonlyArray<
+    Pick<EnvironmentThreadShell, "environmentId" | "providerInstanceId" | "createdAt" | "lineage">
+  >;
+}
+
 /**
  * The account a new thread should start on when the user left that choice to
  * T3: among the accounts of the selected provider that offer the selected
- * model, the one with the most usage left, then the one used longest ago.
+ * model, the one with the most usage left, then the one whose last thread was
+ * started longest ago.
  *
- * Callers pass the environment's providers, and only for a thread that has
- * not started. Moving a started thread to another account is a provider
- * switch, which is the user's call. `threads` may span environments: instance
- * ids repeat across machines, so only `environmentId`'s threads count.
+ * Only for a thread that has not started. Moving a started thread to another
+ * account is a provider switch, which is the user's call.
  *
  * Resets are judged against the environment's latest provider report, not the
  * client's clock, which need not agree with the server's.
  */
-export function chooseRotatedProviderInstance(input: {
-  readonly selection: Pick<ModelSelection, "instanceId" | "model">;
-  readonly environmentId: EnvironmentId;
-  readonly providers: ReadonlyArray<ServerProvider>;
-  readonly threads: ReadonlyArray<
-    Pick<
-      EnvironmentThreadShell,
-      "environmentId" | "providerInstanceId" | "createdAt" | "latestUserMessageAt"
-    >
-  >;
-}): ProviderInstanceId {
+export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
   const { selection, providers } = input;
   const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
   if (selected === undefined || !canRotate(selected, selection.model)) {
     return selection.instanceId;
   }
 
-  const lastUsedAt = new Map<ProviderInstanceId, number>();
+  // Turns follow thread starts. Later messages would move an open draft from
+  // account to account, and a subagent thread rides on its parent's account.
+  const lastStartedAt = new Map<ProviderInstanceId, number>();
   for (const thread of input.threads) {
-    if (thread.environmentId !== input.environmentId) continue;
-    const usedAt = Date.parse(thread.latestUserMessageAt ?? thread.createdAt);
-    if (usedAt > (lastUsedAt.get(thread.providerInstanceId) ?? 0)) {
-      lastUsedAt.set(thread.providerInstanceId, usedAt);
+    if (
+      thread.environmentId !== input.environmentId ||
+      thread.lineage.relationshipToParent === "subagent"
+    ) {
+      continue;
+    }
+    const startedAt = Date.parse(thread.createdAt);
+    if (startedAt > (lastStartedAt.get(thread.providerInstanceId) ?? 0)) {
+      lastStartedAt.set(thread.providerInstanceId, startedAt);
     }
   }
 
@@ -92,7 +112,7 @@ export function chooseRotatedProviderInstance(input: {
     }
     const usage = usedPercent(candidate, asOf) - usedPercent(chosen, asOf);
     const idle =
-      (lastUsedAt.get(chosen.instanceId) ?? 0) - (lastUsedAt.get(candidate.instanceId) ?? 0);
+      (lastStartedAt.get(chosen.instanceId) ?? 0) - (lastStartedAt.get(candidate.instanceId) ?? 0);
     // Only a strictly better account replaces the current pick, so a full tie
     // keeps the selection and then the provider list's own order.
     if (usage < 0 || (usage === 0 && idle > 0)) chosen = candidate;

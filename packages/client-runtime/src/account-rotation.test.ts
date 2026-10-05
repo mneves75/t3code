@@ -1,13 +1,17 @@
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ThreadId,
   type ServerProvider,
   type ServerProviderUsageWindow,
 } from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chooseRotatedProviderInstance } from "./account-rotation.ts";
+import { chooseRotatedProviderInstance, rotatesAccountsForProject } from "./account-rotation.ts";
 
 const environmentId = EnvironmentId.make("mac");
 const work = ProviderInstanceId.make("claudeAgent");
@@ -64,7 +68,11 @@ const startedAt = (providerInstanceId: ProviderInstanceId, createdAt: string) =>
   environmentId,
   providerInstanceId,
   createdAt,
-  latestUserMessageAt: null,
+  lineage: {
+    parentThreadId: null,
+    relationshipToParent: null,
+    rootThreadId: ThreadId.make(`thread-${createdAt}`),
+  },
 });
 
 describe("rotating a new thread across accounts of one provider", () => {
@@ -98,15 +106,20 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose(providers, third)).toBe(work);
   });
 
-  it("counts a message sent to an older thread as use of that account", () => {
+  it("gives a subagent thread no turn of its own", () => {
     const providers = [account(work, []), account(personal, [])];
+    const spawned = startedAt(personal, "2026-09-03T10:00:00.000Z");
     expect(
       choose(providers, [
+        startedAt(work, "2026-09-03T09:00:00.000Z"),
         {
-          ...startedAt(work, "2026-09-01T09:00:00.000Z"),
-          latestUserMessageAt: "2026-09-03T11:00:00.000Z",
+          ...spawned,
+          lineage: {
+            ...spawned.lineage,
+            parentThreadId: ThreadId.make("parent"),
+            relationshipToParent: "subagent" as const,
+          },
         },
-        startedAt(personal, "2026-09-03T10:00:00.000Z"),
       ]),
     ).toBe(personal);
   });
@@ -185,5 +198,43 @@ describe("rotating a new thread across accounts of one provider", () => {
 
   it("keeps the selection when it is not a configured account", () => {
     expect(choose([account(personal, [window(0)])])).toBe(work);
+  });
+});
+
+describe("which projects rotate accounts", () => {
+  const projectId = ProjectId.make("project");
+  const pinned = { instanceId: work, model };
+
+  it("follows the environment setting, including with an environment default model", () => {
+    expect(rotatesAccountsForProject(resolveProjectSettings(DEFAULT_SERVER_SETTINGS, null))).toBe(
+      false,
+    );
+    expect(
+      rotatesAccountsForProject(
+        resolveProjectSettings(
+          {
+            ...DEFAULT_SERVER_SETTINGS,
+            rotateProviderAccounts: true,
+            defaultModelSelection: pinned,
+          },
+          projectId,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves a project with its own default model on that account", () => {
+    expect(
+      rotatesAccountsForProject(
+        resolveProjectSettings(
+          {
+            ...DEFAULT_SERVER_SETTINGS,
+            rotateProviderAccounts: true,
+            projectSettingsOverrides: { [projectId]: { defaultModelSelection: pinned } },
+          },
+          projectId,
+        ),
+      ),
+    ).toBe(false);
   });
 });

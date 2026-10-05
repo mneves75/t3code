@@ -91,6 +91,7 @@ import {
   useRemoteConnectionStatus,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
+import { rotatesAccountsForProject } from "@t3tools/client-runtime/account-rotation";
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
 import {
   isAtomCommandInterrupted,
@@ -571,10 +572,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
 
   // An unsent draft keeps its explicit pick. Fresh drafts resolve the project
   // default before the last manual app-wide selection and provider default.
-  // A project's own default model pins its account; rotation leaves it alone.
-  const rotateAccounts =
-    projectSettings.settings.rotateProviderAccounts &&
-    projectSettings.sources.defaultModelSelection !== "project";
+  const rotateAccounts = rotatesAccountsForProject(projectSettings);
   const rotationEnvironmentId = selectedProject?.environmentId;
   const rotationProviders = selectedEnvironmentServerConfig?.providers;
   // Rotation reads every thread shell, so it must not rerun on unrelated renders.

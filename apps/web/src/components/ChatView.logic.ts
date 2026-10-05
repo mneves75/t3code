@@ -25,7 +25,10 @@ import {
   type RunId,
   type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
-import { chooseRotatedProviderInstance } from "@t3tools/client-runtime/account-rotation";
+import {
+  chooseRotatedProviderInstance,
+  type AccountRotationInput,
+} from "@t3tools/client-runtime/account-rotation";
 import { worktreeSetupAgentStarted } from "@t3tools/client-runtime/worktree-setup";
 import * as DateTime from "effect/DateTime";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -626,14 +629,14 @@ export function resolveComposerProviderSelection(input: {
  * keeps the picker, the first turn, and every later turn on the same account.
  */
 export function resolveRotatedDraftProviderInstance(
-  input: Parameters<typeof chooseRotatedProviderInstance>[0] & {
-    rotateAccounts: boolean;
-    isUnsentDraft: boolean;
+  input: AccountRotationInput & {
+    /** Rotation is on for the draft's project, and the draft has not been sent. */
+    rotateDraft: boolean;
     /** The user picked this draft's account; a seeded default does not count. */
     selectionExplicit: boolean;
   },
 ): ProviderInstanceId | null {
-  if (!input.rotateAccounts || !input.isUnsentDraft || input.selectionExplicit) return null;
+  if (!input.rotateDraft || input.selectionExplicit) return null;
   const rotated = chooseRotatedProviderInstance(input);
   return rotated === input.selection.instanceId ? null : rotated;
 }

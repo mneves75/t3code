@@ -2191,8 +2191,7 @@ describe("rotating an unsent draft across accounts", () => {
     },
   });
   const draft = {
-    rotateAccounts: true,
-    isUnsentDraft: true,
+    rotateDraft: true,
     selectionExplicit: false,
     selection: { instanceId: work, model: "claude-opus-5-5" },
     environmentId: EnvironmentId.make("mac"),
@@ -2217,11 +2216,7 @@ describe("rotating an unsent draft across accounts", () => {
     expect(resolveRotatedDraftProviderInstance({ ...draft, selectionExplicit: true })).toBeNull();
   });
 
-  it("never moves a thread that has started", () => {
-    expect(resolveRotatedDraftProviderInstance({ ...draft, isUnsentDraft: false })).toBeNull();
-  });
-
-  it("does nothing while the setting is off", () => {
-    expect(resolveRotatedDraftProviderInstance({ ...draft, rotateAccounts: false })).toBeNull();
+  it("never moves a sent draft or one whose project does not rotate", () => {
+    expect(resolveRotatedDraftProviderInstance({ ...draft, rotateDraft: false })).toBeNull();
   });
 });

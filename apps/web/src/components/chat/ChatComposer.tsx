@@ -1584,8 +1584,8 @@ export interface ChatComposerProps {
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
   reportedModelSelection?: ModelSelection | null;
-  /** New threads here start on the selected provider's least used account. */
-  rotateAccounts: boolean;
+  /** This unsent draft starts on the selected provider's least used account. */
+  rotateDraftAccount: boolean;
 
   // Context window
   activeContextWindow: ContextWindowSnapshot | null;
@@ -1703,7 +1703,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThread,
     promptHistoryMessages,
     isServerThread: _isServerThread,
-    isLocalDraftThread,
+    isLocalDraftThread: _isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
     phase,
@@ -1734,7 +1734,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     reportedModelSelection,
-    rotateAccounts,
+    rotateDraftAccount,
     activeContextWindow,
     compactThreadUnavailable,
     compactDisabled,
@@ -2537,8 +2537,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // account the thread starts on and an explicit pick still replaces it.
   useEffect(() => {
     const rotatedInstanceId = resolveRotatedDraftProviderInstance({
-      rotateAccounts: rotateAccounts && multipleModelSelections === null,
-      isUnsentDraft: isLocalDraftThread,
+      // A send in flight has already named its account.
+      rotateDraft: rotateDraftAccount && !isSendBusy && multipleModelSelections === null,
       selectionExplicit: draftModelSelectionExplicit,
       selection: { instanceId: selectedInstanceId, model: selectedModel },
       environmentId,
@@ -2556,10 +2556,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     draftModelSelectionExplicit,
     environmentId,
     environmentThreadShells,
-    isLocalDraftThread,
+    isSendBusy,
     multipleModelSelections,
     providerStatuses,
-    rotateAccounts,
+    rotateDraftAccount,
     selectedInstanceId,
     selectedModel,
     selectedModelOptionsForDispatch,
