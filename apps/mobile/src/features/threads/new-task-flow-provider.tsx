@@ -91,7 +91,10 @@ import {
   useRemoteConnectionStatus,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import { rotatesAccountsForProject } from "@t3tools/client-runtime/account-rotation";
+import {
+  rotatesAccountsForProject,
+  rotationEligibleInstanceIds,
+} from "@t3tools/client-runtime/account-rotation";
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
 import {
   isAtomCommandInterrupted,
@@ -575,6 +578,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const rotateAccounts = rotatesAccountsForProject(projectSettings);
   const rotationEnvironmentId = selectedProject?.environmentId;
   const rotationProviders = selectedEnvironmentServerConfig?.providers;
+  const rotationInstances = selectedEnvironmentServerConfig?.settings.providerInstances;
   // Rotation reads every thread shell, so it must not rerun on unrelated renders.
   const selectedModel = useMemo(
     () =>
@@ -583,11 +587,12 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         projectDefaultSelection: projectDefaultModelSelection,
         stickySelection: stickyModelSelection,
         modelOptions,
-        ...(rotateAccounts && rotationEnvironmentId && rotationProviders
+        ...(rotateAccounts && rotationEnvironmentId && rotationProviders && rotationInstances
           ? {
               rotation: {
                 environmentId: rotationEnvironmentId,
                 providers: rotationProviders,
+                eligibleInstanceIds: rotationEligibleInstanceIds(rotationInstances),
                 threads,
               },
             }
@@ -601,6 +606,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       rotateAccounts,
       rotationEnvironmentId,
       rotationProviders,
+      rotationInstances,
       threads,
     ],
   );

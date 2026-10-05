@@ -2196,6 +2196,7 @@ describe("rotating an unsent draft across accounts", () => {
     selection: { instanceId: work, model: "claude-opus-5-5" },
     environmentId: EnvironmentId.make("mac"),
     providers: [account(work, 90), account(personal, 10)],
+    eligibleInstanceIds: new Set([work, personal]),
     threads: [],
   };
 

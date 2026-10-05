@@ -543,6 +543,7 @@ describe("rotating a new task across accounts", () => {
   const rotation = {
     environmentId: EnvironmentId.make("mac"),
     providers: [account(work, 90), account(personal, 10)],
+    eligibleInstanceIds: new Set([work, personal]),
     threads: [],
   };
   const onWork: ModelSelection = {

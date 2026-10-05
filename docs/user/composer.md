@@ -78,17 +78,19 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Rotate accounts for new threads
 
-With several accounts for one provider, enable **Rotate accounts for new threads** in
-**Settings → General** on web and desktop, or **Settings → Thread behavior** on mobile. It is
-off by default and saved on each environment.
+With several accounts for one provider, mark the ones to rotate: on web or desktop, open each
+account in **Settings → Providers** and turn on **Account rotation**. Then enable **Rotate
+accounts for new threads** in **Settings → General**, or **Settings → Thread behavior** on
+mobile. Both are off by default and saved on each environment.
 
-A new thread then starts on whichever of that provider's accounts has the most usage left,
+A new thread then starts on whichever marked account of that provider has the most usage left,
 keeping your model and model options. Accounts that report the same usage, or none, take
 turns starting threads. The model picker shows the account before you send.
 
 Pick an account in the model picker to use it for that thread instead. A project with its
-own configured model keeps that model's account. Only signed-in subscription accounts that
-offer the selected model take part, so API-key and proxy instances are never chosen for you.
+own configured model keeps that model's account. An account that is not marked is never
+chosen for you, and a thread you start on one stays there. A marked account must be signed in
+and offer the selected model to take a turn.
 
 Rotation never moves a thread that has started, including one stopped by a usage limit.
 Scheduled tasks and threads started by an agent keep the account they were given.

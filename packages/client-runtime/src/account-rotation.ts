@@ -2,11 +2,11 @@ import {
   type EnvironmentId,
   isProviderAvailable,
   type ModelSelection,
+  type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
 import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
-import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
 
@@ -22,17 +22,15 @@ export function rotatesAccountsForProject(
   );
 }
 
-/**
- * Billed to a subscription. An account that can never report usage is billed
- * elsewhere (API key, Bedrock, a proxy), so it is neither rotated away from
- * nor onto. An account connected with ChatGPT reports none either, because
- * ChatGPT keeps that usage to itself, yet it is a subscription like the rest.
- */
-function isSubscriptionAccount(provider: ServerProvider): boolean {
-  return (
-    provider.usageLimits !== undefined &&
-    (provider.usageLimits.unavailable?.reason !== "unsupported" || usesChatGptSharing(provider))
-  );
+/** The accounts the user marked for rotation in an environment's provider settings. */
+export function rotationEligibleInstanceIds(
+  instances: Readonly<Record<ProviderInstanceId, Pick<ProviderInstanceConfig, "rotate">>>,
+): ReadonlySet<ProviderInstanceId> {
+  const marked = new Set<ProviderInstanceId>();
+  for (const [instanceId, instance] of Object.entries(instances)) {
+    if (instance.rotate === true) marked.add(instanceId as ProviderInstanceId);
+  }
+  return marked;
 }
 
 /** Whether the account can start a thread on `model` right now. */
@@ -67,6 +65,8 @@ export interface AccountRotationInput {
   readonly environmentId: EnvironmentId;
   /** `environmentId`'s providers. */
   readonly providers: ReadonlyArray<ServerProvider>;
+  /** See `rotationEligibleInstanceIds`. An unmarked account is never rotated onto or away from. */
+  readonly eligibleInstanceIds: ReadonlySet<ProviderInstanceId>;
   /** May span environments; instance ids repeat across machines, so only `environmentId`'s count. */
   readonly threads: ReadonlyArray<
     Pick<EnvironmentThreadShell, "environmentId" | "providerInstanceId" | "createdAt" | "lineage">
@@ -75,9 +75,9 @@ export interface AccountRotationInput {
 
 /**
  * The account a new thread should start on when the user left that choice to
- * T3: among the accounts of the selected provider that offer the selected
- * model, the one with the most usage left, then the one whose last thread was
- * started longest ago.
+ * T3: among the marked accounts of the selected provider that offer the
+ * selected model, the one with the most usage left, then the one whose last
+ * thread was started longest ago.
  *
  * Only for a thread that has not started. Moving a started thread to another
  * account is a provider switch, which is the user's call.
@@ -88,7 +88,7 @@ export interface AccountRotationInput {
 export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
   const { selection, providers } = input;
   const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
-  if (selected === undefined || !isSubscriptionAccount(selected)) {
+  if (selected === undefined || !input.eligibleInstanceIds.has(selected.instanceId)) {
     return selection.instanceId;
   }
 
@@ -115,7 +115,7 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
     if (
       candidate === selected ||
       candidate.driver !== selected.driver ||
-      !isSubscriptionAccount(candidate) ||
+      !input.eligibleInstanceIds.has(candidate.instanceId) ||
       !canStart(candidate, selection.model)
     ) {
       continue;

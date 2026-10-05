@@ -2370,7 +2370,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("rotate-provider-accounts")}
-          description="Start each new thread on the provider account with the most usage left for the selected model. Picking an account yourself overrides it for that thread."
+          description="Start each new thread on the account with the most usage left, among the accounts marked for rotation in Providers. Picking an account yourself overrides it for that thread."
           settingKeys={["rotateProviderAccounts"]}
           control={
             <ScopedSwitch

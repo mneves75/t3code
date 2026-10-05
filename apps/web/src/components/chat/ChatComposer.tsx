@@ -44,6 +44,7 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
 } from "@t3tools/contracts";
+import { rotationEligibleInstanceIds } from "@t3tools/client-runtime/account-rotation";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import {
   isPasteAsTextShortcut,
@@ -2533,6 +2534,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isPathTrigger = composerTriggerKind === "path";
   const environmentThreadShells = useThreadShells();
   const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
+  const rotationEligibleIds = useMemo(
+    () => rotationEligibleInstanceIds(settings.providerInstances),
+    [settings.providerInstances],
+  );
   // Rotation seeds the draft like any other default, so the picker shows the
   // account the thread starts on and an explicit pick still replaces it.
   useEffect(() => {
@@ -2543,6 +2548,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selection: { instanceId: selectedInstanceId, model: selectedModel },
       environmentId,
       providers: providerStatuses,
+      eligibleInstanceIds: rotationEligibleIds,
       threads: environmentThreadShells,
     });
     if (rotatedInstanceId === null) return;
@@ -2560,6 +2566,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     multipleModelSelections,
     providerStatuses,
     rotateDraftAccount,
+    rotationEligibleIds,
     selectedInstanceId,
     selectedModel,
     selectedModelOptionsForDispatch,

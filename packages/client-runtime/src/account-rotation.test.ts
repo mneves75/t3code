@@ -11,7 +11,11 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chooseRotatedProviderInstance, rotatesAccountsForProject } from "./account-rotation.ts";
+import {
+  chooseRotatedProviderInstance,
+  rotatesAccountsForProject,
+  rotationEligibleInstanceIds,
+} from "./account-rotation.ts";
 
 const environmentId = EnvironmentId.make("mac");
 const work = ProviderInstanceId.make("claudeAgent");
@@ -51,15 +55,18 @@ function account(
   };
 }
 
+/** Every account is marked for rotation unless a case names the marked ones. */
 function choose(
   providers: ReadonlyArray<ServerProvider>,
   threads: Parameters<typeof chooseRotatedProviderInstance>[0]["threads"] = [],
   selected = work,
+  marked: ReadonlyArray<ProviderInstanceId> = providers.map((provider) => provider.instanceId),
 ) {
   return chooseRotatedProviderInstance({
     selection: { instanceId: selected, model },
     environmentId,
     providers,
+    eligibleInstanceIds: new Set(marked),
     threads,
   });
 }
@@ -186,67 +193,38 @@ describe("rotating a new thread across accounts of one provider", () => {
     ).toBe(work);
   });
 
-  it("never moves a thread onto an account billed outside a subscription", () => {
-    const apiKey = ProviderInstanceId.make("claudeAgent_api");
-    const metered = {
-      checkedAt: "2026-09-03T11:00:00.000Z",
-      windows: [],
-      unavailable: { reason: "unsupported" as const },
-    };
-    expect(
-      choose([account(work, [window(99)]), account(apiKey, [], { usageLimits: metered })]),
-    ).toBe(work);
-    // The reverse holds too: a deliberate API-key selection is left alone.
-    expect(
-      choose(
-        [account(work, [window(0)]), account(apiKey, [], { usageLimits: metered })],
-        [],
-        apiKey,
-      ),
-    ).toBe(apiKey);
-  });
-
-  it("leaves out a provider that reports no subscription usage at all", () => {
-    const plain = ProviderInstanceId.make("claudeAgent_plain");
-    const { usageLimits: _none, ...withoutUsage } = account(plain, []);
-    expect(choose([account(work, [window(99)]), withoutUsage])).toBe(work);
-    expect(choose([account(work, [window(0)]), withoutUsage], [], plain)).toBe(plain);
-  });
-
-  it("rotates accounts connected with ChatGPT, whose usage only ChatGPT shows", () => {
-    const connected = (instanceId: ProviderInstanceId) =>
-      account(instanceId, [], {
-        driver: ProviderDriverKind.make("codex"),
-        auth: { status: "authenticated", type: "chatgpt", subscriptionSharing: true },
-        usageLimits: {
-          checkedAt: "2026-09-03T11:00:00.000Z",
-          windows: [],
-          unavailable: { reason: "unsupported" },
-          externalUsage: { label: "ChatGPT usage", url: "https://chatgpt.com/#settings/Usage" },
-        },
-      });
-    const first = ProviderInstanceId.make("codex_first");
-    const second = ProviderInstanceId.make("codex_second");
-    expect(
-      choose(
-        [connected(first), connected(second)],
-        [startedAt(first, "2026-09-03T09:00:00.000Z")],
-        first,
-      ),
-    ).toBe(second);
-  });
-
-  it("still rotates accounts whose usage could not be read", () => {
-    const unread = {
-      checkedAt: "2026-09-03T11:00:00.000Z",
-      windows: [],
-      unavailable: { reason: "probeFailed" as const },
-    };
+  it("only chooses among the accounts marked for rotation", () => {
     const providers = [
-      account(work, [], { usageLimits: unread }),
-      account(personal, [], { usageLimits: unread }),
+      account(work, [window(90)]),
+      account(personal, [window(5)]),
+      account(spare, [window(40)]),
     ];
-    expect(choose(providers, [startedAt(work, "2026-09-03T09:00:00.000Z")])).toBe(personal);
+    expect(choose(providers, [], work, [work, spare])).toBe(spare);
+  });
+
+  it("leaves a selection that is not marked for rotation where it is", () => {
+    const providers = [account(work, [window(90)]), account(personal, [window(5)])];
+    expect(choose(providers, [], work, [personal])).toBe(work);
+    expect(choose(providers, [], work, [])).toBe(work);
+  });
+
+  it("rotates any marked account, whatever it reports about its usage", () => {
+    const checkedAt = "2026-09-03T11:00:00.000Z";
+    const { usageLimits: _none, ...silent } = account(spare, []);
+    const providers = [
+      account(work, [], {
+        usageLimits: { checkedAt, windows: [], unavailable: { reason: "unsupported" } },
+      }),
+      account(personal, [], {
+        usageLimits: { checkedAt, windows: [], unavailable: { reason: "probeFailed" } },
+      }),
+      silent,
+    ];
+    const first = [startedAt(work, "2026-09-03T09:00:00.000Z")];
+    expect(choose(providers, first)).toBe(personal);
+    expect(choose(providers, [...first, startedAt(personal, "2026-09-03T10:00:00.000Z")])).toBe(
+      spare,
+    );
   });
 
   it("keeps the selection when it is not a configured account", () => {
@@ -289,5 +267,17 @@ describe("which projects rotate accounts", () => {
         ),
       ),
     ).toBe(false);
+  });
+});
+
+describe("which accounts are marked for rotation", () => {
+  it("takes only the instances the user marked", () => {
+    expect([
+      ...rotationEligibleInstanceIds({
+        [work]: { rotate: true },
+        [personal]: {},
+        [spare]: { rotate: false },
+      }),
+    ]).toEqual([work]);
   });
 });
