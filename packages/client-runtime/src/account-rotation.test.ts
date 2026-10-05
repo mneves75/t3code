@@ -80,6 +80,15 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose([account(work, [window(90)]), account(personal, [window(15)])])).toBe(personal);
   });
 
+  it.each(["claudeAgent", "codex", "cursor"])("treats %s accounts alike", (driver) => {
+    const first = ProviderInstanceId.make(driver);
+    const second = ProviderInstanceId.make(`${driver}_personal`);
+    const of = { driver: ProviderDriverKind.make(driver) };
+    const providers = [account(first, [window(90)], of), account(second, [window(15)], of)];
+    expect(choose(providers, [], first)).toBe(second);
+    expect(choose(providers, [], second)).toBe(second);
+  });
+
   it("judges an account by its fullest window", () => {
     const weekly = { ...window(95), id: "seven_day", kind: "weekly" as const, label: "Weekly" };
     expect(choose([account(work, [window(40)]), account(personal, [window(5), weekly])])).toBe(
@@ -160,6 +169,20 @@ describe("rotating a new thread across accounts of one provider", () => {
           driver: ProviderDriverKind.make("codex"),
         }),
       ]),
+    ).toBe(work);
+  });
+
+  it.each<[string, Partial<ServerProvider>]>([
+    ["signed out", { auth: { status: "unauthenticated" } }],
+    ["failing", { status: "error" }],
+    ["missing the model", { models: [] }],
+  ])("leaves a selected account that is %s for one that can start the thread", (_, broken) => {
+    expect(choose([account(work, [window(0)], broken), account(personal, [window(60)])])).toBe(
+      personal,
+    );
+    // With nowhere better to go, the selection stands and the composer reports it.
+    expect(
+      choose([account(work, [window(0)], broken), account(personal, [window(0)], broken)]),
     ).toBe(work);
   });
 

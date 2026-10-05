@@ -22,19 +22,24 @@ export function rotatesAccountsForProject(
 }
 
 /**
- * A subscription account that can start a thread on `model` right now. An
- * account that can never report usage is billed outside a subscription (API
- * key, Bedrock, a proxy), so it is neither rotated away from nor onto.
+ * Billed to a subscription. An account that can never report usage is billed
+ * elsewhere (API key, Bedrock, a proxy), so it is neither rotated away from
+ * nor onto.
  */
-function canRotate(provider: ServerProvider, model: string): boolean {
+function isSubscriptionAccount(provider: ServerProvider): boolean {
+  return (
+    provider.usageLimits !== undefined && provider.usageLimits.unavailable?.reason !== "unsupported"
+  );
+}
+
+/** Whether the account can start a thread on `model` right now. */
+function canStart(provider: ServerProvider, model: string): boolean {
   return (
     provider.enabled &&
     provider.installed &&
     isProviderAvailable(provider) &&
     provider.status !== "error" &&
     provider.auth.status === "authenticated" &&
-    provider.usageLimits !== undefined &&
-    provider.usageLimits.unavailable?.reason !== "unsupported" &&
     provider.models.some((candidate) => candidate.slug === model)
   );
 }
@@ -80,7 +85,7 @@ export interface AccountRotationInput {
 export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
   const { selection, providers } = input;
   const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
-  if (selected === undefined || !canRotate(selected, selection.model)) {
+  if (selected === undefined || !isSubscriptionAccount(selected)) {
     return selection.instanceId;
   }
 
@@ -101,13 +106,19 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
   }
 
   const asOf = Math.max(...providers.map((provider) => Date.parse(provider.checkedAt)));
-  let chosen = selected;
+  // A selection that cannot start the thread gives way to any account that can.
+  let chosen = canStart(selected, selection.model) ? selected : null;
   for (const candidate of providers) {
     if (
       candidate === selected ||
       candidate.driver !== selected.driver ||
-      !canRotate(candidate, selection.model)
+      !isSubscriptionAccount(candidate) ||
+      !canStart(candidate, selection.model)
     ) {
+      continue;
+    }
+    if (chosen === null) {
+      chosen = candidate;
       continue;
     }
     const usage = usedPercent(candidate, asOf) - usedPercent(chosen, asOf);
@@ -117,5 +128,5 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
     // keeps the selection and then the provider list's own order.
     if (usage < 0 || (usage === 0 && idle > 0)) chosen = candidate;
   }
-  return chosen.instanceId;
+  return (chosen ?? selected).instanceId;
 }
