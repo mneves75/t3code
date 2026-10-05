@@ -206,6 +206,29 @@ describe("rotating a new thread across accounts of one provider", () => {
     ).toBe(apiKey);
   });
 
+  it("rotates accounts connected with ChatGPT, whose usage only ChatGPT shows", () => {
+    const connected = (instanceId: ProviderInstanceId) =>
+      account(instanceId, [], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: { status: "authenticated", type: "chatgpt", subscriptionSharing: true },
+        usageLimits: {
+          checkedAt: "2026-09-03T11:00:00.000Z",
+          windows: [],
+          unavailable: { reason: "unsupported" },
+          externalUsage: { label: "ChatGPT usage", url: "https://chatgpt.com/#settings/Usage" },
+        },
+      });
+    const first = ProviderInstanceId.make("codex_first");
+    const second = ProviderInstanceId.make("codex_second");
+    expect(
+      choose(
+        [connected(first), connected(second)],
+        [startedAt(first, "2026-09-03T09:00:00.000Z")],
+        first,
+      ),
+    ).toBe(second);
+  });
+
   it("still rotates accounts whose usage could not be read", () => {
     const unread = {
       checkedAt: "2026-09-03T11:00:00.000Z",

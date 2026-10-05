@@ -6,6 +6,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
+import { usesChatGptSharing } from "@t3tools/shared/usageLimits";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
 
@@ -24,11 +25,13 @@ export function rotatesAccountsForProject(
 /**
  * Billed to a subscription. An account that can never report usage is billed
  * elsewhere (API key, Bedrock, a proxy), so it is neither rotated away from
- * nor onto.
+ * nor onto. An account connected with ChatGPT reports none either, because
+ * ChatGPT keeps that usage to itself, yet it is a subscription like the rest.
  */
 function isSubscriptionAccount(provider: ServerProvider): boolean {
   return (
-    provider.usageLimits !== undefined && provider.usageLimits.unavailable?.reason !== "unsupported"
+    provider.usageLimits !== undefined &&
+    (provider.usageLimits.unavailable?.reason !== "unsupported" || usesChatGptSharing(provider))
   );
 }
 
