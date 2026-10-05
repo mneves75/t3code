@@ -586,6 +586,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.snoozeLimitedThreads !== DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads
         ? ["Snooze limited threads"]
         : []),
+      ...(settings.rotateProviderAccounts !== DEFAULT_UNIFIED_SETTINGS.rotateProviderAccounts
+        ? ["Rotate accounts for new threads"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.persistComposerContextStrip !==
       DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -706,6 +709,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
+      settings.rotateProviderAccounts,
       settings.sidebarProjectGroupingMode,
       settings.sidebarProjectSortOrder,
       settings.sidebarWorkingShelfEnabled,
@@ -813,6 +817,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
+      rotateProviderAccounts: DEFAULT_UNIFIED_SETTINGS.rotateProviderAccounts,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
@@ -2359,6 +2364,22 @@ export function GeneralSettingsPanel() {
                 updateSettings({ snoozeLimitedThreads: Boolean(checked) })
               }
               aria-label="Snooze limited threads"
+            />
+          }
+        />
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("rotate-provider-accounts")}
+          description="Start each new thread on the provider account with the most usage left for the selected model. Picking an account yourself overrides it for that thread."
+          settingKeys={["rotateProviderAccounts"]}
+          control={
+            <ScopedSwitch
+              settingKeys={["rotateProviderAccounts"]}
+              checked={settings.rotateProviderAccounts}
+              onCheckedChange={(checked) =>
+                updateSettings({ rotateProviderAccounts: Boolean(checked) })
+              }
+              aria-label="Rotate accounts for new threads"
             />
           }
         />

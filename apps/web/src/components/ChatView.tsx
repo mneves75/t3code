@@ -2513,6 +2513,10 @@ export default function ChatView(props: ChatViewProps) {
     runProjectCloneAction,
   ]);
   const activeProjectDefaultModelSelection = activeProjectSettings.settings.defaultModelSelection;
+  // A project's own default model pins its account; rotation leaves it alone.
+  const rotateAccounts =
+    activeProjectSettings.settings.rotateProviderAccounts &&
+    activeProjectSettings.sources.defaultModelSelection !== "project";
   const handleNewThreadInActiveProject = useCallback(() => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
@@ -11235,6 +11239,7 @@ export default function ChatView(props: ChatViewProps) {
                               activeProjectDefaultModelSelection={
                                 activeProjectDefaultModelSelection
                               }
+                              rotateAccounts={rotateAccounts}
                               activeThreadModelSelection={activeThread?.modelSelection}
                               activeContextWindow={activeContextWindow}
                               activeTasksProgress={activeComposerTasksProgress}

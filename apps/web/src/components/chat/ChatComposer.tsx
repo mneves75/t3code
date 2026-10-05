@@ -90,6 +90,7 @@ import {
   readFileAsDataUrl,
   resolveComposerInteractionMode,
   resolveComposerProviderSelection,
+  resolveRotatedDraftProviderInstance,
   threadShellHasStarted,
 } from "../ChatView.logic";
 import {
@@ -1583,6 +1584,8 @@ export interface ChatComposerProps {
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
   reportedModelSelection?: ModelSelection | null;
+  /** New threads here start on the selected provider's least used account. */
+  rotateAccounts: boolean;
 
   // Context window
   activeContextWindow: ContextWindowSnapshot | null;
@@ -1700,7 +1703,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThread,
     promptHistoryMessages,
     isServerThread: _isServerThread,
-    isLocalDraftThread: _isLocalDraftThread,
+    isLocalDraftThread,
     forceExpandedOnMobile,
     projectSelectionRequired,
     phase,
@@ -1731,6 +1734,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     reportedModelSelection,
+    rotateAccounts,
     activeContextWindow,
     compactThreadUnavailable,
     compactDisabled,
@@ -1984,6 +1988,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
 
   useEffect(() => {
     if (!attachmentUploadsCapabilityKnown) {
@@ -2527,6 +2532,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   const environmentThreadShells = useThreadShells();
+  const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
+  // Rotation seeds the draft like any other default, so the picker shows the
+  // account the thread starts on and an explicit pick still replaces it.
+  useEffect(() => {
+    const rotatedInstanceId = resolveRotatedDraftProviderInstance({
+      rotateAccounts: rotateAccounts && multipleModelSelections === null,
+      isUnsentDraft: isLocalDraftThread,
+      selectionExplicit: draftModelSelectionExplicit,
+      selection: { instanceId: selectedInstanceId, model: selectedModel },
+      environmentId,
+      providers: providerStatuses,
+      threads: environmentThreadShells,
+    });
+    if (rotatedInstanceId === null) return;
+    setComposerDraftModelSelection(
+      composerDraftTarget,
+      createModelSelection(rotatedInstanceId, selectedModel, selectedModelOptionsForDispatch),
+      { replaceOptions: true },
+    );
+  }, [
+    composerDraftTarget,
+    draftModelSelectionExplicit,
+    environmentId,
+    environmentThreadShells,
+    isLocalDraftThread,
+    multipleModelSelections,
+    providerStatuses,
+    rotateAccounts,
+    selectedInstanceId,
+    selectedModel,
+    selectedModelOptionsForDispatch,
+    setComposerDraftModelSelection,
+  ]);
   const workspaceEntries = useComposerPathSearch({
     environmentId,
     cwd: isPathTrigger ? gitCwd : null,

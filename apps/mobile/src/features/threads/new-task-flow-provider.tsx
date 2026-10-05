@@ -571,12 +571,41 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
 
   // An unsent draft keeps its explicit pick. Fresh drafts resolve the project
   // default before the last manual app-wide selection and provider default.
-  const selectedModel = resolveNewTaskModelSelection({
-    draftSelection: draftModelSelection,
-    projectDefaultSelection: projectDefaultModelSelection,
-    stickySelection: stickyModelSelection,
-    modelOptions,
-  });
+  // A project's own default model pins its account; rotation leaves it alone.
+  const rotateAccounts =
+    projectSettings.settings.rotateProviderAccounts &&
+    projectSettings.sources.defaultModelSelection !== "project";
+  const rotationEnvironmentId = selectedProject?.environmentId;
+  const rotationProviders = selectedEnvironmentServerConfig?.providers;
+  // Rotation reads every thread shell, so it must not rerun on unrelated renders.
+  const selectedModel = useMemo(
+    () =>
+      resolveNewTaskModelSelection({
+        draftSelection: draftModelSelection,
+        projectDefaultSelection: projectDefaultModelSelection,
+        stickySelection: stickyModelSelection,
+        modelOptions,
+        ...(rotateAccounts && rotationEnvironmentId && rotationProviders
+          ? {
+              rotation: {
+                environmentId: rotationEnvironmentId,
+                providers: rotationProviders,
+                threads,
+              },
+            }
+          : {}),
+      }),
+    [
+      draftModelSelection,
+      projectDefaultModelSelection,
+      stickyModelSelection,
+      modelOptions,
+      rotateAccounts,
+      rotationEnvironmentId,
+      rotationProviders,
+      threads,
+    ],
+  );
   const selectedModelKey = selectedModel
     ? `${selectedModel.instanceId}:${selectedModel.model}`
     : null;
