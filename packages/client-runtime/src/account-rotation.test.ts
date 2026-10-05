@@ -206,6 +206,13 @@ describe("rotating a new thread across accounts of one provider", () => {
     ).toBe(apiKey);
   });
 
+  it("leaves out a provider that reports no subscription usage at all", () => {
+    const plain = ProviderInstanceId.make("claudeAgent_plain");
+    const { usageLimits: _none, ...withoutUsage } = account(plain, []);
+    expect(choose([account(work, [window(99)]), withoutUsage])).toBe(work);
+    expect(choose([account(work, [window(0)]), withoutUsage], [], plain)).toBe(plain);
+  });
+
   it("rotates accounts connected with ChatGPT, whose usage only ChatGPT shows", () => {
     const connected = (instanceId: ProviderInstanceId) =>
       account(instanceId, [], {
