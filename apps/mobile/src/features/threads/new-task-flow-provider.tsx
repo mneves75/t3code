@@ -5,6 +5,7 @@ import type {
   EnvironmentId,
   ModelSelection,
   ProjectReadFileResult,
+  ProviderInstanceId,
   ProviderInteractionMode,
   ProviderOptionSelection,
   RuntimeMode,
@@ -579,6 +580,18 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const rotationEnvironmentId = selectedProject?.environmentId;
   const rotationProviders = selectedEnvironmentServerConfig?.providers;
   const rotationInstances = selectedEnvironmentServerConfig?.settings.providerInstances;
+  // Once the user is writing the task, the account they were shown stays put:
+  // usage reports and thread starts elsewhere keep arriving while they type.
+  const [shownAccount, setShownAccount] = useState<{
+    readonly draftKey: string;
+    readonly instanceId: ProviderInstanceId;
+  } | null>(null);
+  const draftHasContent =
+    selectedProjectDraft.text.trim().length > 0 || selectedProjectDraft.attachments.length > 0;
+  const heldInstanceId =
+    draftHasContent && shownAccount?.draftKey === selectedProjectDraftKey
+      ? shownAccount.instanceId
+      : null;
   // Rotation reads every thread shell, so it must not rerun on unrelated renders.
   const selectedModel = useMemo(
     () =>
@@ -594,6 +607,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
                 providers: rotationProviders,
                 eligibleInstanceIds: rotationEligibleInstanceIds(rotationInstances),
                 threads,
+                heldInstanceId,
               },
             }
           : {}),
@@ -608,8 +622,19 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       rotationProviders,
       rotationInstances,
       threads,
+      heldInstanceId,
     ],
   );
+  const shownInstanceId = rotateAccounts ? (selectedModel?.instanceId ?? null) : null;
+  useEffect(() => {
+    setShownAccount((previous) =>
+      shownInstanceId === null || selectedProjectDraftKey === null
+        ? null
+        : previous?.draftKey === selectedProjectDraftKey && previous.instanceId === shownInstanceId
+          ? previous
+          : { draftKey: selectedProjectDraftKey, instanceId: shownInstanceId },
+    );
+  }, [selectedProjectDraftKey, shownInstanceId]);
   const selectedModelKey = selectedModel
     ? `${selectedModel.instanceId}:${selectedModel.model}`
     : null;

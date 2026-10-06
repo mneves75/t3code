@@ -555,13 +555,14 @@ describe("rotating a new task across accounts", () => {
     draftSelection?: ModelSelection;
     projectDefaultSelection?: ModelSelection;
     stickySelection?: ModelSelection;
+    heldInstanceId?: ProviderInstanceId;
   }) =>
     resolveNewTaskModelSelection({
       draftSelection: input.draftSelection ?? null,
       projectDefaultSelection: input.projectDefaultSelection ?? null,
       stickySelection: input.stickySelection ?? null,
       modelOptions: [],
-      rotation,
+      rotation: { ...rotation, heldInstanceId: input.heldInstanceId ?? null },
     });
 
   it("starts an implicit selection on the account with the most usage left", () => {
@@ -574,5 +575,23 @@ describe("rotating a new task across accounts", () => {
 
   it("keeps the account picked for this task", () => {
     expect(resolve({ draftSelection: onWork, stickySelection: onWork })).toBe(onWork);
+  });
+
+  it("keeps the account shown while the user is writing the task", () => {
+    expect(resolve({ stickySelection: onWork, heldInstanceId: work })).toBe(onWork);
+    // Usage moved on since the task opened on Personal; Work now has more left.
+    expect(
+      resolveNewTaskModelSelection({
+        draftSelection: null,
+        projectDefaultSelection: null,
+        stickySelection: onWork,
+        modelOptions: [],
+        rotation: {
+          ...rotation,
+          providers: [account(work, 10), account(personal, 90)],
+          heldInstanceId: personal,
+        },
+      }),
+    ).toEqual({ ...onWork, instanceId: personal });
   });
 });

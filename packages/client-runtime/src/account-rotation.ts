@@ -45,11 +45,15 @@ function canStart(provider: ServerProvider, model: string): boolean {
   );
 }
 
+/** An API key, or a probe that failed with nothing kept, reports no window. */
+function reportsUsage(provider: ServerProvider): boolean {
+  return (provider.usageLimits?.windows.length ?? 0) > 0;
+}
+
 /**
  * How full the account's fullest window is, 0..100. No provider says which
  * window a model draws from, so every window counts. A window that reset
- * before `asOf` holds nothing, and an account that reports no window is taken
- * as empty: its turn then comes from thread starts alone.
+ * before `asOf` holds nothing.
  */
 function usedPercent(provider: ServerProvider, asOf: number): number {
   let used = 0;
@@ -77,7 +81,8 @@ export interface AccountRotationInput {
  * The account a new thread should start on when the user left that choice to
  * T3: among the marked accounts of the selected provider that offer the
  * selected model, the one with the most usage left, then the one whose last
- * thread was started longest ago.
+ * thread was started longest ago. Usage ranks them only when every one of
+ * them reports it; otherwise they take turns by thread start alone.
  *
  * Only for a thread that has not started. Moving a started thread to another
  * account is a provider switch, which is the user's call.
@@ -108,28 +113,29 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
     }
   }
 
+  // The selection goes first, so a full tie keeps it and then the provider
+  // list's own order. A selection that cannot start the thread gives way.
+  const pool = [
+    ...(canStart(selected, selection.model) ? [selected] : []),
+    ...providers.filter(
+      (candidate) =>
+        candidate !== selected &&
+        candidate.driver === selected.driver &&
+        input.eligibleInstanceIds.has(candidate.instanceId) &&
+        canStart(candidate, selection.model),
+    ),
+  ];
+  // One silent account would otherwise look emptier than every account that
+  // reports, and take each new thread.
+  const rankByUsage = pool.every(reportsUsage);
   const asOf = Math.max(...providers.map((provider) => Date.parse(provider.checkedAt)));
-  // A selection that cannot start the thread gives way to any account that can.
-  let chosen = canStart(selected, selection.model) ? selected : null;
-  for (const candidate of providers) {
-    if (
-      candidate === selected ||
-      candidate.driver !== selected.driver ||
-      !input.eligibleInstanceIds.has(candidate.instanceId) ||
-      !canStart(candidate, selection.model)
-    ) {
-      continue;
-    }
-    if (chosen === null) {
-      chosen = candidate;
-      continue;
-    }
-    const usage = usedPercent(candidate, asOf) - usedPercent(chosen, asOf);
+  let chosen = pool[0] ?? selected;
+  for (const candidate of pool) {
+    const usage = rankByUsage ? usedPercent(candidate, asOf) - usedPercent(chosen, asOf) : 0;
     const idle =
       (lastStartedAt.get(chosen.instanceId) ?? 0) - (lastStartedAt.get(candidate.instanceId) ?? 0);
-    // Only a strictly better account replaces the current pick, so a full tie
-    // keeps the selection and then the provider list's own order.
+    // Only a strictly better account replaces the current pick.
     if (usage < 0 || (usage === 0 && idle > 0)) chosen = candidate;
   }
-  return (chosen ?? selected).instanceId;
+  return chosen.instanceId;
 }

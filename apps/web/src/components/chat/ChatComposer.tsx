@@ -2554,6 +2554,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // A send in flight has already named its account.
       rotateDraft: rotateDraftAccount && !isSendBusy && multipleModelSelections === null,
       selectionExplicit: draftModelSelectionExplicit,
+      draftHasContent: composerSendState.hasSendableContent,
       selection: { instanceId: selectedInstanceId, model: selectedModel },
       environmentId,
       providers: providerStatuses,
@@ -2568,6 +2569,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   }, [
     composerDraftTarget,
+    composerSendState.hasSendableContent,
     draftModelSelectionExplicit,
     environmentId,
     environmentThreadShells,

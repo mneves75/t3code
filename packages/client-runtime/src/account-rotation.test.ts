@@ -122,6 +122,29 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose(providers, third)).toBe(work);
   });
 
+  it("takes turns when a marked account reports no usage, since silence is not room left", () => {
+    const providers = [
+      account(work, [window(40)]),
+      account(personal, [window(5)]),
+      account(spare, [], {
+        usageLimits: {
+          checkedAt: "2026-09-03T11:00:00.000Z",
+          windows: [],
+          unavailable: { reason: "unsupported" },
+        },
+      }),
+    ];
+    expect(choose(providers)).toBe(work);
+    const first = [startedAt(work, "2026-09-03T09:00:00.000Z")];
+    expect(choose(providers, first)).toBe(personal);
+    const second = [...first, startedAt(personal, "2026-09-03T10:00:00.000Z")];
+    expect(choose(providers, second)).toBe(spare);
+    const third = [...second, startedAt(spare, "2026-09-03T11:00:00.000Z")];
+    expect(choose(providers, third)).toBe(work);
+    // An unmarked silent account does not stop the others ranking by usage.
+    expect(choose(providers, third, work, [work, personal])).toBe(personal);
+  });
+
   it("gives a subagent thread no turn of its own", () => {
     const providers = [account(work, []), account(personal, [])];
     const spawned = startedAt(personal, "2026-09-03T10:00:00.000Z");

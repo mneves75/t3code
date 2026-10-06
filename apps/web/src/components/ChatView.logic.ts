@@ -634,9 +634,11 @@ export function resolveRotatedDraftProviderInstance(
     rotateDraft: boolean;
     /** The user picked this draft's account; a seeded default does not count. */
     selectionExplicit: boolean;
+    /** The user is writing it, so the account they see must not move under them. */
+    draftHasContent: boolean;
   },
 ): ProviderInstanceId | null {
-  if (!input.rotateDraft || input.selectionExplicit) return null;
+  if (!input.rotateDraft || input.selectionExplicit || input.draftHasContent) return null;
   const rotated = chooseRotatedProviderInstance(input);
   return rotated === input.selection.instanceId ? null : rotated;
 }

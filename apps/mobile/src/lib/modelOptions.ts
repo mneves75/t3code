@@ -2,6 +2,7 @@ import type { MenuAction } from "@react-native-menu/menu";
 import type {
   ModelCapabilities,
   ModelSelection,
+  ProviderInstanceId,
   RuntimeMode,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
@@ -149,7 +150,10 @@ export function resolveNewTaskModelSelection(input: {
   readonly stickySelection: ModelSelection | null;
   readonly modelOptions: ReadonlyArray<ModelOption>;
   /** Set while the environment rotates accounts; a pick made for this task still stands. */
-  readonly rotation?: Omit<AccountRotationInput, "selection">;
+  readonly rotation?: Omit<AccountRotationInput, "selection"> & {
+    /** The account shown when the user began writing the task; it stays until they send. */
+    readonly heldInstanceId: ProviderInstanceId | null;
+  };
 }): ModelSelection | null {
   if (input.draftSelection) return input.draftSelection;
   const selection =
@@ -159,7 +163,16 @@ export function resolveNewTaskModelSelection(input: {
     input.modelOptions.find((option) => !option.isUnavailable)?.selection ??
     null;
   if (selection === null || input.rotation === undefined) return selection;
-  const instanceId = chooseRotatedProviderInstance({ ...input.rotation, selection });
+  const { heldInstanceId, ...rotation } = input.rotation;
+  const driverOf = (instanceId: ProviderInstanceId | null) =>
+    rotation.providers.find((provider) => provider.instanceId === instanceId)?.driver;
+  // A held account only stands in for another account of the same provider.
+  const held =
+    driverOf(heldInstanceId) !== undefined &&
+    driverOf(heldInstanceId) === driverOf(selection.instanceId)
+      ? heldInstanceId
+      : null;
+  const instanceId = held ?? chooseRotatedProviderInstance({ ...rotation, selection });
   return instanceId === selection.instanceId ? selection : { ...selection, instanceId };
 }
 
