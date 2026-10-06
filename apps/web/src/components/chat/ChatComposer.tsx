@@ -2176,12 +2176,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
-  const selectedProviderSkills = selectedProviderStatus
-    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
-    : [];
-  const selectedProviderSlashCommands = selectedProviderStatus
-    ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
-    : [];
+  // Memoized so the composer menu memo below can cache between renders.
+  const selectedProviderSkills = useMemo(
+    () =>
+      selectedProviderStatus ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd) : [],
+    [gitCwd, selectedProviderStatus],
+  );
+  const selectedProviderSlashCommands = useMemo(
+    () =>
+      selectedProviderStatus
+        ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+        : [],
+    [gitCwd, selectedProviderStatus],
+  );
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -2532,7 +2539,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const settledPullRequestTextQuery =
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
-  const environmentThreadShells = useThreadShells();
+  // Thread shells feed `@` thread matches and the turn order of account
+  // rotation, so skip shell updates otherwise.
+  const environmentThreadShells = useThreadShells(isPathTrigger || rotateDraftAccount);
   const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
   const rotationEligibleIds = useMemo(
     () => rotationEligibleInstanceIds(settings.providerInstances),
