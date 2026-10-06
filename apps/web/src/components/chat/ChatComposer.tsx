@@ -2540,8 +2540,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   // Thread shells feed `@` thread matches and the turn order of account
-  // rotation, so skip shell updates otherwise.
-  const environmentThreadShells = useThreadShells(isPathTrigger || rotateDraftAccount);
+  // rotation, which stops once the draft has content, so skip shell updates otherwise.
+  const environmentThreadShells = useThreadShells(
+    isPathTrigger || (rotateDraftAccount && !composerSendState.hasSendableContent),
+  );
   const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
   const rotationEligibleIds = useMemo(
     () => rotationEligibleInstanceIds(settings.providerInstances),

@@ -304,3 +304,104 @@ describe("which accounts are marked for rotation", () => {
     ]).toEqual([work]);
   });
 });
+
+describe("the rotation choice is stable for any small pool", () => {
+  type Usage = "none" | "idle" | "half" | "halfReset";
+  type Started = "never" | "early" | "late";
+  interface Spec {
+    readonly marked: boolean;
+    readonly usage: Usage;
+    readonly started: Started;
+    readonly canStart: boolean;
+  }
+  const usages: ReadonlyArray<Usage> = ["none", "idle", "half", "halfReset"];
+  const startedLevels: ReadonlyArray<Started> = ["never", "early", "late"];
+  const specs: ReadonlyArray<Spec> = [];
+  for (const marked of [true, false])
+    for (const usage of usages)
+      for (const started of startedLevels)
+        for (const canStart of [true, false])
+          (specs as Spec[]).push({ marked, usage, started, canStart });
+
+  const ids = [work, personal, spare];
+  const startTime = { early: "2026-09-03T09:00:00.000Z", late: "2026-09-03T10:00:00.000Z" };
+  // checkedAt is 11:00, so a window resetting at 10:30 has already reset.
+  const windowsOf = (usage: Usage) =>
+    usage === "none"
+      ? []
+      : usage === "idle"
+        ? [window(0)]
+        : usage === "half"
+          ? [window(50)]
+          : [window(100, "2026-09-03T10:30:00.000Z")];
+
+  /** The requirement, written from the spec rather than from the implementation. */
+  function expected(selectedIndex: number, pool: ReadonlyArray<Spec>) {
+    const selected = pool[selectedIndex]!;
+    if (!selected.marked) return new Set([ids[selectedIndex]!]);
+    const members = pool
+      .map((spec, index) => ({ spec, index }))
+      .filter(({ spec, index }) => spec.canStart && (index === selectedIndex || spec.marked));
+    if (members.length === 0) return new Set([ids[selectedIndex]!]);
+    const ranked = members.every(({ spec }) => spec.usage !== "none");
+    const used = (spec: Spec) =>
+      spec.usage === "half" ? 50 : 0; /* none, idle and an already-reset window hold nothing */
+    const rank = ({ spec }: { spec: Spec }) =>
+      [
+        ranked ? used(spec) : 0,
+        spec.started === "never" ? 0 : spec.started === "early" ? 1 : 2,
+      ] as const;
+    const best = members.reduce((a, b) => {
+      const [au, as] = rank(a);
+      const [bu, bs] = rank(b);
+      return bu < au || (bu === au && bs < as) ? b : a;
+    });
+    const [bestUsed, bestStart] = rank(best);
+    return new Set(
+      members
+        .filter(({ spec }) => {
+          const [u, s] = rank({ spec });
+          return u === bestUsed && s === bestStart;
+        })
+        .map(({ index }) => ids[index]!),
+    );
+  }
+
+  function run(pool: ReadonlyArray<Spec>, selectedIndex: number) {
+    const providers = pool.map((spec, index) =>
+      account(ids[index]!, windowsOf(spec.usage), spec.canStart ? {} : { status: "error" }),
+    );
+    const threads = pool.flatMap((spec, index) =>
+      spec.started === "never" ? [] : [startedAt(ids[index]!, startTime[spec.started])],
+    );
+    const marked = ids.filter((_, index) => pool[index]!.marked);
+    const pick = (from: ProviderInstanceId) =>
+      chooseRotatedProviderInstance({
+        selection: { instanceId: from, model },
+        environmentId,
+        providers,
+        eligibleInstanceIds: new Set(marked),
+        threads,
+      });
+    return { first: pick(ids[selectedIndex]!), pick };
+  }
+
+  it("answers with a best account and answers the same when asked from its own answer", () => {
+    let cases = 0;
+    for (const a of specs)
+      for (const b of specs)
+        for (const c of specs) {
+          const pool = [a, b, c];
+          for (let selectedIndex = 0; selectedIndex < 3; selectedIndex++) {
+            const { first, pick } = run(pool, selectedIndex);
+            const context = JSON.stringify({ pool, selectedIndex, first });
+            expect(expected(selectedIndex, pool).has(first), `not a best account ${context}`).toBe(
+              true,
+            );
+            expect(pick(first), `unstable ${context}`).toBe(first);
+            cases++;
+          }
+        }
+    expect(cases).toBe(specs.length ** 3 * 3);
+  });
+});

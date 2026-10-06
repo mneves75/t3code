@@ -594,4 +594,49 @@ describe("rotating a new task across accounts", () => {
       }),
     ).toEqual({ ...onWork, instanceId: personal });
   });
+
+  describe("a held account that no longer fits this environment", () => {
+    const spare = ProviderInstanceId.make("claudeAgent_spare");
+    const onPersonal: ModelSelection = { ...onWork, instanceId: personal };
+    const resolveWith = (
+      selection: ModelSelection,
+      held: ProviderInstanceId,
+      overrides: Partial<typeof rotation> = {},
+    ) =>
+      resolveNewTaskModelSelection({
+        draftSelection: null,
+        projectDefaultSelection: null,
+        stickySelection: selection,
+        modelOptions: [],
+        rotation: { ...rotation, ...overrides, heldInstanceId: held },
+      });
+
+    it("ignores a held account of another provider or one this environment does not have", () => {
+      const codex = ProviderInstanceId.make("codex");
+      expect(resolveWith(onWork, codex)).toEqual({ ...onWork, instanceId: personal });
+      expect(resolveWith(onWork, ProviderInstanceId.make("claudeAgent_gone"))).toEqual({
+        ...onWork,
+        instanceId: personal,
+      });
+    });
+
+    it("does not rotate onto a held account this environment has not marked", () => {
+      expect(
+        resolveWith(onPersonal, work, { eligibleInstanceIds: new Set([personal, spare]) }),
+      ).toBe(onPersonal);
+    });
+
+    it("does not rotate away from a selection that is not marked", () => {
+      expect(resolveWith(onWork, personal, { eligibleInstanceIds: new Set([personal]) })).toBe(
+        onWork,
+      );
+    });
+
+    it("lets a held account that cannot start the task give way", () => {
+      const signedOut = { ...account(personal, 10), auth: { status: "unauthenticated" as const } };
+      expect(resolveWith(onWork, personal, { providers: [account(work, 90), signedOut] })).toBe(
+        onWork,
+      );
+    });
+  });
 });

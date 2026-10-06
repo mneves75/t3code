@@ -71,6 +71,12 @@ export interface AccountRotationInput {
   readonly providers: ReadonlyArray<ServerProvider>;
   /** See `rotationEligibleInstanceIds`. An unmarked account is never rotated onto or away from. */
   readonly eligibleInstanceIds: ReadonlySet<ProviderInstanceId>;
+  /**
+   * The account already shown for this draft. It stays while it is still one
+   * the draft could rotate onto, so usage reports and thread starts arriving
+   * as the user writes do not move it.
+   */
+  readonly heldInstanceId?: ProviderInstanceId | null;
   /** May span environments; instance ids repeat across machines, so only `environmentId`'s count. */
   readonly threads: ReadonlyArray<
     Pick<EnvironmentThreadShell, "environmentId" | "providerInstanceId" | "createdAt" | "lineage">
@@ -125,6 +131,8 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
         canStart(candidate, selection.model),
     ),
   ];
+  const held = pool.find((candidate) => candidate.instanceId === input.heldInstanceId);
+  if (held !== undefined) return held.instanceId;
   // One silent account would otherwise look emptier than every account that
   // reports, and take each new thread.
   const rankByUsage = pool.every(reportsUsage);
