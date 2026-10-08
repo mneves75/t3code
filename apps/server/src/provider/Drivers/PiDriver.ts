@@ -26,8 +26,9 @@ import { ProviderDriverError } from "../Errors.ts";
 import {
   buildInitialPiProviderSnapshot,
   checkPiProviderStatus,
+  discoverPiCommandsForCwd,
   enrichPiSnapshot,
-} from "../Layers/PiProvider.ts";
+} from "../PiProvider.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import {
   defaultProviderContinuationIdentity,
@@ -188,6 +189,26 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        snapshotForCwd: (workspaceCwd) =>
+          !effectiveConfig.enabled
+            ? snapshot.getSnapshot
+            : Effect.all([
+                snapshot.getSnapshot,
+                discoverPiCommandsForCwd(effectiveConfig, processEnv, workspaceCwd).pipe(
+                  Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderDriverError({
+                        driver: DRIVER_KIND,
+                        instanceId,
+                        detail: "Failed to discover Pi workspace commands.",
+                        cause,
+                      }),
+                  ),
+                ),
+              ]).pipe(
+                Effect.map(([machineSnapshot, commands]) => ({ ...machineSnapshot, ...commands })),
+              ),
         orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;

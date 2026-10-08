@@ -17,6 +17,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import * as CheckpointRollbackService from "./CheckpointRollbackService.ts";
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { CheckpointServiceV2 } from "./CheckpointService.ts";
 import { EventSinkV2 } from "./EventSink.ts";
 import * as IdAllocator from "./IdAllocator.ts";
@@ -98,10 +99,11 @@ it.effect.each([
       checkpointScopes: [{ id: scopeId, cwd }],
       runs: [{ id: "later-run", ordinal: 1, status: "completed", rootNodeId: null }],
     } as unknown as OrchestrationV2ThreadProjection;
-    const testLayer = CheckpointRollbackService.layer.pipe(
+    const layerTest = CheckpointRollbackService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           NodeServices.layer,
+          ThreadCommandExecutor.layer,
           IdAllocator.layer,
           Layer.mock(ProjectStore.ProjectStoreV2)({
             get: () => Effect.succeed(Option.some({ workspaceRoot: parent } as never)),
@@ -175,7 +177,7 @@ it.effect.each([
       ),
     );
     const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2.pipe(
-      Effect.provide(testLayer),
+      Effect.provide(layerTest),
     );
     const restoreFiles = owner !== "conversation";
     const rejected = !["sibling", "stopped-provider", "shared-provider", "conversation"].includes(
