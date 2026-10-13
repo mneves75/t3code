@@ -83,6 +83,38 @@ const startedAt = (providerInstanceId: ProviderInstanceId, createdAt: string) =>
 });
 
 describe("rotating a new thread across accounts of one provider", () => {
+  it.each([true, false])("honors project enablement when machine enablement is %s", (enabled) => {
+    const projectId = ProjectId.make("project-a");
+    const providers = [account(work, [window(90)]), account(personal, [window(15)], { enabled })];
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [work]: { driver: ProviderDriverKind.make("claudeAgent"), enabled: true },
+        [personal]: { driver: ProviderDriverKind.make("claudeAgent"), enabled },
+      },
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [personal]: { enabled: false } } },
+        [ProjectId.make("other")]: { providerInstances: { [personal]: { enabled: true } } },
+      },
+    };
+    const input = {
+      selection: { instanceId: work, model },
+      environmentId,
+      providers,
+      eligibleInstanceIds: new Set([work, personal]),
+      threads: [],
+      project: { settings, projectId },
+    };
+    expect(chooseRotatedProviderInstance(input)).toBe(work);
+    expect(chooseRotatedProviderInstance({ ...input, heldInstanceId: personal })).toBe(work);
+    expect(
+      chooseRotatedProviderInstance({
+        ...input,
+        project: { settings, projectId: ProjectId.make("other") },
+      }),
+    ).toBe(personal);
+  });
+
   it("starts on the account with the most usage left", () => {
     expect(choose([account(work, [window(90)]), account(personal, [window(15)])])).toBe(personal);
   });

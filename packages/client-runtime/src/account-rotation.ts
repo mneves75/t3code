@@ -1,10 +1,13 @@
 import {
   type EnvironmentId,
   isProviderAvailable,
+  resolveProjectProviderInstanceEnabled,
   type ModelSelection,
+  type ProjectId,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
 
@@ -69,6 +72,10 @@ export interface AccountRotationInput {
   readonly environmentId: EnvironmentId;
   /** `environmentId`'s providers. */
   readonly providers: ReadonlyArray<ServerProvider>;
+  readonly project?: {
+    readonly settings: ServerSettings;
+    readonly projectId: ProjectId;
+  };
   /** See `rotationEligibleInstanceIds`. An unmarked account is never rotated onto or away from. */
   readonly eligibleInstanceIds: ReadonlySet<ProviderInstanceId>;
   /**
@@ -97,7 +104,17 @@ export interface AccountRotationInput {
  * client's clock, which need not agree with the server's.
  */
 export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
-  const { selection, providers } = input;
+  const { selection, project } = input;
+  const providers = project
+    ? input.providers.map((provider) => ({
+        ...provider,
+        enabled: resolveProjectProviderInstanceEnabled(
+          project.settings,
+          project.projectId,
+          provider.instanceId,
+        ),
+      }))
+    : input.providers;
   const selected = providers.find((provider) => provider.instanceId === selection.instanceId);
   if (selected === undefined || !input.eligibleInstanceIds.has(selected.instanceId)) {
     return selection.instanceId;
