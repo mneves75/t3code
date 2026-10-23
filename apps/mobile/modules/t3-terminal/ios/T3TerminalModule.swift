@@ -1,9 +1,11 @@
 import ExpoModulesCore
 
+// Expo Modules 2.0: the module name comes from the macro; the constants and the view stay in
+// definition(). The revision stays a Constants entry rather than a @JS property because JS
+// reads it as a module constant.
+@ExpoModule("T3TerminalSurface")
 public class T3TerminalModule: Module {
   public func definition() -> ModuleDefinition {
-    Name("T3TerminalSurface")
-
     // Bumped when native hardware-keyboard handling changes; surfaced in the JS debug
     // logs so a stale native binary is distinguishable from a broken key pipeline.
     Constants([

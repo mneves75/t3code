@@ -1,10 +1,11 @@
 import ExpoModulesCore
 import UIKit
 
+// Expo Modules 2.0: the module name comes from the macro; the view and its props/events stay
+// in definition() until the 2.0 view API lands.
+@ExpoModule("T3KeyboardCommands")
 public final class T3KeyboardCommandsModule: Module {
   public func definition() -> ModuleDefinition {
-    Name("T3KeyboardCommands")
-
     View(T3KeyboardCommandsView.self) {
       Prop("enabledCommands") { (view: T3KeyboardCommandsView, commands: [String]) in
         view.setEnabledCommands(commands)

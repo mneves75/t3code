@@ -75,15 +75,6 @@ public final class T3NativeControlsModule: Module {
       file.present(urls: urls, titles: titles, selectedIndex: selectedIndex, from: presenter)
     }.runOnQueue(.main)
 
-    OnDestroy {
-      let presentation = self.videoPresentation
-      let file = self.filePresentation
-      DispatchQueue.main.async {
-        presentation?.dismiss()
-        file?.dismiss()
-      }
-    }
-
     View(T3PresentationSourceView.self) {
       ViewName("PresentationSource")
       Prop("identifier") { (view: T3PresentationSourceView, identifier: String) in
@@ -111,6 +102,17 @@ public final class T3NativeControlsModule: Module {
     AsyncFunction("shareFileFromSource") { (url: URL, title: String, identifier: String, promise: Promise) in
       try self.shareFile(url: url, title: title, sourceIdentifier: identifier, promise: promise)
     }.runOnQueue(.main)
+  }
+
+  // The 2.0 lifecycle hook replaces the OnDestroy DSL component, which was removed here so the
+  // dismissal does not run twice.
+  public override func willDestroy() {
+    let presentation = videoPresentation
+    let file = filePresentation
+    DispatchQueue.main.async {
+      presentation?.dismiss()
+      file?.dismiss()
+    }
   }
 
   // UIKit presenters are main-actor isolated rather than run on the JS thread

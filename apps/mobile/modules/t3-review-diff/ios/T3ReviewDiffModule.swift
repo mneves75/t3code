@@ -1,9 +1,10 @@
 import ExpoModulesCore
 
+// Expo Modules 2.0: the module name comes from the macro; the view, its props, events and
+// view-scoped functions stay in definition() until the 2.0 view API lands.
+@ExpoModule("T3ReviewDiffSurface")
 public class T3ReviewDiffModule: Module {
   public func definition() -> ModuleDefinition {
-    Name("T3ReviewDiffSurface")
-
     View(T3ReviewDiffView.self) {
       Prop("contentInsetTop") { (view: T3ReviewDiffView, value: Double) in
         view.setContentInsetTop(CGFloat(value))
