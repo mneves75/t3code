@@ -35,6 +35,21 @@ so an edit to a module's TypeScript is invisible to a running dev client until
 `vp i` re-syncs it, while Gradle and CocoaPods compile the worktree directory
 directly. A JavaScript change that "has no effect" on device is usually this.
 
+## Native module declarations
+
+The Apple modules under `apps/mobile/modules/` declare their JS surface with the Expo Modules macros:
+`@ExpoModule("<JsName>")` on the class carries the registered name, and plain members marked `@JS` are bound by the
+macro. Keep the name explicit — the macro default is the Swift class name, which is not the JS name here.
+
+Views, props, events, view-scoped functions and `Constants` stay in `definition()`, so these modules run in mixed
+mode: one class, a macro for the module-level surface and the 1.0 DSL for the rest. A `Module` keeps exactly one
+`Name(...)` or one `@ExpoModule(...)`, never both, and a lifecycle behavior belongs to either the DSL component or its
+2.0 hook (`OnDestroy`/`willDestroy`, `OnCreate`/`didCreate`), never both.
+
+`expo-module.config.json` still lists every module class by its Swift class name. Renaming a class detaches the module
+silently — it compiles and is absent at runtime — so keep the two in step, and change the `@ExpoModule` string rather
+than the class name when only the JS name should move.
+
 ## Measuring renders
 
 [`render-counter.ts`](../../apps/mobile/src/features/development/render-counter.ts) counts the
