@@ -215,6 +215,15 @@ the snooze. Enable **Snooze limited threads** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
+To keep working instead of waiting, turn on **Usage-limit fallback model** in
+**Settings → General** on web and desktop and choose a model. When a thread stops
+on a usage limit, T3 Code continues it on that model within seconds, carrying the
+conversation over as a [portable handoff](./portable-handoffs.md). A thread that
+is already on the fallback model, or that hits the fallback's own limit, waits
+for the reset as before. The fallback skips subagent threads, snoozed threads,
+threads you scheduled with **Resume at reset**, and limit stops from before the
+last 10 minutes.
+
 On web and desktop, use **Agents** to follow work delegated to subagents.
 Stop on a thread also stops the subagents it delegated to.
 

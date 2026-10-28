@@ -1,4 +1,8 @@
-import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contracts";
+import {
+  DEFAULT_UNIFIED_SETTINGS,
+  ProviderInstanceId,
+  type UnifiedSettings,
+} from "@t3tools/contracts";
 import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -77,6 +81,22 @@ describe("restoring V2 settings", () => {
     expect(state.confirm.mock.calls[0]?.[0]).toContain(label);
     expect(state.update).toHaveBeenCalledOnce();
     expect(state.update.mock.calls[0]?.[0][key]).toBe(DEFAULT_UNIFIED_SETTINGS[key]);
+  });
+
+  it("restores the usage-limit fallback model", async () => {
+    state.settings = {
+      ...DEFAULT_UNIFIED_SETTINGS,
+      usageLimitFallbackModelSelection: {
+        instanceId: ProviderInstanceId.make("claude"),
+        model: "claude-sonnet-4-6",
+      },
+    };
+    await render();
+
+    expect(restore.changedSettingLabels).toEqual(["Usage-limit fallback model"]);
+    await act(() => restore.restoreDefaults());
+
+    expect(state.update.mock.calls[0]?.[0].usageLimitFallbackModelSelection).toBeNull();
   });
 
   it("does not reset settings after cancellation", async () => {
