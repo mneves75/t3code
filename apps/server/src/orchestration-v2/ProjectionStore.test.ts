@@ -3459,6 +3459,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             status: sqlShell.status,
             lastErrorClass: sqlShell.lastErrorClass,
             usageLimitResetAt: sqlShell.usageLimitResetAt,
+            providerInstanceId: sqlShell.providerInstanceId,
+            lineage: sqlShell.lineage,
             latestRunId: sqlShell.latestRunId,
             latestRunCompletedAt: sqlShell.latestRunCompletedAt,
             updatedAt: sqlShell.updatedAt,
@@ -3624,6 +3626,37 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           (row) => row.id === threadId,
         ),
       );
+      const findFallback = (
+        instanceId: ProviderInstanceId,
+        failedSince = DateTime.subtract(now, { minutes: 10 }),
+      ) =>
+        store
+          .getLimitRecoveryCandidates({ ...recoveryOptions, fallback: { instanceId, failedSince } })
+          .pipe(Effect.map((rows) => rows.find((row) => row.id === threadId)));
+      const fallbackInstanceId = ProviderInstanceId.make("claude");
+      assert.isDefined(yield* findFallback(fallbackInstanceId));
+      assert.isUndefined(yield* findFallback(providerInstanceId));
+      assert.isUndefined(
+        yield* findFallback(fallbackInstanceId, DateTime.add(now, { minutes: 1 })),
+      );
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_set(payload_json, '$.failure.resetAt', NULL)
+        WHERE turn_item_id = ${limitItem.id}`;
+      assert.isUndefined(
+        (yield* store.getLimitRecoveryCandidates({ ...recoveryOptions, autoResume: true })).find(
+          (row) => row.id === threadId,
+        ),
+      );
+      assert.isDefined(yield* findFallback(fallbackInstanceId));
+      yield* sql`UPDATE orchestration_v2_projection_turn_items
+        SET payload_json = json_set(payload_json, '$.failure.resetAt', ${limitItem.failure.resetAt})
+        WHERE turn_item_id = ${limitItem.id}`;
+      yield* sql`UPDATE orchestration_v2_projection_threads
+        SET payload_json = json_set(payload_json, '$.lineage.relationshipToParent', 'subagent')
+        WHERE thread_id = ${threadId}`;
+      assert.isUndefined(yield* findFallback(fallbackInstanceId));
+      yield* sql`UPDATE orchestration_v2_projection_threads
+        SET payload_json = ${originalRow!.payload_json} WHERE thread_id = ${threadId}`;
       const reset = DateTime.makeUnsafe(limitItem.failure.resetAt);
       const recovery = {
         runId: original.id,

@@ -160,6 +160,8 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "lastErrorClass"
   | "latestRunId"
   | "usageLimitResetAt"
+  | "providerInstanceId"
+  | "lineage"
   | "archivedAt"
   | "settledOverride"
   | "pendingRuntimeRequest"
@@ -415,6 +417,11 @@ export interface ProjectionStoreV2Shape {
     readonly now: DateTime.Utc;
     readonly autoResume: boolean;
     readonly snooze: boolean;
+    /** Also returns fresh usage-limit failures on another root thread instance, reset time or not. */
+    readonly fallback?: {
+      readonly instanceId: ProviderInstanceId;
+      readonly failedSince: DateTime.Utc;
+    };
   }) => Effect.Effect<ReadonlyArray<ProjectionLimitRecoveryCandidate>, ProjectionStoreV2Error>;
   readonly getSettlementCandidates: (
     threadId?: ThreadId,
@@ -3547,6 +3554,9 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const getLimitRecoveryCandidates = Effect.fn("ProjectionStore.getLimitRecoveryCandidates")(
       function* (options: Parameters<ProjectionStoreV2Shape["getLimitRecoveryCandidates"]>[0]) {
+        const fallbackInstanceId = options.fallback?.instanceId ?? null;
+        const fallbackFailedSince =
+          options.fallback === undefined ? null : DateTime.formatIso(options.fallback.failedSince);
         const rows = yield* sql<{
           readonly payload_json: string;
           readonly run_id: string;
@@ -3601,7 +3611,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND json_extract(t.payload_json, '$.archivedAt') IS NULL
             AND json_extract(t.payload_json, '$.settledOverride') IS NOT 'settled'
             AND json_extract(item.payload_json, '$.failure.class') = 'usage_limit'
-            AND json_extract(item.payload_json, '$.failure.resetAt') IS NOT NULL
+            AND ((
+              ${fallbackInstanceId} IS NOT NULL
+              AND t.provider_instance_id IS NOT ${fallbackInstanceId}
+              AND json_extract(t.payload_json, '$.lineage.relationshipToParent') IS NOT 'subagent'
+              AND julianday(COALESCE(r.completed_at, json_extract(t.payload_json, '$.updatedAt'))) >= julianday(${fallbackFailedSince})
+            ) OR (
+            json_extract(item.payload_json, '$.failure.resetAt') IS NOT NULL
             AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) > julianday(COALESCE(r.completed_at, json_extract(t.payload_json, '$.updatedAt')))
             AND (
               (
@@ -3625,6 +3641,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 )
               )
             )
+            ))
             AND NOT EXISTS (
               SELECT 1 FROM orchestration_v2_projection_runtime_requests request
               WHERE request.thread_id = t.thread_id AND request.status = 'pending'
@@ -3645,6 +3662,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             status: "failed",
             lastErrorClass: summary.lastErrorClass,
             usageLimitResetAt: summary.usageLimitResetAt,
+            providerInstanceId: thread.providerInstanceId,
+            lineage: thread.lineage,
             latestRunId: RunId.make(row.run_id),
             latestRunCompletedAt:
               row.completed_at === null ? null : DateTime.makeUnsafe(row.completed_at),
@@ -6294,11 +6313,19 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 (thread) =>
                   thread.status === "failed" &&
                   thread.lastErrorClass === "usage_limit" &&
-                  thread.usageLimitResetAt !== null &&
                   thread.pendingRuntimeRequest === null,
               )
               .filter((thread) => {
-                const resetMs = Date.parse(thread.usageLimitResetAt!);
+                if (
+                  options.fallback !== undefined &&
+                  thread.providerInstanceId !== options.fallback.instanceId &&
+                  thread.lineage.relationshipToParent !== "subagent" &&
+                  DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.updatedAt) >=
+                    DateTime.toEpochMillis(options.fallback.failedSince)
+                )
+                  return true;
+                if (thread.usageLimitResetAt == null) return false;
+                const resetMs = Date.parse(thread.usageLimitResetAt);
                 const nowMs = DateTime.toEpochMillis(options.now);
                 if (
                   !Number.isFinite(resetMs) ||

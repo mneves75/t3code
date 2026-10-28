@@ -1,5 +1,9 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
+import {
+  LIMIT_FALLBACK_WINDOW_MS,
+  limitFallbackCommand,
+  limitRecoveryCommand,
+} from "./UsageLimitRecoveryWorker.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -5751,6 +5755,136 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         }
         assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 3);
       }),
+  );
+
+  it.effect("continues a limited thread on the fallback model before any reset", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const events = yield* EventSink.EventSinkV2;
+      const threadId = ThreadId.make("limit-fallback");
+      const projectId = ProjectId.make("limit-fallback:project");
+      const now = yield* DateTime.now;
+      yield* seedProject({
+        projectId,
+        title: "Fallback project",
+        workspaceRoot: process.cwd(),
+        defaultModelSelection: modelSelection,
+        createdAt: DateTime.formatIso(now),
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("limit-fallback:create"),
+        threadId,
+        projectId,
+        title: "Limited thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("limit-fallback:start"),
+        threadId,
+        messageId: MessageId.make("limit-fallback:start"),
+        text: "Start work.",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const [source] = (yield* orchestrator.getThreadProjection(threadId)).runs as [
+        OrchestrationV2Run,
+      ];
+      yield* events.write({
+        events: [
+          {
+            id: EventId.make("limit-fallback:stop"),
+            type: "run.updated",
+            threadId,
+            occurredAt: now,
+            payload: { ...source, status: "failed", completedAt: now },
+          },
+          {
+            id: EventId.make("limit-fallback:error"),
+            type: "turn-item.updated",
+            threadId,
+            occurredAt: now,
+            payload: {
+              id: TurnItemId.make("limit-fallback:error"),
+              type: "error",
+              threadId,
+              runId: source.id,
+              nodeId: source.rootNodeId,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 2,
+              status: "failed",
+              title: "Usage limit reached",
+              startedAt: now,
+              completedAt: now,
+              updatedAt: now,
+              // Codex's weekly limit: a multi-day wait, or no reset time at all.
+              failure: {
+                class: "usage_limit",
+                message: "You have hit your ChatGPT usage limit (pro plan).",
+                code: "usageLimitExceeded",
+                retryable: null,
+                resetAt: null,
+              },
+            },
+          },
+        ],
+      });
+      const shell = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      )!;
+      const nowMs = DateTime.toEpochMillis(now);
+      const fallback = { instanceId: alternateInstanceId, model: "gpt-5.5" };
+      assert.isNull(limitRecoveryCommand(shell, true, nowMs));
+      assert.isNull(limitFallbackCommand(shell, null, nowMs));
+      assert.isNull(limitFallbackCommand(shell, modelSelection, nowMs));
+      assert.isNull(limitFallbackCommand(shell, fallback, nowMs + LIMIT_FALLBACK_WINDOW_MS + 1));
+      assert.isNull(
+        limitFallbackCommand(
+          { ...shell, lineage: { ...shell.lineage, relationshipToParent: "subagent" } },
+          fallback,
+          nowMs,
+        ),
+      );
+      assert.isNull(
+        limitFallbackCommand(
+          {
+            ...shell,
+            limitRecovery: {
+              runId: source.id,
+              resetAt: "2099-01-01T00:00:00.000Z",
+              autoResume: true,
+            },
+          },
+          fallback,
+          nowMs,
+        ),
+      );
+      const command = limitFallbackCommand(shell, fallback, nowMs);
+      assert.isNotNull(command);
+      yield* orchestrator.dispatch(command!);
+      yield* orchestrator.dispatch(command!);
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.lengthOf(after.runs, 2);
+      assert.equal(after.runs[1]?.providerInstanceId, alternateInstanceId);
+      assert.equal(after.runs[1]?.status, "starting");
+      assert.equal(after.thread.providerInstanceId, alternateInstanceId);
+      const continued = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (thread) => thread.id === threadId,
+      )!;
+      assert.isNull(limitFallbackCommand(continued, fallback, nowMs));
+    }),
   );
 
   it.effect.each([
