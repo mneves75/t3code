@@ -5,6 +5,7 @@ import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  getDefaultProviderInstanceModel,
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
@@ -41,9 +42,23 @@ export function UsageLimitFallbackSetting() {
     ),
   );
   const enabled = settings.usageLimitFallbackModelSelection !== null;
+  // Turning it on suggests another instance: falling back to the default thread model does nothing.
+  const threadDefault = resolveDefaultProviderModelSelection(
+    providers,
+    settings.defaultModelSelection,
+  );
+  const alternative = entries.find(
+    (entry) => entry.enabled && entry.isAvailable && entry.instanceId !== threadDefault?.instanceId,
+  );
+  const alternativeModel = alternative
+    ? getDefaultProviderInstanceModel(providers, alternative.instanceId)
+    : undefined;
   const selection = resolveDefaultProviderModelSelection(
     providers,
-    settings.usageLimitFallbackModelSelection,
+    settings.usageLimitFallbackModelSelection ??
+      (alternative && alternativeModel
+        ? { instanceId: alternative.instanceId, model: alternativeModel }
+        : null),
   );
   const modelOptions = getCustomModelOptionsByInstance(
     settings,
