@@ -5887,6 +5887,131 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
     }),
   );
 
+  it.effect("the fallback continuation carries a full-thread handoff and never loops back", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const events = yield* EventSink.EventSinkV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = ThreadId.make("limit-fallback-handoff");
+      const projectId = ProjectId.make("limit-fallback-handoff:project");
+      const now = yield* DateTime.now;
+      yield* seedProject({
+        projectId,
+        title: "Fallback handoff project",
+        workspaceRoot: process.cwd(),
+        defaultModelSelection: modelSelection,
+        createdAt: DateTime.formatIso(now),
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("limit-fallback-handoff:create"),
+        threadId,
+        projectId,
+        title: "Limited thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("limit-fallback-handoff:start"),
+        threadId,
+        messageId: MessageId.make("limit-fallback-handoff:start"),
+        text: "Start work.",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const failOnLimit = (run: OrchestrationV2Run, suffix: string) =>
+        events.write({
+          events: [
+            {
+              id: EventId.make(`limit-fallback-handoff:stop:${suffix}`),
+              type: "run.updated",
+              threadId,
+              occurredAt: now,
+              payload: { ...run, status: "failed", completedAt: now },
+            },
+            {
+              id: EventId.make(`limit-fallback-handoff:error:${suffix}`),
+              type: "turn-item.updated",
+              threadId,
+              occurredAt: now,
+              payload: {
+                id: TurnItemId.make(`limit-fallback-handoff:error:${suffix}`),
+                type: "error",
+                threadId,
+                runId: run.id,
+                nodeId: run.rootNodeId,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 2,
+                status: "failed",
+                title: "Usage limit reached",
+                startedAt: now,
+                completedAt: now,
+                updatedAt: now,
+                failure: {
+                  class: "usage_limit",
+                  message: "You have hit your ChatGPT usage limit (pro plan).",
+                  code: "usageLimitExceeded",
+                  retryable: null,
+                  resetAt: null,
+                },
+              },
+            },
+          ],
+        });
+      const shellOf = () =>
+        orchestrator
+          .getShellSnapshot()
+          .pipe(Effect.map((snapshot) => snapshot.threads.find((t) => t.id === threadId)!));
+      const [source] = (yield* orchestrator.getThreadProjection(threadId)).runs as [
+        OrchestrationV2Run,
+      ];
+      yield* failOnLimit(source, "first");
+      const nowMs = DateTime.toEpochMillis(now);
+      const fallback = { instanceId: alternateInstanceId, model: "gpt-5.5" };
+      yield* orchestrator.dispatch(limitFallbackCommand(yield* shellOf(), fallback, nowMs)!);
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      const continuation = after.runs[1]!;
+      assert.deepEqual(after.thread.modelSelection, fallback);
+      assert.deepEqual(continuation.modelSelection, fallback);
+      assert.isNotNull(continuation.contextHandoffId);
+      const handoff = after.contextHandoffs.find((h) => h.id === continuation.contextHandoffId);
+      assert.isDefined(handoff);
+      assert.equal(handoff!.targetRunId, continuation.id);
+      assert.equal(handoff!.strategy, "full_thread_summary");
+      assert.deepEqual(handoff!.coveredRunOrdinals, { from: source.ordinal, to: source.ordinal });
+      assert.deepEqual(handoff!.fromProviderThreadIds, [source.providerThreadId!]);
+      assert.notEqual(continuation.providerThreadId, source.providerThreadId);
+      // The fallback hits its own limit: the sweep must not switch this thread again.
+      yield* failOnLimit(continuation, "second");
+      const limitedAgain = yield* shellOf();
+      assert.equal(limitedAgain.status, "failed");
+      assert.equal(limitedAgain.lastErrorClass, "usage_limit");
+      assert.equal(limitedAgain.providerInstanceId, alternateInstanceId);
+      assert.isNull(limitFallbackCommand(limitedAgain, fallback, nowMs));
+      const candidates = yield* projections.getLimitRecoveryCandidates({
+        now,
+        autoResume: true,
+        snooze: true,
+        fallback: {
+          instanceId: alternateInstanceId,
+          failedSince: DateTime.subtract(now, { minutes: 10 }),
+        },
+      });
+      assert.isUndefined(candidates.find((candidate) => candidate.id === threadId));
+    }),
+  );
+
   it.effect.each([
     "resume",
     "queued-resume",

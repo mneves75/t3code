@@ -36,7 +36,7 @@ export function limitFallbackCommand(
     thread.archivedAt !== null ||
     thread.settledOverride === "settled" ||
     thread.pendingRuntimeRequest !== null ||
-    // The user already chose to wait for the reset on this run.
+    // This run already waits for its reset, by the user's choice or after a rejected fallback.
     thread.limitRecovery?.runId === thread.latestRunId ||
     (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
     nowMs - DateTime.toEpochMillis(thread.latestRunCompletedAt ?? thread.updatedAt) >
