@@ -177,16 +177,43 @@ describe("DesktopPreReadyPlatform", () => {
   });
 
   it.effect.each([
-    { platform: "linux" as const, version: "0.1.0", isPackaged: true },
-    { platform: "darwin" as const, version: "0.1.1-preview.20261017.3", isPackaged: false },
-    { platform: "win32" as const, version: "0.1.0", isPackaged: true },
+    {
+      platform: "linux" as const,
+      version: "0.1.0",
+      isPackaged: true,
+      packagedName: "T3 Code (Beta)",
+    },
+    {
+      platform: "darwin" as const,
+      version: "0.1.3-pr.16076.15",
+      isPackaged: true,
+      packagedName: "T3 Code (Beta)",
+    },
+    {
+      platform: "darwin" as const,
+      version: "0.1.7-nightly.20261104.4151",
+      isPackaged: true,
+      packagedName: "T3 Code (Nightly)",
+    },
+    {
+      platform: "darwin" as const,
+      version: "0.1.1-preview.20261017.3",
+      isPackaged: false,
+      packagedName: "T3 Code (Dev)",
+    },
+    {
+      platform: "win32" as const,
+      version: "0.1.0",
+      isPackaged: true,
+      packagedName: "T3 Code (Beta)",
+    },
   ])(
-    "preserves the $platform encryption identity before startup yields",
-    ({ platform, version, isPackaged }) => {
+    "preserves the packaged $platform encryption identity before startup yields",
+    ({ platform, version, isPackaged, packagedName }) => {
       appState.version = version;
       appState.isPackaged = isPackaged;
       getSwitchValueMock.mockReturnValue("");
-      let appName = "T3 Code (Beta)";
+      let appName = packagedName;
       setNameMock.mockImplementation((name: string) => {
         appName = name;
       });
@@ -198,10 +225,7 @@ describe("DesktopPreReadyPlatform", () => {
               Layer.provide(Layer.succeed(HostProcess.Platform, platform)),
             ),
           );
-          assert.equal(
-            yield* Effect.promise(() => nameBeforeYield),
-            platform === "win32" ? "T3 Code (Beta)" : "T3 Code (Alpha)",
-          );
+          assert.equal(yield* Effect.promise(() => nameBeforeYield), packagedName);
         }),
       );
     },
