@@ -45,10 +45,7 @@ function isWhitespace(char: string): boolean {
   return char === " " || char === "\n" || char === "\t" || char === "\r";
 }
 
-/**
- * A slash word with a second slash, such as `/tmp/build.sh`, is a path, not a
- * command. The whole word counts, so a caret before the second slash still sees it.
- */
+/** A second slash makes the whole word a path, even when the caret precedes that slash. */
 export function isPathWord(
   text: string,
   wordStart: number,
@@ -103,7 +100,7 @@ export function detectComposerTrigger(
       };
     }
 
-    const modelMatch = /^\/model(?:\s+(.*))?$/.exec(linePrefix);
+    const modelMatch = /^\/model(?:\s+(.*))?$/i.exec(linePrefix);
     if (modelMatch) {
       return {
         kind: "slash-model",
@@ -171,4 +168,9 @@ export function replaceTextRange(
   const safeEnd = Math.max(safeStart, Math.min(text.length, rangeEnd));
   const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
   return { text: nextText, cursor: safeStart + replacement.length };
+}
+
+/** `/clear` as the whole message arms a fresh session instead of sending. */
+export function isClearComposerCommand(text: string): boolean {
+  return /^\/clear\s*$/i.test(text.trim());
 }
