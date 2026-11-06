@@ -517,10 +517,13 @@ export function NewTaskFlowProvider(
     shownInstanceId === null || selectedProjectDraftKey === null
       ? null
       : { draftKey: selectedProjectDraftKey, instanceId: shownInstanceId };
-  if (
-    shownAccount?.draftKey !== nextShownAccount?.draftKey ||
-    shownAccount?.instanceId !== nextShownAccount?.instanceId
-  ) {
+  // No optional chaining here: React Compiler bails out on `?.` inside a logical test.
+  const shownAccountChanged =
+    shownAccount === null || nextShownAccount === null
+      ? shownAccount !== nextShownAccount
+      : shownAccount.draftKey !== nextShownAccount.draftKey ||
+        shownAccount.instanceId !== nextShownAccount.instanceId;
+  if (shownAccountChanged) {
     setShownAccount(nextShownAccount);
   }
   const selectedModelKey = selectedModel

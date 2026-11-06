@@ -91,17 +91,9 @@ export interface AccountRotationInput {
 }
 
 /**
- * The account a new thread should start on when the user left that choice to
- * T3: among the marked accounts of the selected provider that offer the
- * selected model, the one with the most usage left, then the one whose last
- * thread was started longest ago. Usage ranks them only when every one of
- * them reports it; otherwise they take turns by thread start alone.
- *
- * Only for a thread that has not started. Moving a started thread to another
- * account is a provider switch, which is the user's call.
- *
- * Resets are judged against the environment's latest provider report, not the
- * client's clock, which need not agree with the server's.
+ * Picks the marked account with the most usage left (ranked only when all report usage),
+ * then the least recently started. Only for unstarted threads: moving a started one is a
+ * provider switch. Resets use the environment's latest provider report, not the client clock.
  */
 export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
   const { selection, project } = input;
