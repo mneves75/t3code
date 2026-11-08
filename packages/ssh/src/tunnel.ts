@@ -443,6 +443,21 @@ T3_RUNTIME_DIR="$HOME/.t3/runtime/versions/$T3_ARCHIVE_VERSION"
 t3_runtime_ready() {
   [ -x "$T3_RUNTIME_DIR/t3" ] && [ "$(cat "$T3_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$T3_ARCHIVE_VERSION" ]
 }
+# A PR, fork or local build publishes no CLI archive, so its pinned version can
+# never download. Reuse the newest runtime this host already installed instead.
+t3_installed_runtime() {
+  T3_FOUND=""
+  for T3_CANDIDATE in "$HOME"/.t3/runtime/versions/*; do
+    [ -d "$T3_CANDIDATE" ] || continue
+    [ -x "$T3_CANDIDATE/t3" ] || continue
+    T3_CANDIDATE_VERSION="$(basename "$T3_CANDIDATE")"
+    [ "$(cat "$T3_CANDIDATE/.install-complete" 2>/dev/null || true)" = "$T3_CANDIDATE_VERSION" ] || continue
+    "$T3_CANDIDATE/t3" --version >/dev/null 2>&1 || continue
+    T3_FOUND="$T3_CANDIDATE"
+  done
+  [ -n "$T3_FOUND" ] || return 1
+  printf '%s\\n' "$T3_FOUND"
+}
 if ! t3_runtime_ready; then
   mkdir -p "$HOME/.t3/runtime/versions"
   T3_LOCK="$HOME/.t3/runtime/versions/.$T3_ARCHIVE_VERSION.install.lock"
@@ -491,30 +506,44 @@ if ! t3_runtime_ready; then
   t3_fetch() {
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
-    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; exit 1
+    else printf 'Remote host needs curl or wget to download %s.\\n' "$T3_ARCHIVE" >&2; return 1
     fi
   }
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@
-  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@
-  T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
-  if command -v sha256sum >/dev/null 2>&1; then
-    T3_ACTUAL="$(sha256sum "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+  T3_ARCHIVE_FETCHED=1
+  t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/SHA256SUMS" "$T3_STAGING/SHA256SUMS" @@T3_ARCHIVE_CHECKSUMS_SECONDS@@ || T3_ARCHIVE_FETCHED=0
+  if [ "$T3_ARCHIVE_FETCHED" -eq 1 ]; then
+    t3_fetch "$T3_RELEASE_BASE_URL/v$T3_ARCHIVE_VERSION/$T3_ARCHIVE" "$T3_STAGING/$T3_ARCHIVE" @@T3_ARCHIVE_DOWNLOAD_SECONDS@@ || T3_ARCHIVE_FETCHED=0
+  fi
+  if [ "$T3_ARCHIVE_FETCHED" -eq 0 ]; then
+    T3_INSTALLED="$(t3_installed_runtime || true)"
+    if [ -z "$T3_INSTALLED" ]; then
+      printf 'No t3 %s release archive is published, and this host has no installed runtime to reuse.\\n' "$T3_ARCHIVE_VERSION" >&2
+      exit 1
+    fi
+    printf 'No t3 %s release archive is published; reusing the runtime installed at %s.\\n' "$T3_ARCHIVE_VERSION" "$T3_INSTALLED" >&2
+    rm -rf "$T3_STAGING"
+    T3_RUNTIME_DIR="$T3_INSTALLED"
   else
-    T3_ACTUAL="$(shasum -a 256 "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    T3_EXPECTED="$(grep " \\*\\{0,1\\}$T3_ARCHIVE$" "$T3_STAGING/SHA256SUMS" | cut -d' ' -f1)"
+    if command -v sha256sum >/dev/null 2>&1; then
+      T3_ACTUAL="$(sha256sum "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    else
+      T3_ACTUAL="$(shasum -a 256 "$T3_STAGING/$T3_ARCHIVE" | cut -d' ' -f1)"
+    fi
+    if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
+      printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
+    fi
+    tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1
+    rm -f "$T3_STAGING/$T3_ARCHIVE" "$T3_STAGING/SHA256SUMS"
+    # Prove the binary runs here (libc, arch) before marking it ready, or every
+    # later launch would exec a broken install instead of retrying.
+    if ! "$T3_STAGING/t3" --version >/dev/null 2>&1; then
+      printf 'The t3 %s executable does not run on this host.\\n' "$T3_ARCHIVE_VERSION" >&2; exit 1
+    fi
+    printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
+    rm -rf "$T3_RUNTIME_DIR"
+    mv "$T3_STAGING" "$T3_RUNTIME_DIR"
   fi
-  if [ -z "$T3_EXPECTED" ] || [ "$T3_ACTUAL" != "$T3_EXPECTED" ]; then
-    printf 'Checksum mismatch for %s.\\n' "$T3_ARCHIVE" >&2; exit 1
-  fi
-  tar -xzf "$T3_STAGING/$T3_ARCHIVE" -C "$T3_STAGING" --strip-components=1
-  rm -f "$T3_STAGING/$T3_ARCHIVE" "$T3_STAGING/SHA256SUMS"
-  # Prove the binary runs here (libc, arch) before marking it ready, or every
-  # later launch would exec a broken install instead of retrying.
-  if ! "$T3_STAGING/t3" --version >/dev/null 2>&1; then
-    printf 'The t3 %s executable does not run on this host.\\n' "$T3_ARCHIVE_VERSION" >&2; exit 1
-  fi
-  printf '%s\\n' "$T3_ARCHIVE_VERSION" > "$T3_STAGING/.install-complete"
-  rm -rf "$T3_RUNTIME_DIR"
-  mv "$T3_STAGING" "$T3_RUNTIME_DIR"
 fi
 if [ -n "\${T3_LOCK:-}" ]; then
   rm -rf "$T3_LOCK"

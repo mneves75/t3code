@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - the archive fallback only exists in the executed runner script.
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -15,6 +16,10 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import * as SshAuth from "./auth.ts";
 import { SshCommandError, SshPasswordPromptError } from "./errors.ts";
@@ -105,6 +110,35 @@ describe("ssh tunnel scripts", () => {
     assert.include(
       SshTunnel.buildRemoteT3RunnerScript(ARCHIVE),
       "T3_ARCHIVE_VERSION='1.2.3-preview.20260911.4'",
+    );
+  });
+
+  it.live("runs an already-installed runtime when the pinned archive is not published", () => {
+    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ssh-runner-"));
+    const runtimeDir = NodePath.join(home, ".t3", "runtime", "versions", "9.9.0");
+    const binDir = NodePath.join(home, "bin");
+    NodeFS.mkdirSync(runtimeDir, { recursive: true });
+    NodeFS.mkdirSync(binDir, { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(runtimeDir, "t3"),
+      "#!/bin/sh\nprintf 'installed runtime %s\\n' \"${1:-}\"\n",
+      { mode: 0o755 },
+    );
+    NodeFS.writeFileSync(NodePath.join(runtimeDir, ".install-complete"), "9.9.0\n");
+    // A pinned version with no published archive is what curl reports as a 404.
+    NodeFS.writeFileSync(NodePath.join(binDir, "curl"), "#!/bin/sh\nexit 22\n", { mode: 0o755 });
+
+    return Effect.sync(() => {
+      const result = NodeChildProcess.spawnSync("/bin/sh", ["-s", "--"], {
+        input: SshTunnel.buildRemoteT3RunnerScript({ archiveVersion: "9.9.9-pr.1" }),
+        encoding: "utf8",
+        env: { HOME: home, PATH: `${binDir}:/usr/bin:/bin`, TMPDIR: home },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.include(result.stdout, "installed runtime");
+      assert.include(result.stderr, "reusing the runtime installed at");
+    }).pipe(
+      Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
     );
   });
 
