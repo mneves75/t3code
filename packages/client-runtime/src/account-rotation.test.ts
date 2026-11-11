@@ -207,6 +207,21 @@ describe("rotating a new thread across accounts of one provider", () => {
   it("passes over an exhausted account while another one has room", () => {
     expect(choose([account(work, [window(100)]), account(personal, [])])).toBe(personal);
     expect(choose([account(work, [window(100)]), account(personal, [window(100)])])).toBe(work);
+    // Room outranks turn order, in an unranked pool and in a ranked one.
+    const late = [startedAt(personal, "2026-09-03T10:00:00.000Z")];
+    expect(choose([account(work, [window(100)]), account(personal, [])], late)).toBe(personal);
+    const exhaustedTwice = [account(work, [window(100)]), account(personal, [window(100)])];
+    expect(choose([...exhaustedTwice, account(spare, [])])).toBe(spare);
+    // A window that reset before the latest report is room again.
+    const reset = account(work, [window(100, "2026-09-03T10:30:00.000Z")]);
+    expect(choose([reset, account(personal, [window(50)])])).toBe(work);
+    // With every account exhausted, turn order decides as before.
+    const all = [...exhaustedTwice, account(spare, [window(100)])];
+    expect(choose(all, [startedAt(work, "2026-09-03T09:00:00.000Z")])).toBe(personal);
+    // An unmarked selection stays even when exhausted.
+    expect(
+      choose([account(work, [window(100)]), account(personal, [])], [], work, [personal]),
+    ).toBe(work);
   });
 
   it("judges the usage-limit fallback from the rotated default", () => {
@@ -228,6 +243,22 @@ describe("rotating a new thread across accounts of one provider", () => {
       input.selection,
     );
     expect(rotatedDefaultSelection({ ...input, selection: null })).toBeNull();
+    // Marks belong to one environment.
+    const elsewhere = { ...input.rotation, accountRotationInstances: { vps: [work, personal] } };
+    expect(rotatedDefaultSelection({ ...input, rotation: elsewhere })).toEqual(input.selection);
+    // An account the project turned off is not a place to rotate to.
+    const projectId = ProjectId.make("project-a");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [personal]: { enabled: false } } },
+      },
+    };
+    expect(rotatedDefaultSelection({ ...input, settings, projectId })).toEqual(input.selection);
+    expect(rotatedDefaultSelection({ ...input, settings })).toEqual({
+      instanceId: personal,
+      model,
+    });
   });
 
   it("gives a subagent thread no turn of its own", () => {
