@@ -148,7 +148,7 @@ export function AutoSettleSettingsRows(props: {
             icon="person.crop.circle"
             label="Rotate accounts for new threads"
             value={uniformMobileSetting(displayTargets, "rotateProviderAccounts")}
-            disabled={disabled}
+            disabled={disabledFor("rotateProviderAccounts")}
             onValueChange={(value) => writeToAll({ rotateProviderAccounts: value })}
           />
         </SettingsSection>
