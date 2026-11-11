@@ -156,6 +156,24 @@ describe("rotating a new thread across accounts of one provider", () => {
       checkedAt: "invalid",
     });
     expect(choose([reset, fresh, unparsable])).toBe(personal);
+    const report = (at: string) => ({
+      checkedAt,
+      usageLimits: { checkedAt: at, windows: [window(20)] },
+    });
+    const isolated = account(personal, [window(100, "2026-09-03T11:00:00.000Z")], {
+      checkedAt,
+      usageLimits: { checkedAt, windows: [window(100, "2026-09-03T11:00:00.000Z")] },
+    });
+    // A report at the exact reset time already sees the window empty.
+    expect(choose([isolated, account(work, [], report("2026-09-03T11:00:00.000Z"))])).toBe(
+      personal,
+    );
+    // Another driver's report outside the pool still dates the environment.
+    const codex = account(spare, [], {
+      ...report("2026-09-03T12:00:00.000Z"),
+      driver: ProviderDriverKind.make("codex"),
+    });
+    expect(choose([isolated, account(work, [], report(checkedAt)), codex])).toBe(personal);
   });
 
   it("takes turns when accounts report the same usage or none", () => {
