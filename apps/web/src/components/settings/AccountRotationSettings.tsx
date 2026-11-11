@@ -65,20 +65,22 @@ export function AccountRotationSettings({
           />
         }
       />
-      {accounts.map((account) => (
-        <SettingsRow
-          key={account.instanceId}
-          title={account.displayName}
-          control={
-            <Switch
-              aria-label={`Include ${account.displayName} in account rotation`}
-              checked={marked.includes(account.instanceId)}
-              disabled={!settingsHydrated || !settings.accountRotationEnabled}
-              onCheckedChange={(checked) => setMarked(account.instanceId, checked)}
+      {settings.accountRotationEnabled
+        ? accounts.map((account) => (
+            <SettingsRow
+              key={account.instanceId}
+              title={account.displayName}
+              control={
+                <Switch
+                  aria-label={`Include ${account.displayName} in account rotation`}
+                  checked={marked.includes(account.instanceId)}
+                  disabled={!settingsHydrated}
+                  onCheckedChange={(checked) => setMarked(account.instanceId, checked)}
+                />
+              }
             />
-          }
-        />
-      ))}
+          ))
+        : null}
     </SettingsSection>
   );
 }
