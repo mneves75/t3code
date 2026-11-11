@@ -221,25 +221,26 @@ export function DraftHeroHeadline({
       const defaultSelection = resolvedProjectSettings
         ? resolvedProjectSettings.settings.defaultModelSelection
         : project.defaultModelSelection;
+      const rotatedDefaultModelSelection = rotatedDefaultSelection({
+        selection:
+          defaultSelection ??
+          (useComposerDraftStore.getState().stickyActiveProvider !== null || !environmentSettings
+            ? null
+            : resolveProjectDefaultProviderModelSelection(
+                providersByEnvironment.get(project.environmentId) ?? [],
+                environmentSettings,
+                project.id,
+              )),
+        rotation: getClientSettings(),
+        // Without environment settings the default is the project's own.
+        projectDefaultSource: resolvedProjectSettings?.sources.defaultModelSelection ?? "project",
+        environmentId: project.environmentId,
+        providers: providersByEnvironment.get(project.environmentId) ?? [],
+        ...(environmentSettings ? { settings: environmentSettings } : {}),
+        projectId: project.id,
+      });
       const fallbackResolution = resolveNewThreadModelSelection({
-        defaultSelection: rotatedDefaultSelection({
-          selection:
-            defaultSelection ??
-            (useComposerDraftStore.getState().stickyActiveProvider !== null || !environmentSettings
-              ? null
-              : resolveProjectDefaultProviderModelSelection(
-                  providersByEnvironment.get(project.environmentId) ?? [],
-                  environmentSettings,
-                  project.id,
-                )),
-          rotation: getClientSettings(),
-          // Without environment settings the default is the project's own.
-          projectDefaultSource: resolvedProjectSettings?.sources.defaultModelSelection ?? "project",
-          environmentId: project.environmentId,
-          providers: providersByEnvironment.get(project.environmentId) ?? [],
-          ...(environmentSettings ? { settings: environmentSettings } : {}),
-          projectId: project.id,
-        }),
+        defaultSelection: rotatedDefaultModelSelection,
         fallbackSelection: environmentSettings?.fallbackModelSelection ?? null,
         providers: providersByEnvironment.get(project.environmentId) ?? [],
         ...(environmentSettings ? { settings: environmentSettings } : {}),
@@ -248,7 +249,7 @@ export function DraftHeroHeadline({
       });
       const defaultModelSelection = fallbackResolution.fallback
         ? fallbackResolution.selection
-        : defaultSelection;
+        : defaultSelection && rotatedDefaultModelSelection;
       if (defaultModelSelection) {
         setModelSelection(draftId, defaultModelSelection, {
           replaceOptions: true,

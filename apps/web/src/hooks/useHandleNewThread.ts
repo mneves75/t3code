@@ -163,24 +163,25 @@ export function createNewThreadHandler(router: AnyRouter) {
       project,
     );
     const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
+    const rotatedDefaultModelSelection = rotatedDefaultSelection({
+      selection:
+        configuredDefaultModelSelection ??
+        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+          ? null
+          : resolveProjectDefaultProviderModelSelection(
+              environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+              targetServerSettings,
+              projectRef.projectId,
+            )),
+      rotation: getClientSettings(),
+      projectDefaultSource: projectSettings.sources.defaultModelSelection,
+      environmentId: projectRef.environmentId,
+      providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+      settings: targetServerSettings,
+      projectId: projectRef.projectId,
+    });
     const fallbackResolution = resolveNewThreadModelSelection({
-      defaultSelection: rotatedDefaultSelection({
-        selection:
-          configuredDefaultModelSelection ??
-          (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
-            ? null
-            : resolveProjectDefaultProviderModelSelection(
-                environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
-                targetServerSettings,
-                projectRef.projectId,
-              )),
-        rotation: getClientSettings(),
-        projectDefaultSource: projectSettings.sources.defaultModelSelection,
-        environmentId: projectRef.environmentId,
-        providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
-        settings: targetServerSettings,
-        projectId: projectRef.projectId,
-      }),
+      defaultSelection: rotatedDefaultModelSelection,
       fallbackSelection: targetServerSettings.fallbackModelSelection ?? null,
       providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
       settings: targetServerSettings,
@@ -189,7 +190,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     });
     const projectDefaultModelSelection = fallbackResolution.fallback
       ? fallbackResolution.selection
-      : configuredDefaultModelSelection;
+      : configuredDefaultModelSelection && rotatedDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({

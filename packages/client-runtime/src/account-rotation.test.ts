@@ -388,10 +388,11 @@ describe("the rotation choice is stable for any small pool", () => {
       for (const started of startedLevels)
         for (const canStart of [true, false])
           (specs as Spec[]).push({ marked, usage, started, canStart });
-  // Two accounts take every spec; the third is a startable peer in each ranking-relevant state.
-  const thirdSpecs = specs.filter(
-    (spec) => spec.canStart && spec.usage !== "idle" && spec.started !== "early",
-  );
+  // Every two-account pool, then each with a marked third: silent and fresh, or half used and late.
+  const thirdSpecs: ReadonlyArray<Spec> = [
+    { marked: true, usage: "none", started: "never", canStart: true },
+    { marked: true, usage: "half", started: "late", canStart: true },
+  ];
 
   const ids = [work, personal, spare];
   const startTime = { early: "2026-09-03T09:00:00.000Z", late: "2026-09-03T10:00:00.000Z" };
@@ -444,7 +445,7 @@ describe("the rotation choice is stable for any small pool", () => {
     const threads = pool.flatMap((spec, index) =>
       spec.started === "never" ? [] : [startedAt(ids[index]!, startTime[spec.started])],
     );
-    const marked = ids.filter((_, index) => pool[index]!.marked);
+    const marked = pool.flatMap((spec, index) => (spec.marked ? [ids[index]!] : []));
     const pick = (from: ProviderInstanceId) =>
       chooseRotatedProviderInstance({
         selection: { instanceId: from, model },
@@ -460,9 +461,8 @@ describe("the rotation choice is stable for any small pool", () => {
     let cases = 0;
     for (const a of specs)
       for (const b of specs)
-        for (const c of thirdSpecs) {
-          const pool = [a, b, c];
-          for (let selectedIndex = 0; selectedIndex < 3; selectedIndex++) {
+        for (const pool of [[a, b], ...thirdSpecs.map((c) => [a, b, c])]) {
+          for (let selectedIndex = 0; selectedIndex < pool.length; selectedIndex++) {
             const { first, pick } = run(pool, selectedIndex);
             const context = JSON.stringify({ pool, selectedIndex, first });
             expect(expected(selectedIndex, pool).has(first), `not a best account ${context}`).toBe(
@@ -472,6 +472,6 @@ describe("the rotation choice is stable for any small pool", () => {
             cases++;
           }
         }
-    expect(cases).toBe(specs.length ** 2 * thirdSpecs.length * 3);
+    expect(cases).toBe(specs.length ** 2 * (2 + thirdSpecs.length * 3));
   });
 });

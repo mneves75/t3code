@@ -138,9 +138,9 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
 }
 
 /**
- * The default a new thread's usage-limit fallback is judged from: the rotated account
- * when rotation applies. Thread history is left out because the caller only needs to
- * know whether an account has room.
+ * The default a new draft starts from, and its usage-limit fallback is judged from, when
+ * rotation applies. Thread history is left out; the composer refines the turn order while
+ * the draft is empty.
  */
 export function rotatedDefaultSelection(input: {
   readonly selection: ModelSelection | null;

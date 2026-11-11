@@ -773,38 +773,43 @@ export default function ChatView(props: ChatViewProps) {
   const draftDefaultModelSelection = draftProjectSettings
     ? draftProjectSettings.settings.defaultModelSelection
     : null;
-  const draftModelResolution =
+  const draftRotatedDefaultModelSelection =
     draftThread && draftProjectSettings
-      ? resolveNewThreadModelSelection({
-          defaultSelection: rotatedDefaultSelection({
-            selection:
-              draftDefaultModelSelection ??
-              resolveProjectDefaultProviderModelSelection(
-                providersByEnvironment.get(draftThread.environmentId) ?? [],
-                settings,
-                draftThread.projectId,
-              ),
-            rotation: settings,
-            projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
-            environmentId: draftThread.environmentId,
-            providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
-            settings,
-            projectId: draftThread.projectId,
-          }),
-          fallbackSelection: settings.fallbackModelSelection,
+      ? rotatedDefaultSelection({
+          selection:
+            draftDefaultModelSelection ??
+            resolveProjectDefaultProviderModelSelection(
+              providersByEnvironment.get(draftThread.environmentId) ?? [],
+              settings,
+              draftThread.projectId,
+            ),
+          rotation: settings,
+          projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
+          environmentId: draftThread.environmentId,
           providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
           settings,
           projectId: draftThread.projectId,
-          now: Date.parse(`${nowMinute}:00Z`),
         })
       : null;
+  const draftModelResolution = draftThread
+    ? resolveNewThreadModelSelection({
+        defaultSelection: draftRotatedDefaultModelSelection,
+        fallbackSelection: settings.fallbackModelSelection,
+        providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
+        settings,
+        projectId: draftThread.projectId,
+        now: Date.parse(`${nowMinute}:00Z`),
+      })
+    : null;
   const draftFallback = draftModelResolution?.fallback ? draftModelResolution : null;
+  const draftStartModelSelection = draftFallback
+    ? draftFallback.selection
+    : draftDefaultModelSelection && draftRotatedDefaultModelSelection;
   const localDraftThread = draftThread
     ? buildLocalDraftThread(
         threadId,
         draftThread,
-        (draftFallback ? draftFallback.selection : draftDefaultModelSelection) ??
-          NO_PROVIDER_MODEL_SELECTION,
+        draftStartModelSelection ?? NO_PROVIDER_MODEL_SELECTION,
       )
     : undefined;
   const isServerThread = serverThread !== null;
@@ -1113,8 +1118,8 @@ export default function ChatView(props: ChatViewProps) {
   const { projectCloneBannerItem, projectCloneSendBlockReason } =
     useProjectCloneBanner(activeProjectRef);
   const activeProjectDefaultModelSelection =
-    !isServerThread && draftFallback
-      ? draftFallback.selection
+    !isServerThread && draftStartModelSelection
+      ? draftStartModelSelection
       : activeProjectSettings.settings.defaultModelSelection;
   // A sent draft stays local until its thread arrives, and by then it has an account.
   const rotateDraftAccount =
