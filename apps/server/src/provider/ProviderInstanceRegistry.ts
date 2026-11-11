@@ -66,13 +66,8 @@ interface RegistryState {
   readonly changes: PubSub.PubSub<void>;
 }
 
-// `rotate` is left out: only clients read it, to pick a new thread's account,
-// so marking an account must not restart it.
-const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean => {
-  const { rotate: _a, ...builtFromA } = a;
-  const { rotate: _b, ...builtFromB } = b;
-  return Equal.equals(builtFromA, builtFromB);
-};
+const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
+  Equal.equals(a, b);
 
 const secretReferencesIn = (environment: ProviderInstanceEnvironment): Array<SecretReference> =>
   environment.flatMap((variable) => (typeof variable.value === "string" ? [] : [variable.value]));

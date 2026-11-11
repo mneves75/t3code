@@ -7,7 +7,6 @@ import React, { useEffect, useRef, useState } from "react";
 import type {
   EnvironmentId,
   ModelSelection,
-  ProviderInstanceId,
   ProviderOptionSelection,
   RuntimeMode,
   ServerProvider,
@@ -70,10 +69,6 @@ import {
   useRemoteConnectionStatus,
   useSavedRemoteConnections,
 } from "../../state/use-remote-environment-registry";
-import {
-  rotatesAccountsForProject,
-  rotationEligibleInstanceIds,
-} from "@t3tools/client-runtime/account-rotation";
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
 import {
   isAtomCommandInterrupted,
@@ -422,12 +417,6 @@ export function NewTaskFlowProvider(
 
   // Antigravity keeps unavailable selections so sign-out or a catalog change
   // cannot switch the user's model.
-  // Declared before the selections below: a hook between a value and the last
-  // call that reads it makes React Compiler rebuild the model options every render.
-  const [shownAccount, setShownAccount] = useState<{
-    readonly draftKey: string;
-    readonly instanceId: ProviderInstanceId;
-  } | null>(null);
   const draftModelSelection = resolveSelectableModelSelection(
     selectedEnvironmentServerConfig,
     selectedProjectDraft.modelSelection ?? null,
@@ -450,52 +439,16 @@ export function NewTaskFlowProvider(
     selectedProject?.id ?? null,
   );
 
-  // An unsent draft keeps its explicit pick. Fresh drafts resolve the project
-  // default before the last manual app-wide selection and provider default.
-  const rotateAccounts = rotatesAccountsForProject(projectSettings);
-  const rotationEnvironmentId = selectedProject?.environmentId;
-  const rotationProviders = selectedEnvironmentServerConfig?.providers;
-  const rotationSettings = selectedEnvironmentServerConfig?.settings;
-  const rotationInstances = rotationSettings?.providerInstances;
-  const rotationProjectId = selectedProject?.id;
-  // Once the user is writing the task, the account they were shown stays put:
-  // usage reports and thread starts elsewhere keep arriving while they type.
-  const draftHasContent =
-    selectedProjectDraft.text.trim().length > 0 || selectedProjectDraft.attachments.length > 0;
-  const heldInstanceId =
-    draftHasContent && shownAccount?.draftKey === selectedProjectDraftKey
-      ? shownAccount.instanceId
-      : null;
   const selectedDefaultModel = resolveNewTaskModelSelection({
     draftSelection: draftModelSelection,
     projectDefaultSelection: projectDefaultModelSelection,
     stickySelection: stickyModelSelection,
     modelOptions,
-    ...(rotateAccounts && rotationEnvironmentId && rotationProviders && rotationInstances
-      ? {
-          rotation: {
-            environmentId: rotationEnvironmentId,
-            providers: rotationProviders,
-            ...(rotationProjectId && rotationSettings
-              ? {
-                  project: {
-                    settings: rotationSettings,
-                    projectId: rotationProjectId,
-                  },
-                }
-              : {}),
-            eligibleInstanceIds: rotationEligibleInstanceIds(rotationInstances),
-            threads,
-            heldInstanceId,
-          },
-        }
-      : {}),
   });
   const selectedModel = resolveNewThreadModelSelection({
     defaultSelection: selectedDefaultModel,
     explicitSelection:
-      draftModelSelection ??
-      (projectDefaultModelSelection || !stickyModelSelection ? null : selectedDefaultModel),
+      draftModelSelection ?? (projectDefaultModelSelection ? null : stickyModelSelection),
     fallbackSelection: selectedEnvironmentServerConfig?.settings.fallbackModelSelection ?? null,
     providers: selectedEnvironmentServerConfig?.providers ?? [],
     ...(selectedEnvironmentServerConfig
@@ -504,20 +457,6 @@ export function NewTaskFlowProvider(
     projectId: selectedProject?.id ?? null,
     now: modelSelectionNow,
   }).selection;
-  const shownInstanceId = rotateAccounts ? (selectedModel?.instanceId ?? null) : null;
-  const nextShownAccount =
-    shownInstanceId === null || selectedProjectDraftKey === null
-      ? null
-      : { draftKey: selectedProjectDraftKey, instanceId: shownInstanceId };
-  // No optional chaining here: React Compiler bails out on `?.` inside a logical test.
-  const shownAccountChanged =
-    shownAccount === null || nextShownAccount === null
-      ? shownAccount !== nextShownAccount
-      : shownAccount.draftKey !== nextShownAccount.draftKey ||
-        shownAccount.instanceId !== nextShownAccount.instanceId;
-  if (shownAccountChanged) {
-    setShownAccount(nextShownAccount);
-  }
   const selectedModelKey = selectedModel
     ? `${selectedModel.instanceId}:${selectedModel.model}`
     : null;

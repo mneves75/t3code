@@ -39,6 +39,11 @@ import {
 } from "@t3tools/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import {
+  updateClientSettings,
+  useClientSettings,
+  useClientSettingsHydrated,
+} from "../../hooks/useSettings";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { normalizeProviderAccentColor } from "../../providerInstances";
 import { Badge } from "../ui/badge";
@@ -785,6 +790,10 @@ export function ProviderInstanceCard({
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
   const accentColor = normalizeProviderAccentColor(instance.accentColor);
   const managedPolicy = useManagedPolicy(environmentId);
+  const rotationInstances = useClientSettings((settings) => settings.accountRotationInstances);
+  const clientSettingsHydrated = useClientSettingsHydrated();
+  const rotationMarked =
+    environmentId !== undefined && (rotationInstances[environmentId] ?? []).includes(instanceId);
   const instanceLocks = managedInstanceLocks(managedPolicy, instance.driver);
   const managedDriverReason = isManagedDriverAllowed(managedPolicy, instance.driver)
     ? undefined
@@ -844,9 +853,16 @@ export function ProviderInstanceCard({
     onUpdate({ ...instance, enabled: value });
   };
 
-  const updateRotate = (value: boolean) => {
-    const { rotate: _omit, ...rest } = instance;
-    onUpdate(value ? { ...rest, rotate: true } : rest);
+  const updateRotationMarked = (rotationEnvironmentId: EnvironmentId, value: boolean) => {
+    const marked = (rotationInstances[rotationEnvironmentId] ?? []).filter(
+      (id) => id !== instanceId,
+    );
+    updateClientSettings({
+      accountRotationInstances: {
+        ...rotationInstances,
+        [rotationEnvironmentId]: value ? [...marked, instanceId] : marked,
+      },
+    });
   };
 
   const updateAccentColor = (value: string) => {
@@ -1298,18 +1314,20 @@ export function ProviderInstanceCard({
             </div>
           }
         />
-        <SettingsRow
-          title="Account rotation"
-          description="Let Rotate accounts for new threads start threads on this account."
-          control={
-            <Switch
-              checked={instance.rotate === true}
-              disabled={readOnly}
-              onCheckedChange={(checked) => updateRotate(Boolean(checked))}
-              aria-label={`Include ${displayName} in account rotation`}
-            />
-          }
-        />
+        {environmentId !== undefined ? (
+          <SettingsRow
+            title="Account rotation"
+            description="Let Rotate accounts for new threads start threads on this account."
+            control={
+              <Switch
+                checked={rotationMarked}
+                disabled={!clientSettingsHydrated}
+                onCheckedChange={(checked) => updateRotationMarked(environmentId, Boolean(checked))}
+                aria-label={`Include ${displayName} in account rotation`}
+              />
+            }
+          />
+        ) : null}
       </SettingsSection>
 
       {setup || environmentFields.length > 0 ? (

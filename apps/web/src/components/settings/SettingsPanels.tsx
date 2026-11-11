@@ -511,7 +511,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
       ? ["Snooze options"]
       : []),
-    ...(settings.rotateProviderAccounts !== DEFAULT_UNIFIED_SETTINGS.rotateProviderAccounts
+    ...(settings.accountRotationEnabled !== DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled
       ? ["Rotate accounts for new threads"]
       : []),
     ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
@@ -673,7 +673,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
-      rotateProviderAccounts: DEFAULT_UNIFIED_SETTINGS.rotateProviderAccounts,
+      accountRotationEnabled: DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -864,16 +864,25 @@ export function GeneralSettingsPanel() {
           }
         />
         <SettingsRow
-          serverScoped
           {...searchableSetting("rotate-provider-accounts")}
           description="Start each new thread on the account with the most usage left, among the accounts marked for rotation in Providers. Picking an account yourself overrides it for that thread."
-          settingKeys={["rotateProviderAccounts"]}
+          resetAction={
+            settings.accountRotationEnabled !== DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled ? (
+              <SettingResetButton
+                label="account rotation"
+                onClick={() =>
+                  updateSettings({
+                    accountRotationEnabled: DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
           control={
-            <ScopedSwitch
-              settingKeys={["rotateProviderAccounts"]}
-              checked={settings.rotateProviderAccounts}
+            <Switch
+              checked={settings.accountRotationEnabled}
               onCheckedChange={(checked) =>
-                updateSettings({ rotateProviderAccounts: Boolean(checked) })
+                updateSettings({ accountRotationEnabled: Boolean(checked) })
               }
               aria-label="Rotate accounts for new threads"
             />

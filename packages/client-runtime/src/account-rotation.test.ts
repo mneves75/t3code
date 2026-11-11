@@ -8,14 +8,9 @@ import {
   type ServerProvider,
   type ServerProviderUsageWindow,
 } from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  chooseRotatedProviderInstance,
-  rotatesAccountsForProject,
-  rotationEligibleInstanceIds,
-} from "./account-rotation.ts";
+import { chooseRotatedProviderInstance } from "./account-rotation.ts";
 
 const environmentId = EnvironmentId.make("mac");
 const work = ProviderInstanceId.make("claudeAgent");
@@ -106,7 +101,6 @@ describe("rotating a new thread across accounts of one provider", () => {
       project: { settings, projectId },
     };
     expect(chooseRotatedProviderInstance(input)).toBe(work);
-    expect(chooseRotatedProviderInstance({ ...input, heldInstanceId: personal })).toBe(work);
     expect(
       chooseRotatedProviderInstance({
         ...input,
@@ -317,56 +311,6 @@ describe("rotating a new thread across accounts of one provider", () => {
 
   it("keeps the selection when it is not a configured account", () => {
     expect(choose([account(personal, [window(0)])])).toBe(work);
-  });
-});
-
-describe("which projects rotate accounts", () => {
-  const projectId = ProjectId.make("project");
-  const pinned = { instanceId: work, model };
-
-  it("follows the environment setting, including with an environment default model", () => {
-    expect(rotatesAccountsForProject(resolveProjectSettings(DEFAULT_SERVER_SETTINGS, null))).toBe(
-      false,
-    );
-    expect(
-      rotatesAccountsForProject(
-        resolveProjectSettings(
-          {
-            ...DEFAULT_SERVER_SETTINGS,
-            rotateProviderAccounts: true,
-            defaultModelSelection: pinned,
-          },
-          projectId,
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  it("leaves a project with its own default model on that account", () => {
-    expect(
-      rotatesAccountsForProject(
-        resolveProjectSettings(
-          {
-            ...DEFAULT_SERVER_SETTINGS,
-            rotateProviderAccounts: true,
-            projectSettingsOverrides: { [projectId]: { defaultModelSelection: pinned } },
-          },
-          projectId,
-        ),
-      ),
-    ).toBe(false);
-  });
-});
-
-describe("which accounts are marked for rotation", () => {
-  it("takes only the instances the user marked", () => {
-    expect([
-      ...rotationEligibleInstanceIds({
-        [work]: { rotate: true },
-        [personal]: {},
-        [spare]: { rotate: false },
-      }),
-    ]).toEqual([work]);
   });
 });
 

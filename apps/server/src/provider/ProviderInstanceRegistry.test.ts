@@ -209,32 +209,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     Layer.provideMerge(layerBase),
   );
 
-  it.live("keeps an account running when only its rotation mark changes", () =>
-    Effect.gen(function* () {
-      const workId = ProviderInstanceId.make("codex_work");
-      const entry = {
-        driver: ProviderDriverKind.make("codex"),
-        displayName: "Codex (work)",
-        enabled: false,
-        config: makeCodexConfig({ binaryPath: "/opt/codex-work/bin/codex" }),
-      };
-      const { registry, mutator } = yield* makeProviderInstanceRegistry<CodexDriverEnv>({
-        drivers: [CodexDriver],
-        configMap: { [workId]: entry },
-      });
-      const started = yield* registry.getInstance(workId);
-
-      yield* mutator.reconcile({ [workId]: { ...entry, rotate: true } });
-      expect(yield* registry.getInstance(workId)).toBe(started);
-      yield* mutator.reconcile({ [workId]: entry });
-      expect(yield* registry.getInstance(workId)).toBe(started);
-
-      // A change the instance is built from still replaces it.
-      yield* mutator.reconcile({ [workId]: { ...entry, displayName: "Codex (office)" } });
-      expect(yield* registry.getInstance(workId)).not.toBe(started);
-    }).pipe(Effect.provide(layerTest)),
-  );
-
   it.effect.each(["replacement", "removal", "creation failure"] as const)(
     "detaches retired provider scopes after repeated %s",
     (scenario) =>

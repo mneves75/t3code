@@ -101,7 +101,6 @@ export function AutoSettleSettingsRows(props: {
     patch: Partial<AutoSettleSettings> & {
       autoResumeLimitedThreads?: boolean;
       snoozeLimitedThreads?: boolean;
-      rotateProviderAccounts?: boolean;
     },
   ) => props.write(patch);
 
@@ -143,13 +142,6 @@ export function AutoSettleSettingsRows(props: {
             value={uniformMobileSetting(displayTargets, "snoozeLimitedThreads")}
             disabled={disabledFor("snoozeLimitedThreads")}
             onValueChange={(value) => writeToAll({ snoozeLimitedThreads: value })}
-          />
-          <SettingsSwitchRow
-            icon="person.crop.circle"
-            label="Rotate accounts for new threads"
-            value={uniformMobileSetting(displayTargets, "rotateProviderAccounts")}
-            disabled={disabledFor("rotateProviderAccounts")}
-            onValueChange={(value) => writeToAll({ rotateProviderAccounts: value })}
           />
         </SettingsSection>
       ) : null}

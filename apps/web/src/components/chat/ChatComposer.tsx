@@ -44,10 +44,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
-import {
-  chooseRotatedProviderInstance,
-  rotationEligibleInstanceIds,
-} from "@t3tools/client-runtime/account-rotation";
+import { chooseRotatedProviderInstance } from "@t3tools/client-runtime/account-rotation";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
@@ -1094,7 +1091,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     rotateDraftAccount && !composerSendState.hasSendableContent,
   );
   const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
-  const rotationEligibleIds = rotationEligibleInstanceIds(settings.providerInstances);
+  const rotationEligibleIds = new Set(settings.accountRotationInstances[environmentId] ?? []);
   // Rotation seeds the draft like any other default, so the picker shows the
   // account the thread starts on and an explicit pick still replaces it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted composer draft with the account chosen from live provider usage while the draft is empty

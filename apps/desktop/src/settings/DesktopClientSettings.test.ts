@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   ClientSettingsSchema,
   DEFAULT_CLIENT_SETTINGS,
+  ProviderInstanceId,
   type ClientSettings,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -68,6 +69,8 @@ const clientSettings: ClientSettings = {
   sidebarWorkingShelfEnabled: false,
   loadBalancingEnabled: false,
   loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
+  accountRotationEnabled: true,
+  accountRotationInstances: { "environment-1": [ProviderInstanceId.make("codex")] },
   pullRequestMergeMethodOverrides: {},
   timestampFormat: "24-hour",
   wordWrap: true,

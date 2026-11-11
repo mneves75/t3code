@@ -130,8 +130,10 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 With several accounts for one provider, mark the ones to rotate: on web or desktop, open each
 account in **Settings → Providers** and turn on **Account rotation**. Then enable **Rotate
-accounts for new threads** in **Settings → General**, or **Settings → Thread behavior** on
-mobile. Both are off by default and saved on each environment.
+accounts for new threads** in **Settings → General**. Both are off by default and saved in the
+browser or desktop app where you set them, with marked accounts kept separately for each
+environment. They do not sync to your other devices, and the mobile app does not rotate
+accounts.
 
 A new thread then starts on whichever marked account of that provider has the most usage left,
 keeping your model and model options. Accounts that report the same usage take turns starting

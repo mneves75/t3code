@@ -40,7 +40,6 @@ import { useStableCallback } from "../hooks/useStableCallback";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
-import { rotatesAccountsForProject } from "@t3tools/client-runtime/account-rotation";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
@@ -1124,7 +1123,8 @@ export default function ChatView(props: ChatViewProps) {
   const rotateDraftAccount =
     isLocalDraftThread &&
     !draftThread?.promotedTo &&
-    rotatesAccountsForProject(activeProjectSettings);
+    settings.accountRotationEnabled &&
+    activeProjectSettings.sources.defaultModelSelection !== "project";
   const handleNewThreadInActiveProject = () => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };

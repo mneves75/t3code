@@ -4,37 +4,12 @@ import {
   resolveProjectProviderInstanceEnabled,
   type ModelSelection,
   type ProjectId,
-  type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
-import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
-
-/**
- * Whether new threads in this project rotate accounts. A project's own default
- * model names the account it wants, so rotation leaves that project alone.
- */
-export function rotatesAccountsForProject(
-  project: Pick<ResolvedProjectSettings, "settings" | "sources">,
-): boolean {
-  return (
-    project.settings.rotateProviderAccounts && project.sources.defaultModelSelection !== "project"
-  );
-}
-
-/** The accounts the user marked for rotation in an environment's provider settings. */
-export function rotationEligibleInstanceIds(
-  instances: Readonly<Record<ProviderInstanceId, Pick<ProviderInstanceConfig, "rotate">>>,
-): ReadonlySet<ProviderInstanceId> {
-  const marked = new Set<ProviderInstanceId>();
-  for (const [instanceId, instance] of Object.entries(instances)) {
-    if (instance.rotate === true) marked.add(instanceId as ProviderInstanceId);
-  }
-  return marked;
-}
 
 /** Whether the account can start a thread on `model` right now. */
 function canStart(provider: ServerProvider, model: string): boolean {
@@ -76,14 +51,8 @@ export interface AccountRotationInput {
     readonly settings: ServerSettings;
     readonly projectId: ProjectId;
   };
-  /** See `rotationEligibleInstanceIds`. An unmarked account is never rotated onto or away from. */
+  /** The accounts marked for rotation. An unmarked account is never rotated onto or away from. */
   readonly eligibleInstanceIds: ReadonlySet<ProviderInstanceId>;
-  /**
-   * The account already shown for this draft. It stays while it is still one
-   * the draft could rotate onto, so usage reports and thread starts arriving
-   * as the user writes do not move it.
-   */
-  readonly heldInstanceId?: ProviderInstanceId | null;
   /** May span environments; instance ids repeat across machines, so only `environmentId`'s count. */
   readonly threads: ReadonlyArray<
     Pick<EnvironmentThreadShell, "environmentId" | "providerInstanceId" | "createdAt" | "lineage">
@@ -140,8 +109,6 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
         canStart(candidate, selection.model),
     ),
   ];
-  const held = pool.find((candidate) => candidate.instanceId === input.heldInstanceId);
-  if (held !== undefined) return held.instanceId;
   // One silent account would otherwise look emptier than every account that
   // reports, and take each new thread.
   const rankByUsage = pool.every(reportsUsage);
