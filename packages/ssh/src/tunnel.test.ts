@@ -190,10 +190,10 @@ describe("ssh tunnel scripts", () => {
     const versionsDir = NodePath.join(home, ".t3", "runtime", "versions");
     const binDir = NodePath.join(home, "bin");
     NodeFS.mkdirSync(binDir, { recursive: true });
-    // Lexical glob order puts 0.1.9 last, so only install time can pick 0.1.10.
+    // Glob order and install time both favour 0.1.9; only version order picks 0.1.10.
     for (const [version, installedAt] of [
-      ["0.1.10", 2_000_000_000],
-      ["0.1.9", 1_000_000_000],
+      ["0.1.10", 1_000_000_000],
+      ["0.1.9", 2_000_000_000],
     ] as const) {
       const runtimeDir = NodePath.join(versionsDir, version);
       NodeFS.mkdirSync(runtimeDir, { recursive: true });
