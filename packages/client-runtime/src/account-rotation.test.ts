@@ -143,6 +143,21 @@ describe("rotating a new thread across accounts of one provider", () => {
     ).toBe(personal);
   });
 
+  it("stops counting a window that reset before the latest usage report", () => {
+    const checkedAt = "2026-09-03T10:00:00.000Z";
+    const reset = account(personal, [window(100, "2026-09-03T11:00:00.000Z")], { checkedAt });
+    const fresh = account(work, [window(20)], {
+      checkedAt,
+      usageLimits: { checkedAt: "2026-09-03T12:00:00.000Z", windows: [window(20)] },
+    });
+    expect(choose([reset, fresh])).toBe(personal);
+    const unparsable = account(spare, [], {
+      driver: ProviderDriverKind.make("codex"),
+      checkedAt: "invalid",
+    });
+    expect(choose([reset, fresh, unparsable])).toBe(personal);
+  });
+
   it("takes turns when accounts report the same usage or none", () => {
     const providers = [account(work, []), account(personal, []), account(spare, [])];
     expect(choose(providers)).toBe(work);

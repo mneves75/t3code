@@ -145,7 +145,12 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
   // One silent account would otherwise look emptier than every account that
   // reports, and take each new thread.
   const rankByUsage = pool.every(reportsUsage);
-  const asOf = Math.max(...providers.map((provider) => Date.parse(provider.checkedAt)));
+  const asOf = Math.max(
+    ...providers
+      .flatMap((provider) => [provider.checkedAt, provider.usageLimits?.checkedAt ?? ""])
+      .map((checkedAt) => Date.parse(checkedAt))
+      .filter((time) => !Number.isNaN(time)),
+  );
   let chosen = pool[0] ?? selected;
   for (const candidate of pool) {
     const usage = rankByUsage ? usedPercent(candidate, asOf) - usedPercent(chosen, asOf) : 0;
