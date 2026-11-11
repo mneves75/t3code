@@ -312,6 +312,27 @@ describe("ClientSettings notifications", () => {
   });
 });
 
+describe("account rotation settings", () => {
+  it("live in client settings, and old server files that still carry them decode", () => {
+    expect(decodeClientSettings({})).toMatchObject({
+      accountRotationEnabled: false,
+      accountRotationInstances: {},
+    });
+    const marks = { mac: ["claudeAgent", "claudeAgent_personal"] };
+    expect(
+      decodeClientSettingsPatch({ accountRotationEnabled: true, accountRotationInstances: marks }),
+    ).toEqual({ accountRotationEnabled: true, accountRotationInstances: marks });
+    const stored = decodeServerSettings({
+      rotateProviderAccounts: true,
+      providerInstances: { claudeAgent_personal: { driver: "claudeAgent", rotate: true } },
+    });
+    expect(stored).not.toHaveProperty("rotateProviderAccounts");
+    expect(stored.providerInstances[ProviderInstanceId.make("claudeAgent_personal")]).toEqual({
+      driver: "claudeAgent",
+    });
+  });
+});
+
 describe("ClientSettings quit confirmation", () => {
   it.each([
     [true, "hold"],

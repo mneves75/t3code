@@ -456,6 +456,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["usage quota rate limit reset recover continue"],
   },
   {
+    id: "rotate-provider-accounts",
+    title: "Rotate accounts for new threads",
+    to: "/settings/providers",
+    searchTerms: ["usage quota rate limit balance multiple subscriptions provider instances"],
+    providerSettingsOnly: true,
+  },
+  {
     id: "working-shelf",
     title: "Working section",
     to: "/settings/general",

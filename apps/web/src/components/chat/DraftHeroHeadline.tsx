@@ -15,7 +15,7 @@ import { useOrderWhileOpen } from "~/hooks/useOrderWhileOpen";
 import { useProjectPin } from "~/hooks/useProjectGroupUpdate";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { isTriagePrompt } from "~/hooks/useStartTriage";
-import { useClientSettings } from "~/hooks/useSettings";
+import { getClientSettings, useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -54,6 +54,7 @@ import { DraftHeroProjectHeading } from "./DraftHeroProjectHeading";
 import { TriageDraftHero } from "./TriageDraftHero";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveProjectDefaultProviderModelSelection } from "../../providerInstances";
+import { rotatedDefaultSelection } from "@t3tools/client-runtime/account-rotation";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 const ADD_PROJECT_VALUE = "add-project";
@@ -214,12 +215,14 @@ export function DraftHeroHeadline({
         (environment) => environment.environmentId === project.environmentId,
       )?.serverConfig;
       const environmentSettings = environmentConfig?.settings;
-      const defaultSelection = environmentSettings
-        ? resolveProjectSettings(environmentSettings, project.id, project).settings
-            .defaultModelSelection
+      const resolvedProjectSettings = environmentSettings
+        ? resolveProjectSettings(environmentSettings, project.id, project)
+        : null;
+      const defaultSelection = resolvedProjectSettings
+        ? resolvedProjectSettings.settings.defaultModelSelection
         : project.defaultModelSelection;
-      const fallbackResolution = resolveNewThreadModelSelection({
-        defaultSelection:
+      const rotatedDefaultModelSelection = rotatedDefaultSelection({
+        selection:
           defaultSelection ??
           (useComposerDraftStore.getState().stickyActiveProvider !== null || !environmentSettings
             ? null
@@ -228,6 +231,16 @@ export function DraftHeroHeadline({
                 environmentSettings,
                 project.id,
               )),
+        rotation: getClientSettings(),
+        // Without environment settings the default is the project's own.
+        projectDefaultSource: resolvedProjectSettings?.sources.defaultModelSelection ?? "project",
+        environmentId: project.environmentId,
+        providers: providersByEnvironment.get(project.environmentId) ?? [],
+        ...(environmentSettings ? { settings: environmentSettings } : {}),
+        projectId: project.id,
+      });
+      const fallbackResolution = resolveNewThreadModelSelection({
+        defaultSelection: rotatedDefaultModelSelection,
         fallbackSelection: environmentSettings?.fallbackModelSelection ?? null,
         providers: providersByEnvironment.get(project.environmentId) ?? [],
         ...(environmentSettings ? { settings: environmentSettings } : {}),
@@ -236,7 +249,7 @@ export function DraftHeroHeadline({
       });
       const defaultModelSelection = fallbackResolution.fallback
         ? fallbackResolution.selection
-        : defaultSelection;
+        : defaultSelection && rotatedDefaultModelSelection;
       if (defaultModelSelection) {
         setModelSelection(draftId, defaultModelSelection, {
           replaceOptions: true,

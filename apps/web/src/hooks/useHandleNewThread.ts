@@ -49,6 +49,7 @@ import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { useThreadRouteTarget } from "./useThreadRouteTarget";
 import { readUnloadedThreadCount } from "../state/olderSettledShelf";
 import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
+import { rotatedDefaultSelection } from "@t3tools/client-runtime/account-rotation";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 export const LAST_USED_PROJECT_STORAGE_KEY = "t3code:last-used-project:v1";
@@ -162,8 +163,8 @@ export function createNewThreadHandler(router: AnyRouter) {
       project,
     );
     const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
-    const fallbackResolution = resolveNewThreadModelSelection({
-      defaultSelection:
+    const rotatedDefaultModelSelection = rotatedDefaultSelection({
+      selection:
         configuredDefaultModelSelection ??
         (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
           ? null
@@ -172,6 +173,15 @@ export function createNewThreadHandler(router: AnyRouter) {
               targetServerSettings,
               projectRef.projectId,
             )),
+      rotation: getClientSettings(),
+      projectDefaultSource: projectSettings.sources.defaultModelSelection,
+      environmentId: projectRef.environmentId,
+      providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+      settings: targetServerSettings,
+      projectId: projectRef.projectId,
+    });
+    const fallbackResolution = resolveNewThreadModelSelection({
+      defaultSelection: rotatedDefaultModelSelection,
       fallbackSelection: targetServerSettings.fallbackModelSelection ?? null,
       providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
       settings: targetServerSettings,
@@ -180,7 +190,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     });
     const projectDefaultModelSelection = fallbackResolution.fallback
       ? fallbackResolution.selection
-      : configuredDefaultModelSelection;
+      : configuredDefaultModelSelection && rotatedDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({

@@ -126,6 +126,35 @@ returns to the remembered selection.
 
 Leaving reasoning level or service tier unset uses the provider's own configuration.
 
+## Rotate accounts for new threads
+
+With several accounts for one provider, mark the ones to rotate: on web or desktop, open
+**Settings → Providers**; in **Account rotation**, turn on **Rotate accounts for new threads**
+and mark the accounts. Both are off by default and saved in the
+browser or desktop app where you set them, with marked accounts kept separately for each
+environment. They do not sync to your other devices, and the mobile app does not rotate
+accounts.
+
+A new thread then starts on whichever marked account of that provider has the most usage left,
+keeping your model and model options. Accounts that report the same usage take turns starting
+threads. If any of them reports no usage, as an API key does, they all take turns instead,
+because an account that reports nothing is not known to have room. An account that has used up
+a limit is passed over while another marked account has room, even when some of them report no
+usage. When your default account is marked, the **Fallback model** from Settings starts the
+thread only when no marked account has room. The model picker shows the
+account before you send, and it stops changing once you start writing.
+
+Pick an account in the model picker to use it for that thread instead. A project with its
+own configured model keeps that model's account. A marked account must be signed in and offer
+the selected model to take a turn.
+
+An account that is not marked is never chosen for you. Picking one by hand also makes it the
+account new threads start on, like any other model pick, so rotation pauses until you pick a
+marked account again.
+
+Rotation never moves a thread that has started, including one stopped by a usage limit.
+Scheduled tasks and threads started by an agent keep the account they were given.
+
 ## Quote an assistant response
 
 On web and desktop, select text within one assistant response and choose

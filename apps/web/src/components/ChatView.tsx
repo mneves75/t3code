@@ -1,6 +1,7 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { rotatedDefaultSelection } from "@t3tools/client-runtime/account-rotation";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
@@ -762,22 +763,37 @@ export default function ChatView(props: ChatViewProps) {
     }
   }
   const nowMinute = useNowMinute();
-  const draftDefaultModelSelection = draftThread
+  const draftProjectSettings = draftThread
     ? resolveProjectSettings(
         settings,
         fallbackDraftProject?.id ?? null,
         fallbackDraftProject ?? undefined,
-      ).settings.defaultModelSelection
+      )
     : null;
+  const draftDefaultModelSelection = draftProjectSettings
+    ? draftProjectSettings.settings.defaultModelSelection
+    : null;
+  const draftRotatedDefaultModelSelection =
+    draftThread && draftProjectSettings
+      ? rotatedDefaultSelection({
+          selection:
+            draftDefaultModelSelection ??
+            resolveProjectDefaultProviderModelSelection(
+              providersByEnvironment.get(draftThread.environmentId) ?? [],
+              settings,
+              draftThread.projectId,
+            ),
+          rotation: settings,
+          projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
+          environmentId: draftThread.environmentId,
+          providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
+          settings,
+          projectId: draftThread.projectId,
+        })
+      : null;
   const draftModelResolution = draftThread
     ? resolveNewThreadModelSelection({
-        defaultSelection:
-          draftDefaultModelSelection ??
-          resolveProjectDefaultProviderModelSelection(
-            providersByEnvironment.get(draftThread.environmentId) ?? [],
-            settings,
-            draftThread.projectId,
-          ),
+        defaultSelection: draftRotatedDefaultModelSelection,
         fallbackSelection: settings.fallbackModelSelection,
         providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
         settings,
@@ -786,12 +802,14 @@ export default function ChatView(props: ChatViewProps) {
       })
     : null;
   const draftFallback = draftModelResolution?.fallback ? draftModelResolution : null;
+  const draftStartModelSelection = draftFallback
+    ? draftFallback.selection
+    : draftDefaultModelSelection && draftRotatedDefaultModelSelection;
   const localDraftThread = draftThread
     ? buildLocalDraftThread(
         threadId,
         draftThread,
-        (draftFallback ? draftFallback.selection : draftDefaultModelSelection) ??
-          NO_PROVIDER_MODEL_SELECTION,
+        draftStartModelSelection ?? NO_PROVIDER_MODEL_SELECTION,
       )
     : undefined;
   const isServerThread = serverThread !== null;
@@ -1100,9 +1118,15 @@ export default function ChatView(props: ChatViewProps) {
   const { projectCloneBannerItem, projectCloneSendBlockReason } =
     useProjectCloneBanner(activeProjectRef);
   const activeProjectDefaultModelSelection =
-    !isServerThread && draftFallback
-      ? draftFallback.selection
+    !isServerThread && draftStartModelSelection
+      ? draftStartModelSelection
       : activeProjectSettings.settings.defaultModelSelection;
+  // A sent draft stays local until its thread arrives, and by then it has an account.
+  const rotateDraftAccount =
+    isLocalDraftThread &&
+    !draftThread?.promotedTo &&
+    settings.accountRotationEnabled &&
+    activeProjectSettings.sources.defaultModelSelection !== "project";
   const handleNewThreadInActiveProject = () => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };
@@ -3652,6 +3676,7 @@ export default function ChatView(props: ChatViewProps) {
                                 activeProjectDefaultModelSelection={
                                   activeProjectDefaultModelSelection
                                 }
+                                rotateDraftAccount={rotateDraftAccount}
                                 activeThreadModelSelection={activeThread?.modelSelection}
                                 activeProjectId={activeProject?.id ?? null}
                                 projectName={activeProject?.title}

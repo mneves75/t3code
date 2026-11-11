@@ -334,6 +334,11 @@ export const LoadBalancingWeights = Schema.Record(
   Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
 );
 
+export const AccountRotationInstances = Schema.Record(
+  TrimmedNonEmptyString,
+  Schema.Array(ProviderInstanceId),
+);
+
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
@@ -402,6 +407,11 @@ export const ClientSettingsSchema = Schema.Struct({
   effortDisplay: EffortDisplay.pipe(Schema.withDecodingDefault(Effect.succeed("label" as const))),
   loadBalancingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   loadBalancingWeights: LoadBalancingWeights.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  /** Account rotation: new threads rotate only among the accounts marked for each environment. */
+  accountRotationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  accountRotationInstances: AccountRotationInstances.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
   ),
@@ -1988,6 +1998,8 @@ export const ClientSettingsPatch = Schema.Struct({
   effortDisplay: Schema.optionalKey(EffortDisplay),
   loadBalancingEnabled: Schema.optionalKey(Schema.Boolean),
   loadBalancingWeights: Schema.optionalKey(LoadBalancingWeights),
+  accountRotationEnabled: Schema.optionalKey(Schema.Boolean),
+  accountRotationInstances: Schema.optionalKey(AccountRotationInstances),
   appearanceContrast: Schema.optionalKey(AppearanceContrast),
   panelAnimationDurationMs: Schema.optionalKey(PanelAnimationDurationMs),
   browserDefaultViewport: Schema.optionalKey(PreviewViewportSetting),

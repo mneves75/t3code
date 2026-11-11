@@ -44,6 +44,7 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
+import { chooseRotatedProviderInstance } from "@t3tools/client-runtime/account-rotation";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
@@ -184,7 +185,7 @@ import {
 } from "~/lib/composerContextRecords";
 import { rememberCopiedComposerAttachments } from "~/lib/copiedComposerAttachments";
 import { useThreadContextDrop, threadContextDropTargetProps } from "./threadContextDrag";
-import { readThreadShell } from "~/state/entities";
+import { readThreadShell, useThreadShells } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import type {
@@ -416,6 +417,8 @@ export interface ChatComposerProps {
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
   reportedModelSelection?: ModelSelection | null;
+  /** This unsent draft starts on the selected provider's least used account. */
+  rotateDraftAccount: boolean;
   activeProjectId: ProjectId | null;
   projectName?: string | undefined;
 
@@ -535,6 +538,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     reportedModelSelection,
+    rotateDraftAccount,
     activeProjectId,
     projectName,
     compactThreadUnavailable,
@@ -799,6 +803,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (store) => store.syncPersistedAttachments,
   );
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts or releases server attachment uploads as upload capability, limits and draft attachments change
   useEffect(() => {
@@ -1082,6 +1087,51 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     elementContextCount: composerPreviewAnnotations.length + composerReviewComments.length,
   });
   const composerTriggerKind = composerTrigger?.kind ?? null;
+  // Rotation reads every thread's turn order, and stops once the draft has content.
+  const rotationThreadShells = useThreadShells(
+    rotateDraftAccount && !composerSendState.hasSendableContent,
+  );
+  const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
+  const rotationEligibleIds = new Set(settings.accountRotationInstances[environmentId] ?? []);
+  // Rotation seeds the draft like any other default, so the picker shows the
+  // account the thread starts on and an explicit pick still replaces it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted composer draft with the account chosen from live provider usage while the draft is empty
+  useEffect(() => {
+    // A send in flight has already named its account.
+    if (!rotateDraftAccount || isSendBusy || multipleModelSelections !== null) return;
+    if (draftModelSelectionExplicit || composerSendState.hasSendableContent) return;
+    const rotatedInstanceId = chooseRotatedProviderInstance({
+      selection: { instanceId: selectedInstanceId, model: selectedModel },
+      environmentId,
+      providers: providerStatuses,
+      ...(activeProjectId ? { project: { settings, projectId: activeProjectId } } : {}),
+      eligibleInstanceIds: rotationEligibleIds,
+      threads: rotationThreadShells,
+    });
+    if (rotatedInstanceId === selectedInstanceId) return;
+    setComposerDraftModelSelection(
+      composerDraftTarget,
+      createModelSelection(rotatedInstanceId, selectedModel, selectedModelOptionsForDispatch),
+      { replaceOptions: true },
+    );
+  }, [
+    composerDraftTarget,
+    composerSendState.hasSendableContent,
+    draftModelSelectionExplicit,
+    environmentId,
+    rotationThreadShells,
+    isSendBusy,
+    multipleModelSelections,
+    providerStatuses,
+    activeProjectId,
+    settings,
+    rotateDraftAccount,
+    rotationEligibleIds,
+    selectedInstanceId,
+    selectedModel,
+    selectedModelOptionsForDispatch,
+    setComposerDraftModelSelection,
+  ]);
   const compactSlashCommandAvailable =
     composerTrigger?.kind === "slash-command" &&
     prompt.slice(0, composerTrigger.rangeStart).trim() === "" &&
