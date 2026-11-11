@@ -49,6 +49,7 @@ import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { useThreadRouteTarget } from "./useThreadRouteTarget";
 import { readUnloadedThreadCount } from "../state/olderSettledShelf";
 import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
+import { rotatedDefaultSelection } from "@t3tools/client-runtime/account-rotation";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 export const LAST_USED_PROJECT_STORAGE_KEY = "t3code:last-used-project:v1";
@@ -163,15 +164,23 @@ export function createNewThreadHandler(router: AnyRouter) {
     );
     const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
     const fallbackResolution = resolveNewThreadModelSelection({
-      defaultSelection:
-        configuredDefaultModelSelection ??
-        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
-          ? null
-          : resolveProjectDefaultProviderModelSelection(
-              environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
-              targetServerSettings,
-              projectRef.projectId,
-            )),
+      defaultSelection: rotatedDefaultSelection({
+        selection:
+          configuredDefaultModelSelection ??
+          (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+            ? null
+            : resolveProjectDefaultProviderModelSelection(
+                environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+                targetServerSettings,
+                projectRef.projectId,
+              )),
+        rotation: getClientSettings(),
+        projectDefaultSource: projectSettings.sources.defaultModelSelection,
+        environmentId: projectRef.environmentId,
+        providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+        settings: targetServerSettings,
+        projectId: projectRef.projectId,
+      }),
       fallbackSelection: targetServerSettings.fallbackModelSelection ?? null,
       providers: environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
       settings: targetServerSettings,

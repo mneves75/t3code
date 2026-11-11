@@ -1,6 +1,7 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { rotatedDefaultSelection } from "@t3tools/client-runtime/account-rotation";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
@@ -764,29 +765,41 @@ export default function ChatView(props: ChatViewProps) {
     }
   }
   const nowMinute = useNowMinute();
-  const draftDefaultModelSelection = draftThread
+  const draftProjectSettings = draftThread
     ? resolveProjectSettings(
         settings,
         fallbackDraftProject?.id ?? null,
         fallbackDraftProject ?? undefined,
-      ).settings.defaultModelSelection
+      )
     : null;
-  const draftModelResolution = draftThread
-    ? resolveNewThreadModelSelection({
-        defaultSelection:
-          draftDefaultModelSelection ??
-          resolveProjectDefaultProviderModelSelection(
-            providersByEnvironment.get(draftThread.environmentId) ?? [],
+  const draftDefaultModelSelection = draftProjectSettings
+    ? draftProjectSettings.settings.defaultModelSelection
+    : null;
+  const draftModelResolution =
+    draftThread && draftProjectSettings
+      ? resolveNewThreadModelSelection({
+          defaultSelection: rotatedDefaultSelection({
+            selection:
+              draftDefaultModelSelection ??
+              resolveProjectDefaultProviderModelSelection(
+                providersByEnvironment.get(draftThread.environmentId) ?? [],
+                settings,
+                draftThread.projectId,
+              ),
+            rotation: settings,
+            projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
+            environmentId: draftThread.environmentId,
+            providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
             settings,
-            draftThread.projectId,
-          ),
-        fallbackSelection: settings.fallbackModelSelection,
-        providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
-        settings,
-        projectId: draftThread.projectId,
-        now: Date.parse(`${nowMinute}:00Z`),
-      })
-    : null;
+            projectId: draftThread.projectId,
+          }),
+          fallbackSelection: settings.fallbackModelSelection,
+          providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
+          settings,
+          projectId: draftThread.projectId,
+          now: Date.parse(`${nowMinute}:00Z`),
+        })
+      : null;
   const draftFallback = draftModelResolution?.fallback ? draftModelResolution : null;
   const localDraftThread = draftThread
     ? buildLocalDraftThread(

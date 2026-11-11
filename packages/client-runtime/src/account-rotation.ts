@@ -1,4 +1,5 @@
 import {
+  type ClientSettings,
   type EnvironmentId,
   isProviderAvailable,
   resolveProjectProviderInstanceEnabled,
@@ -8,6 +9,8 @@ import {
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
+import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
+import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
 
@@ -61,7 +64,8 @@ export interface AccountRotationInput {
 
 /**
  * Picks the marked account with the most usage left (ranked only when all report usage),
- * then the least recently started. Only for unstarted threads: moving a started one is a
+ * then the least recently started, passing over exhausted accounts while another has room.
+ * Only for unstarted threads: moving a started one is a
  * provider switch. Resets use the environment's latest provider report, not the client clock.
  */
 export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
@@ -99,7 +103,7 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
 
   // The selection goes first, so a full tie keeps it and then the provider
   // list's own order. A selection that cannot start the thread gives way.
-  const pool = [
+  const startable = [
     ...(canStart(selected, selection.model) ? [selected] : []),
     ...providers.filter(
       (candidate) =>
@@ -109,15 +113,19 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
         canStart(candidate, selection.model),
     ),
   ];
-  // One silent account would otherwise look emptier than every account that
-  // reports, and take each new thread.
-  const rankByUsage = pool.every(reportsUsage);
   const asOf = Math.max(
     ...providers
       .flatMap((provider) => [provider.checkedAt, provider.usageLimits?.checkedAt ?? ""])
       .map((checkedAt) => Date.parse(checkedAt))
       .filter((time) => !Number.isNaN(time)),
   );
+  const withRoom = startable.filter(
+    (candidate) => !exhaustedUsageWindow(candidate, asOf, selection.model),
+  );
+  const pool = withRoom.length > 0 ? withRoom : startable;
+  // One silent account would otherwise look emptier than every account that
+  // reports, and take each new thread.
+  const rankByUsage = pool.every(reportsUsage);
   let chosen = pool[0] ?? selected;
   for (const candidate of pool) {
     const usage = rankByUsage ? usedPercent(candidate, asOf) - usedPercent(chosen, asOf) : 0;
@@ -127,4 +135,35 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
     if (usage < 0 || (usage === 0 && idle > 0)) chosen = candidate;
   }
   return chosen.instanceId;
+}
+
+/**
+ * The default a new thread's usage-limit fallback is judged from: the rotated account
+ * when rotation applies. Thread history is left out because the caller only needs to
+ * know whether an account has room.
+ */
+export function rotatedDefaultSelection(input: {
+  readonly selection: ModelSelection | null;
+  readonly rotation: Pick<ClientSettings, "accountRotationEnabled" | "accountRotationInstances">;
+  readonly projectDefaultSource: ResolvedProjectSettings["sources"]["defaultModelSelection"];
+  readonly environmentId: EnvironmentId;
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly settings?: ServerSettings;
+  readonly projectId: ProjectId | null;
+}): ModelSelection | null {
+  const { selection, rotation, environmentId, settings, projectId } = input;
+  if (!selection || !rotation.accountRotationEnabled || input.projectDefaultSource === "project") {
+    return selection;
+  }
+  return {
+    ...selection,
+    instanceId: chooseRotatedProviderInstance({
+      selection,
+      environmentId,
+      providers: input.providers,
+      eligibleInstanceIds: new Set(rotation.accountRotationInstances[environmentId] ?? []),
+      threads: [],
+      ...(settings && projectId ? { project: { settings, projectId } } : {}),
+    }),
+  };
 }

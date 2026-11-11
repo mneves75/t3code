@@ -10,7 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chooseRotatedProviderInstance } from "./account-rotation.ts";
+import { chooseRotatedProviderInstance, rotatedDefaultSelection } from "./account-rotation.ts";
 
 const environmentId = EnvironmentId.make("mac");
 const work = ProviderInstanceId.make("claudeAgent");
@@ -204,6 +204,32 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose(providers, third, work, [work, personal])).toBe(personal);
   });
 
+  it("passes over an exhausted account while another one has room", () => {
+    expect(choose([account(work, [window(100)]), account(personal, [])])).toBe(personal);
+    expect(choose([account(work, [window(100)]), account(personal, [window(100)])])).toBe(work);
+  });
+
+  it("judges the usage-limit fallback from the rotated default", () => {
+    const input = {
+      selection: { instanceId: work, model },
+      rotation: {
+        accountRotationEnabled: true,
+        accountRotationInstances: { [environmentId]: [work, personal] },
+      },
+      projectDefaultSource: "environment" as const,
+      environmentId,
+      providers: [account(work, [window(100)]), account(personal, [window(10)])],
+      projectId: null,
+    };
+    expect(rotatedDefaultSelection(input)).toEqual({ instanceId: personal, model });
+    const off = { ...input.rotation, accountRotationEnabled: false };
+    expect(rotatedDefaultSelection({ ...input, rotation: off })).toBe(input.selection);
+    expect(rotatedDefaultSelection({ ...input, projectDefaultSource: "project" })).toBe(
+      input.selection,
+    );
+    expect(rotatedDefaultSelection({ ...input, selection: null })).toBeNull();
+  });
+
   it("gives a subagent thread no turn of its own", () => {
     const providers = [account(work, []), account(personal, [])];
     const spawned = startedAt(personal, "2026-09-03T10:00:00.000Z");
@@ -331,6 +357,10 @@ describe("the rotation choice is stable for any small pool", () => {
       for (const started of startedLevels)
         for (const canStart of [true, false])
           (specs as Spec[]).push({ marked, usage, started, canStart });
+  // Two accounts take every spec; the third is a startable peer in each ranking-relevant state.
+  const thirdSpecs = specs.filter(
+    (spec) => spec.canStart && spec.usage !== "idle" && spec.started !== "early",
+  );
 
   const ids = [work, personal, spare];
   const startTime = { early: "2026-09-03T09:00:00.000Z", late: "2026-09-03T10:00:00.000Z" };
@@ -399,7 +429,7 @@ describe("the rotation choice is stable for any small pool", () => {
     let cases = 0;
     for (const a of specs)
       for (const b of specs)
-        for (const c of specs) {
+        for (const c of thirdSpecs) {
           const pool = [a, b, c];
           for (let selectedIndex = 0; selectedIndex < 3; selectedIndex++) {
             const { first, pick } = run(pool, selectedIndex);
@@ -411,6 +441,6 @@ describe("the rotation choice is stable for any small pool", () => {
             cases++;
           }
         }
-    expect(cases).toBe(specs.length ** 3 * 3);
+    expect(cases).toBe(specs.length ** 2 * thirdSpecs.length * 3);
   });
 });
