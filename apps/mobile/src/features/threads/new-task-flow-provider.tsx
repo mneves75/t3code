@@ -422,6 +422,12 @@ export function NewTaskFlowProvider(
 
   // Antigravity keeps unavailable selections so sign-out or a catalog change
   // cannot switch the user's model.
+  // Declared before the selections below: a hook between a value and the last
+  // call that reads it makes React Compiler rebuild the model options every render.
+  const [shownAccount, setShownAccount] = useState<{
+    readonly draftKey: string;
+    readonly instanceId: ProviderInstanceId;
+  } | null>(null);
   const draftModelSelection = resolveSelectableModelSelection(
     selectedEnvironmentServerConfig,
     selectedProjectDraft.modelSelection ?? null,
@@ -454,10 +460,6 @@ export function NewTaskFlowProvider(
   const rotationProjectId = selectedProject?.id;
   // Once the user is writing the task, the account they were shown stays put:
   // usage reports and thread starts elsewhere keep arriving while they type.
-  const [shownAccount, setShownAccount] = useState<{
-    readonly draftKey: string;
-    readonly instanceId: ProviderInstanceId;
-  } | null>(null);
   const draftHasContent =
     selectedProjectDraft.text.trim().length > 0 || selectedProjectDraft.attachments.length > 0;
   const heldInstanceId =
