@@ -773,16 +773,18 @@ export default function ChatView(props: ChatViewProps) {
   const draftDefaultModelSelection = draftProjectSettings
     ? draftProjectSettings.settings.defaultModelSelection
     : null;
+  const draftBaseModelSelection = draftThread
+    ? (draftDefaultModelSelection ??
+      resolveProjectDefaultProviderModelSelection(
+        providersByEnvironment.get(draftThread.environmentId) ?? [],
+        settings,
+        draftThread.projectId,
+      ))
+    : null;
   const draftRotatedDefaultModelSelection =
     draftThread && draftProjectSettings
       ? rotatedDefaultSelection({
-          selection:
-            draftDefaultModelSelection ??
-            resolveProjectDefaultProviderModelSelection(
-              providersByEnvironment.get(draftThread.environmentId) ?? [],
-              settings,
-              draftThread.projectId,
-            ),
+          selection: draftBaseModelSelection,
           rotation: settings,
           projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
           environmentId: draftThread.environmentId,
@@ -804,7 +806,9 @@ export default function ChatView(props: ChatViewProps) {
   const draftFallback = draftModelResolution?.fallback ? draftModelResolution : null;
   const draftStartModelSelection = draftFallback
     ? draftFallback.selection
-    : draftDefaultModelSelection && draftRotatedDefaultModelSelection;
+    : draftRotatedDefaultModelSelection !== draftBaseModelSelection
+      ? draftRotatedDefaultModelSelection
+      : draftDefaultModelSelection;
   const localDraftThread = draftThread
     ? buildLocalDraftThread(
         threadId,

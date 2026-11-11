@@ -221,16 +221,17 @@ export function DraftHeroHeadline({
       const defaultSelection = resolvedProjectSettings
         ? resolvedProjectSettings.settings.defaultModelSelection
         : project.defaultModelSelection;
+      const baseDefaultSelection =
+        defaultSelection ??
+        (useComposerDraftStore.getState().stickyActiveProvider !== null || !environmentSettings
+          ? null
+          : resolveProjectDefaultProviderModelSelection(
+              providersByEnvironment.get(project.environmentId) ?? [],
+              environmentSettings,
+              project.id,
+            ));
       const rotatedDefaultModelSelection = rotatedDefaultSelection({
-        selection:
-          defaultSelection ??
-          (useComposerDraftStore.getState().stickyActiveProvider !== null || !environmentSettings
-            ? null
-            : resolveProjectDefaultProviderModelSelection(
-                providersByEnvironment.get(project.environmentId) ?? [],
-                environmentSettings,
-                project.id,
-              )),
+        selection: baseDefaultSelection,
         rotation: getClientSettings(),
         // Without environment settings the default is the project's own.
         projectDefaultSource: resolvedProjectSettings?.sources.defaultModelSelection ?? "project",
@@ -249,7 +250,9 @@ export function DraftHeroHeadline({
       });
       const defaultModelSelection = fallbackResolution.fallback
         ? fallbackResolution.selection
-        : defaultSelection && rotatedDefaultModelSelection;
+        : rotatedDefaultModelSelection !== baseDefaultSelection
+          ? rotatedDefaultModelSelection
+          : defaultSelection;
       if (defaultModelSelection) {
         setModelSelection(draftId, defaultModelSelection, {
           replaceOptions: true,

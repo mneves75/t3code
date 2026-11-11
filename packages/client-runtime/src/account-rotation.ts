@@ -155,15 +155,14 @@ export function rotatedDefaultSelection(input: {
   if (!selection || !rotation.accountRotationEnabled || input.projectDefaultSource === "project") {
     return selection;
   }
-  return {
-    ...selection,
-    instanceId: chooseRotatedProviderInstance({
-      selection,
-      environmentId,
-      providers: input.providers,
-      eligibleInstanceIds: new Set(rotation.accountRotationInstances[environmentId] ?? []),
-      threads: [],
-      ...(settings && projectId ? { project: { settings, projectId } } : {}),
-    }),
-  };
+  const instanceId = chooseRotatedProviderInstance({
+    selection,
+    environmentId,
+    providers: input.providers,
+    eligibleInstanceIds: new Set(rotation.accountRotationInstances[environmentId] ?? []),
+    threads: [],
+    ...(settings && projectId ? { project: { settings, projectId } } : {}),
+  });
+  // The same object when the account stays, so a caller can tell a rotation by identity.
+  return instanceId === selection.instanceId ? selection : { ...selection, instanceId };
 }

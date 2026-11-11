@@ -245,7 +245,7 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(rotatedDefaultSelection({ ...input, selection: null })).toBeNull();
     // Marks belong to one environment.
     const elsewhere = { ...input.rotation, accountRotationInstances: { vps: [work, personal] } };
-    expect(rotatedDefaultSelection({ ...input, rotation: elsewhere })).toEqual(input.selection);
+    expect(rotatedDefaultSelection({ ...input, rotation: elsewhere })).toBe(input.selection);
     // An account the project turned off is not a place to rotate to.
     const projectId = ProjectId.make("project-a");
     const settings = {

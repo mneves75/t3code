@@ -163,16 +163,17 @@ export function createNewThreadHandler(router: AnyRouter) {
       project,
     );
     const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
+    const baseDefaultModelSelection =
+      configuredDefaultModelSelection ??
+      (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
+        ? null
+        : resolveProjectDefaultProviderModelSelection(
+            environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+            targetServerSettings,
+            projectRef.projectId,
+          ));
     const rotatedDefaultModelSelection = rotatedDefaultSelection({
-      selection:
-        configuredDefaultModelSelection ??
-        (carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
-          ? null
-          : resolveProjectDefaultProviderModelSelection(
-              environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
-              targetServerSettings,
-              projectRef.projectId,
-            )),
+      selection: baseDefaultModelSelection,
       rotation: getClientSettings(),
       projectDefaultSource: projectSettings.sources.defaultModelSelection,
       environmentId: projectRef.environmentId,
@@ -190,7 +191,9 @@ export function createNewThreadHandler(router: AnyRouter) {
     });
     const projectDefaultModelSelection = fallbackResolution.fallback
       ? fallbackResolution.selection
-      : configuredDefaultModelSelection && rotatedDefaultModelSelection;
+      : rotatedDefaultModelSelection !== baseDefaultModelSelection
+        ? rotatedDefaultModelSelection
+        : configuredDefaultModelSelection;
     const defaultRuntimeMode = projectSettings.settings.defaultRuntimeMode;
     const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
       resolveNewThreadModelSelectionOverride({
