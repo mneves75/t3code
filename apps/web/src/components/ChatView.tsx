@@ -1117,8 +1117,11 @@ export default function ChatView(props: ChatViewProps) {
   const activeProjectScripts = activeProject ? resolveProjectScripts(settings, activeProject) : [];
   const { projectCloneBannerItem, projectCloneSendBlockReason } =
     useProjectCloneBanner(activeProjectRef);
+  // With no fallback and no rotation the draft start is the configured default itself.
   const activeProjectDefaultModelSelection =
-    !isServerThread && draftStartModelSelection
+    !isServerThread &&
+    draftStartModelSelection &&
+    draftStartModelSelection !== draftDefaultModelSelection
       ? draftStartModelSelection
       : activeProjectSettings.settings.defaultModelSelection;
   // A sent draft stays local until its thread arrives, and by then it has an account.
