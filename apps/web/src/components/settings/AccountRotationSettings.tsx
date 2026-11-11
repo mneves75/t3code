@@ -36,7 +36,8 @@ export function AccountRotationSettings({
   const accounts = instances.filter(
     (instance) => instance.enabled && (enabledByDriver.get(instance.driver) ?? 0) >= 2,
   );
-  if (accounts.length === 0) return null;
+  // Stays while rotation is on, so marks left from before can still be switched off.
+  if (accounts.length === 0 && !settings.accountRotationEnabled) return null;
 
   const marked = settings.accountRotationInstances[environmentId] ?? [];
   const setMarked = (instanceId: ProviderInstanceId, value: boolean) => {

@@ -140,8 +140,8 @@ keeping your model and model options. Accounts that report the same usage take t
 threads. If any of them reports no usage, as an API key does, they all take turns instead,
 because an account that reports nothing is not known to have room. An account that has used up
 a limit is passed over while another marked account has room, even when some of them report no
-usage. The **Fallback model** from Settings starts the thread only when no marked account has
-room. The model picker shows the
+usage. When your default account is marked, the **Fallback model** from Settings starts the
+thread only when no marked account has room. The model picker shows the
 account before you send, and it stops changing once you start writing.
 
 Pick an account in the model picker to use it for that thread instead. A project with its
