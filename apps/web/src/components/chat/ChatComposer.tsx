@@ -44,7 +44,10 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
-import { rotationEligibleInstanceIds } from "@t3tools/client-runtime/account-rotation";
+import {
+  chooseRotatedProviderInstance,
+  rotationEligibleInstanceIds,
+} from "@t3tools/client-runtime/account-rotation";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
@@ -84,11 +87,7 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import {
-  deriveComposerSendState,
-  getAntigravitySendBlockReason,
-  resolveRotatedDraftProviderInstance,
-} from "../ChatView.logic";
+import { deriveComposerSendState, getAntigravitySendBlockReason } from "../ChatView.logic";
 import {
   dataTransferHasComposerMention,
   makeComposerMentionDragHandlers,
@@ -1100,11 +1099,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // account the thread starts on and an explicit pick still replaces it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted composer draft with the account chosen from live provider usage while the draft is empty
   useEffect(() => {
-    const rotatedInstanceId = resolveRotatedDraftProviderInstance({
-      // A send in flight has already named its account.
-      rotateDraft: rotateDraftAccount && !isSendBusy && multipleModelSelections === null,
-      selectionExplicit: draftModelSelectionExplicit,
-      draftHasContent: composerSendState.hasSendableContent,
+    // A send in flight has already named its account.
+    if (!rotateDraftAccount || isSendBusy || multipleModelSelections !== null) return;
+    if (draftModelSelectionExplicit || composerSendState.hasSendableContent) return;
+    const rotatedInstanceId = chooseRotatedProviderInstance({
       selection: { instanceId: selectedInstanceId, model: selectedModel },
       environmentId,
       providers: providerStatuses,
@@ -1112,7 +1110,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       eligibleInstanceIds: rotationEligibleIds,
       threads: rotationThreadShells,
     });
-    if (rotatedInstanceId === null) return;
+    if (rotatedInstanceId === selectedInstanceId) return;
     setComposerDraftModelSelection(
       composerDraftTarget,
       createModelSelection(rotatedInstanceId, selectedModel, selectedModelOptionsForDispatch),
