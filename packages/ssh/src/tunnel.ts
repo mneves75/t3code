@@ -466,7 +466,7 @@ t3_runtime_ready() {
   [ -x "$T3_RUNTIME_DIR/t3" ] && [ "$(cat "$T3_RUNTIME_DIR/.install-complete" 2>/dev/null)" = "$T3_ARCHIVE_VERSION" ]
 }
 # A PR, fork or local build publishes no CLI archive, so its pinned version can
-# never download. Reuse the newest runtime this host already installed instead.
+# never download. Reuse the runtime this host installed most recently instead.
 t3_installed_runtime() {
   T3_FOUND=""
   for T3_CANDIDATE in "$HOME"/.t3/runtime/versions/*; do
@@ -475,7 +475,9 @@ t3_installed_runtime() {
     T3_CANDIDATE_VERSION="$(basename "$T3_CANDIDATE")"
     [ "$(cat "$T3_CANDIDATE/.install-complete" 2>/dev/null || true)" = "$T3_CANDIDATE_VERSION" ] || continue
     "$T3_CANDIDATE/t3" --version >/dev/null 2>&1 || continue
-    T3_FOUND="$T3_CANDIDATE"
+    if [ -z "$T3_FOUND" ] || [ "$T3_CANDIDATE" -nt "$T3_FOUND" ]; then
+      T3_FOUND="$T3_CANDIDATE"
+    fi
   done
   [ -n "$T3_FOUND" ] || return 1
   printf '%s\\n' "$T3_FOUND"

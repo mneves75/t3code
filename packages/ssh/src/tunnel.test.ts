@@ -187,16 +187,24 @@ describe("ssh tunnel scripts", () => {
 
   it.live("runs an already-installed runtime when the pinned archive is not published", () => {
     const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-ssh-runner-"));
-    const runtimeDir = NodePath.join(home, ".t3", "runtime", "versions", "9.9.0");
+    const versionsDir = NodePath.join(home, ".t3", "runtime", "versions");
     const binDir = NodePath.join(home, "bin");
-    NodeFS.mkdirSync(runtimeDir, { recursive: true });
     NodeFS.mkdirSync(binDir, { recursive: true });
-    NodeFS.writeFileSync(
-      NodePath.join(runtimeDir, "t3"),
-      "#!/bin/sh\nprintf 'installed runtime %s\\n' \"${1:-}\"\n",
-      { mode: 0o755 },
-    );
-    NodeFS.writeFileSync(NodePath.join(runtimeDir, ".install-complete"), "9.9.0\n");
+    // Lexical glob order puts 0.1.9 last, so only install time can pick 0.1.10.
+    for (const [version, installedAt] of [
+      ["0.1.10", 2_000_000_000],
+      ["0.1.9", 1_000_000_000],
+    ] as const) {
+      const runtimeDir = NodePath.join(versionsDir, version);
+      NodeFS.mkdirSync(runtimeDir, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(runtimeDir, "t3"),
+        `#!/bin/sh\nprintf 'installed runtime ${version} %s\\n' "\${1:-}"\n`,
+        { mode: 0o755 },
+      );
+      NodeFS.writeFileSync(NodePath.join(runtimeDir, ".install-complete"), `${version}\n`);
+      NodeFS.utimesSync(runtimeDir, installedAt, installedAt);
+    }
     // A pinned version with no published archive is what curl reports as a 404.
     NodeFS.writeFileSync(NodePath.join(binDir, "curl"), "#!/bin/sh\nexit 22\n", { mode: 0o755 });
 
@@ -207,7 +215,7 @@ describe("ssh tunnel scripts", () => {
         env: { HOME: home, PATH: `${binDir}:/usr/bin:/bin`, TMPDIR: home },
       });
       assert.equal(result.status, 0, result.stderr);
-      assert.include(result.stdout, "installed runtime");
+      assert.include(result.stdout, "installed runtime 0.1.10");
       assert.include(result.stderr, "reusing the runtime installed at");
     }).pipe(
       Effect.ensuring(Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true }))),
