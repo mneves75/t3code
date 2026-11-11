@@ -511,9 +511,6 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(!Equal.equals(settings.snoozePresets, DEFAULT_UNIFIED_SETTINGS.snoozePresets)
       ? ["Snooze options"]
       : []),
-    ...(settings.accountRotationEnabled !== DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled
-      ? ["Rotate accounts for new threads"]
-      : []),
     ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
     ...(settings.persistComposerContextStrip !==
     DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip
@@ -673,7 +670,6 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
-      accountRotationEnabled: DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled,
       snoozePresets: DEFAULT_UNIFIED_SETTINGS.snoozePresets,
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
@@ -863,32 +859,6 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
-        <SettingsRow
-          {...searchableSetting("rotate-provider-accounts")}
-          description="Start each new thread on the account with the most usage left, among the accounts marked for rotation in Providers. Picking an account yourself overrides it for that thread."
-          resetAction={
-            settings.accountRotationEnabled !== DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled ? (
-              <SettingResetButton
-                label="account rotation"
-                onClick={() =>
-                  updateSettings({
-                    accountRotationEnabled: DEFAULT_UNIFIED_SETTINGS.accountRotationEnabled,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              checked={settings.accountRotationEnabled}
-              onCheckedChange={(checked) =>
-                updateSettings({ accountRotationEnabled: Boolean(checked) })
-              }
-              aria-label="Rotate accounts for new threads"
-            />
-          }
-        />
-
         <SettingsRow
           {...searchableSetting("working-shelf")}
           description="Fold working and monitoring threads into a Working section. They return to the top of the inbox when they need you. The boring sidebar in Labs has no Working section."

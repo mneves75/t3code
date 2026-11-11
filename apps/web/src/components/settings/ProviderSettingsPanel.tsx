@@ -94,6 +94,7 @@ import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { ExpandableText } from "./ExpandableText";
 import { IntervalSecondsField } from "./IntervalSecondsField";
+import { AccountRotationSettings } from "./AccountRotationSettings";
 import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 import { TextGeneratorsSettings } from "./TextGeneratorsSettings";
@@ -1084,6 +1085,19 @@ export function EnvironmentProviderSettings({
           </div>
         </SettingsGroup>
       </SettingsSection>
+
+      <AccountRotationSettings
+        environmentId={environmentId}
+        instances={rows.map((row) => {
+          const instance = row.explicitInstance ?? { driver: row.driver };
+          return {
+            instanceId: row.instanceId,
+            driver: row.driver,
+            displayName: providerInstanceName(instance),
+            enabled: resolveProviderInstanceEnabled(instance),
+          };
+        })}
+      />
 
       <UsageProviderSettings
         key={environmentId}

@@ -458,8 +458,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "rotate-provider-accounts",
     title: "Rotate accounts for new threads",
-    to: "/settings/general",
+    to: "/settings/providers",
     searchTerms: ["usage quota rate limit balance multiple subscriptions provider instances"],
+    providerSettingsOnly: true,
   },
   {
     id: "working-shelf",
