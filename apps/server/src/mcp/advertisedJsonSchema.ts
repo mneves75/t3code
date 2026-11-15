@@ -85,6 +85,11 @@ const compact = (schema: Json, optional: boolean): Json => {
           )
         : compact(value, false);
   }
+  // Gemini rejects the whole request when any advertised enum holds a non-string.
+  if (Array.isArray(result.enum) && !result.enum.every(Predicate.isString)) {
+    const { enum: _enum, ...rest } = result;
+    result = rest;
+  }
   if (Array.isArray(result.anyOf)) {
     const branches = result.anyOf
       .flatMap((branch) => (isBareAnyOf(branch) ? branch.anyOf : [branch]))

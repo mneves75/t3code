@@ -11,6 +11,8 @@ it("drops JSON noise, merges tagged unions, and keeps null where it is required"
       threadId: Schema.optional(Schema.NullOr(Schema.String)),
       beforeRunId: Schema.NullOr(Schema.String),
       limit: Schema.optional(Schema.Int),
+      // Gemini rejects the whole request when any advertised enum holds a non-string.
+      version: Schema.optional(Schema.Literal(1)),
       every: Schema.Union([Every, Schema.fromJsonString(Every)]),
       target: Schema.optional(
         Schema.NullOr(
@@ -29,6 +31,7 @@ it("drops JSON noise, merges tagged unions, and keeps null where it is required"
       threadId: { type: "string" },
       beforeRunId: { anyOf: [{ type: "string" }, { type: "null" }] },
       limit: { type: "integer" },
+      version: { type: "number" },
       every: { type: "object", properties: { ms: { type: "integer" } }, required: ["ms"] },
       target: {
         type: "object",
