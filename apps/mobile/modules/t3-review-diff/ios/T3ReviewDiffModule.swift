@@ -89,6 +89,7 @@ public class T3ReviewDiffModule: Module {
         "onToggleViewedFile",
         "onPressLine",
         "onToggleComment",
+        "onPressNotice",
         "onPullToRefresh"
       )
 
