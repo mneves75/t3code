@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 
 import {
   useClientSettings,
@@ -7,7 +8,7 @@ import {
 } from "~/hooks/useSettings";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 export function AccountRotationSettings({
   environmentId,
@@ -21,6 +22,8 @@ export function AccountRotationSettings({
     enabled: boolean;
   }>;
 }) {
+  const gt = useGT();
+  const searchableSetting = useSearchableSetting();
   const settings = useClientSettings((current) => ({
     accountRotationEnabled: current.accountRotationEnabled,
     accountRotationInstances: current.accountRotationInstances,
@@ -51,13 +54,13 @@ export function AccountRotationSettings({
   };
 
   return (
-    <SettingsSection title="Account rotation">
+    <SettingsSection title={gt("Account rotation")}>
       <SettingsRow
         {...searchableSetting("rotate-provider-accounts")}
-        description="Start each new thread on the marked account with the most usage left."
+        description={gt("Start each new thread on the marked account with the most usage left.")}
         control={
           <Switch
-            aria-label="Rotate accounts for new threads"
+            aria-label={gt("Rotate accounts for new threads")}
             checked={settings.accountRotationEnabled}
             disabled={!settingsHydrated}
             onCheckedChange={(accountRotationEnabled) =>
@@ -73,7 +76,9 @@ export function AccountRotationSettings({
               title={account.displayName}
               control={
                 <Switch
-                  aria-label={`Include ${account.displayName} in account rotation`}
+                  aria-label={gt("Include {name} in account rotation", {
+                    name: account.displayName,
+                  })}
                   checked={marked.includes(account.instanceId)}
                   disabled={!settingsHydrated}
                   onCheckedChange={(checked) => setMarked(account.instanceId, checked)}
