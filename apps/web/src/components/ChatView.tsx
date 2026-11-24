@@ -5,8 +5,7 @@ import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { draftSupportedRuntimeModes } from "./chat/runtimeModeConfig";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { rotatedDefaultSelection } from "@t3tools/client-runtime/account-rotation";
-import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
+import { resolveRotatedNewThreadSelection } from "@t3tools/client-runtime/account-rotation";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
@@ -296,6 +295,7 @@ import {
   useThreadHistory,
   useQuietThreadShell,
   useThreadCheckpointSummaries,
+  useThreadShells,
 } from "../state/entities";
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -845,42 +845,33 @@ export default function ChatView(props: ChatViewProps) {
   const draftDefaultModelSelection = draftProjectSettings
     ? draftProjectSettings.settings.defaultModelSelection
     : null;
-  const draftBaseModelSelection = draftThread
-    ? (draftDefaultModelSelection ??
-      resolveProjectDefaultProviderModelSelection(
-        providersByEnvironment.get(draftThread.environmentId) ?? [],
-        settings,
-        draftThread.projectId,
-      ))
-    : null;
-  const draftRotatedDefaultModelSelection =
+  const draftRotationThreads = useThreadShells(
+    draftThread !== null &&
+      settings.accountRotationEnabled &&
+      draftProjectSettings?.sources.defaultModelSelection !== "project",
+  );
+  const draftModelResolution =
     draftThread && draftProjectSettings
-      ? rotatedDefaultSelection({
-          selection: draftBaseModelSelection,
+      ? resolveRotatedNewThreadSelection({
+          configuredDefaultSelection: draftDefaultModelSelection,
+          fallbackDefaultSelection: resolveProjectDefaultProviderModelSelection(
+            providersByEnvironment.get(draftThread.environmentId) ?? [],
+            settings,
+            draftThread.projectId,
+          ),
+          fallbackModelSelection: settings.fallbackModelSelection,
           rotation: settings,
           projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
           environmentId: draftThread.environmentId,
           providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
+          threads: draftRotationThreads,
           settings,
           projectId: draftThread.projectId,
+          now: Date.parse(`${nowMinute}:00Z`),
         })
       : null;
-  const draftModelResolution = draftThread
-    ? resolveNewThreadModelSelection({
-        defaultSelection: draftRotatedDefaultModelSelection,
-        fallbackSelection: settings.fallbackModelSelection,
-        providers: providersByEnvironment.get(draftThread.environmentId) ?? [],
-        settings,
-        projectId: draftThread.projectId,
-        now: Date.parse(`${nowMinute}:00Z`),
-      })
-    : null;
   const draftFallback = draftModelResolution?.fallback ? draftModelResolution : null;
-  const draftStartModelSelection = draftFallback
-    ? draftFallback.selection
-    : draftRotatedDefaultModelSelection !== draftBaseModelSelection
-      ? draftRotatedDefaultModelSelection
-      : draftDefaultModelSelection;
+  const draftStartModelSelection = draftModelResolution?.selection ?? draftDefaultModelSelection;
   const localDraftThread = draftThread
     ? buildLocalDraftThread(
         threadId,

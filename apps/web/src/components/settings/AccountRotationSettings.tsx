@@ -10,17 +10,27 @@ import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
 
+interface RotationAccountRow {
+  readonly instanceId: ProviderInstanceId;
+  readonly driver: ProviderDriverKind;
+  readonly displayName: string;
+  readonly enabled: boolean;
+  readonly email?: string | undefined;
+  readonly workspaceId?: string | undefined;
+}
+
+function loginIdentityKey(account: RotationAccountRow): string | null {
+  const email = account.email?.trim().toLowerCase();
+  if (!email) return null;
+  return `${account.driver}:${email}${account.workspaceId ? `:${account.workspaceId}` : ""}`;
+}
+
 export function AccountRotationSettings({
   environmentId,
   instances,
 }: {
   environmentId: EnvironmentId;
-  instances: ReadonlyArray<{
-    instanceId: ProviderInstanceId;
-    driver: ProviderDriverKind;
-    displayName: string;
-    enabled: boolean;
-  }>;
+  instances: ReadonlyArray<RotationAccountRow>;
 }) {
   const gt = useGT();
   const searchableSetting = useSearchableSetting();
@@ -30,6 +40,8 @@ export function AccountRotationSettings({
   }));
   const settingsHydrated = useClientSettingsHydrated();
 
+  const marked = settings.accountRotationInstances[environmentId] ?? [];
+  const markedSet = new Set(marked);
   const enabledByDriver = new Map<ProviderDriverKind, number>();
   for (const instance of instances) {
     if (instance.enabled) {
@@ -37,12 +49,20 @@ export function AccountRotationSettings({
     }
   }
   const accounts = instances.filter(
-    (instance) => instance.enabled && (enabledByDriver.get(instance.driver) ?? 0) >= 2,
+    (instance) =>
+      (instance.enabled && (enabledByDriver.get(instance.driver) ?? 0) >= 2) ||
+      (settings.accountRotationEnabled && markedSet.has(instance.instanceId)),
   );
   // Stays while rotation is on, so marks left from before can still be switched off.
   if (accounts.length === 0 && !settings.accountRotationEnabled) return null;
 
-  const marked = settings.accountRotationInstances[environmentId] ?? [];
+  const loginCount = new Map<string, number>();
+  for (const account of accounts) {
+    if (!account.enabled) continue;
+    const key = loginIdentityKey(account);
+    if (key) loginCount.set(key, (loginCount.get(key) ?? 0) + 1);
+  }
+
   const setMarked = (instanceId: ProviderInstanceId, value: boolean) => {
     const others = marked.filter((id) => id !== instanceId);
     updateClientSettings({
@@ -70,22 +90,31 @@ export function AccountRotationSettings({
         }
       />
       {settings.accountRotationEnabled
-        ? accounts.map((account) => (
-            <SettingsRow
-              key={account.instanceId}
-              title={account.displayName}
-              control={
-                <Switch
-                  aria-label={gt("Include {name} in account rotation", {
-                    name: account.displayName,
-                  })}
-                  checked={marked.includes(account.instanceId)}
-                  disabled={!settingsHydrated}
-                  onCheckedChange={(checked) => setMarked(account.instanceId, checked)}
-                />
-              }
-            />
-          ))
+        ? accounts.map((account) => {
+            const loginKey = account.enabled ? loginIdentityKey(account) : null;
+            const description = !account.enabled
+              ? gt("Disabled")
+              : loginKey && (loginCount.get(loginKey) ?? 0) >= 2
+                ? account.email
+                : undefined;
+            return (
+              <SettingsRow
+                key={account.instanceId}
+                title={account.displayName}
+                description={description}
+                control={
+                  <Switch
+                    aria-label={gt("Include {name} in account rotation", {
+                      name: account.displayName,
+                    })}
+                    checked={markedSet.has(account.instanceId)}
+                    disabled={!settingsHydrated}
+                    onCheckedChange={(checked) => setMarked(account.instanceId, checked)}
+                  />
+                }
+              />
+            );
+          })
         : null}
     </SettingsSection>
   );

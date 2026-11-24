@@ -1150,11 +1150,14 @@ export function EnvironmentProviderSettings({
         environmentId={environmentId}
         instances={rows.map((row) => {
           const instance = row.explicitInstance ?? { driver: row.driver };
+          const status = serverProviders.find((provider) => provider.instanceId === row.instanceId);
           return {
             instanceId: row.instanceId,
             driver: row.driver,
             displayName: providerInstanceName(instance),
             enabled: resolveProviderInstanceEnabled(instance),
+            ...(status?.auth.email ? { email: status.auth.email } : {}),
+            ...(status?.auth.workspaceId ? { workspaceId: status.auth.workspaceId } : {}),
           };
         })}
       />

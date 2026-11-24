@@ -10,7 +10,10 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chooseRotatedProviderInstance, rotatedDefaultSelection } from "./account-rotation.ts";
+import {
+  chooseRotatedProviderInstance,
+  resolveRotatedNewThreadSelection,
+} from "./account-rotation.ts";
 
 const environmentId = EnvironmentId.make("mac");
 const work = ProviderInstanceId.make("claudeAgent");
@@ -56,13 +59,15 @@ function choose(
   threads: Parameters<typeof chooseRotatedProviderInstance>[0]["threads"] = [],
   selected = work,
   marked: ReadonlyArray<ProviderInstanceId> = providers.map((provider) => provider.instanceId),
+  options: { readonly model?: string; readonly now?: number } = {},
 ) {
   return chooseRotatedProviderInstance({
-    selection: { instanceId: selected, model },
+    selection: { instanceId: selected, model: options.model ?? model },
     environmentId,
     providers,
     eligibleInstanceIds: new Set(marked),
     threads,
+    ...(options.now !== undefined ? { now: options.now } : {}),
   });
 }
 
@@ -122,41 +127,175 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose(providers, [], second)).toBe(second);
   });
 
-  it("judges an account by its fullest window", () => {
+  it("judges an account by its fullest applicable window", () => {
     const weekly = { ...window(95), id: "seven_day", kind: "weekly" as const, label: "Weekly" };
     expect(choose([account(work, [window(40)]), account(personal, [window(5), weekly])])).toBe(
       work,
     );
   });
 
-  it("stops counting a window that reset before the environment's latest report", () => {
+  it("scopes windows to the selected model across Claude, Antigravity, Cursor, Codex, and OpenCode", () => {
+    // Claude: seven_day_fable applies only to fable models, not opus.
+    const fableModel = "claude-fable-5-1";
+    const bothModels = [
+      { slug: model, name: "Opus", isCustom: false, capabilities: null },
+      { slug: fableModel, name: "Fable", isCustom: false, capabilities: null },
+    ];
+    const claudeA = account(
+      work,
+      [
+        { ...window(20), id: "seven_day", kind: "weekly", label: "Weekly" },
+        { ...window(100), id: "seven_day_fable", kind: "weekly", label: "Weekly · Fable" },
+      ],
+      { models: bothModels },
+    );
+    const claudeB = account(
+      personal,
+      [
+        { ...window(60), id: "seven_day", kind: "weekly", label: "Weekly" },
+        { ...window(10), id: "seven_day_fable", kind: "weekly", label: "Weekly · Fable" },
+      ],
+      { models: bothModels },
+    );
+    expect(choose([claudeA, claudeB], [], personal, [work, personal], { model })).toBe(work);
+    expect(choose([claudeA, claudeB], [], work, [work, personal], { model: fableModel })).toBe(
+      personal,
+    );
+
+    // Antigravity: gemini quota does not penalize claude models, and 3p quota does not penalize gemini.
+    const agA = ProviderInstanceId.make("antigravity_a");
+    const agB = ProviderInstanceId.make("antigravity_b");
+    const agModels = [
+      { slug: "gemini-3.8-pro", name: "Gemini", isCustom: false, capabilities: null },
+      { slug: "claude-opus-5-5", name: "Opus", isCustom: false, capabilities: null },
+    ];
+    const agProviders = [
+      account(
+        agA,
+        [
+          { ...window(95), id: "gemini-weekly", kind: "weekly", label: "Gemini" },
+          { ...window(5), id: "3p-weekly", kind: "weekly", label: "3P" },
+        ],
+        { driver: ProviderDriverKind.make("antigravity"), models: agModels },
+      ),
+      account(
+        agB,
+        [
+          { ...window(10), id: "gemini-weekly", kind: "weekly", label: "Gemini" },
+          { ...window(80), id: "3p-weekly", kind: "weekly", label: "3P" },
+        ],
+        { driver: ProviderDriverKind.make("antigravity"), models: agModels },
+      ),
+    ];
+    expect(choose(agProviders, [], agB, [agA, agB], { model: "claude-opus-5-5" })).toBe(agA);
+    expect(choose(agProviders, [], agA, [agA, agB], { model: "gemini-3.8-pro" })).toBe(agB);
+
+    // Cursor: composer uses min(auto, api) while third-party models use only apiPercentUsed.
+    const curA = ProviderInstanceId.make("cursor_a");
+    const curB = ProviderInstanceId.make("cursor_b");
+    const curModels = [
+      { slug: "composer-2.5", name: "Composer", isCustom: false, capabilities: null },
+      { slug: "claude-opus-5-5", name: "Opus", isCustom: false, capabilities: null },
+    ];
+    const curProviders = [
+      account(
+        curA,
+        [
+          { ...window(100), id: "autoPercentUsed", kind: "monthly", label: "Cursor Models" },
+          { ...window(20), id: "apiPercentUsed", kind: "monthly", label: "Other Models" },
+          { ...window(90), id: "totalPercentUsed", kind: "monthly", label: "Overall" },
+        ],
+        { driver: ProviderDriverKind.make("cursor"), models: curModels },
+      ),
+      account(
+        curB,
+        [
+          { ...window(80), id: "autoPercentUsed", kind: "monthly", label: "Cursor Models" },
+          { ...window(80), id: "apiPercentUsed", kind: "monthly", label: "Other Models" },
+          { ...window(80), id: "totalPercentUsed", kind: "monthly", label: "Overall" },
+        ],
+        { driver: ProviderDriverKind.make("cursor"), models: curModels },
+      ),
+    ];
+    expect(choose(curProviders, [], curB, [curA, curB], { model: "composer-2.5" })).toBe(curA);
+    expect(choose(curProviders, [], curB, [curA, curB], { model: "claude-opus-5-5" })).toBe(curA);
+
+    // Codex: individual credit cap is ignored when primary/secondary plan windows exist.
+    const cxA = ProviderInstanceId.make("codex_a");
+    const cxB = ProviderInstanceId.make("codex_b");
+    const cxModels = [{ slug: "gpt-6.2-sol", name: "Sol", isCustom: false, capabilities: null }];
+    const cxProviders = [
+      account(
+        cxA,
+        [
+          { ...window(10), id: "primary", kind: "weekly", label: "Weekly" },
+          { ...window(100), id: "individual", kind: "other", label: "Credits" },
+        ],
+        { driver: ProviderDriverKind.make("codex"), models: cxModels },
+      ),
+      account(cxB, [{ ...window(60), id: "primary", kind: "weekly", label: "Weekly" }], {
+        driver: ProviderDriverKind.make("codex"),
+        models: cxModels,
+      }),
+    ];
+    expect(choose(cxProviders, [], cxB, [cxA, cxB], { model: "gpt-6.2-sol" })).toBe(cxA);
+
+    // OpenCode: go_* windows apply only to opencode-go/* models.
+    const ocA = ProviderInstanceId.make("opencode_a");
+    const ocB = ProviderInstanceId.make("opencode_b");
+    const ocModels = [
+      { slug: "opencode-go/model", name: "Go", isCustom: false, capabilities: null },
+      { slug: "anthropic/claude", name: "Anthropic", isCustom: false, capabilities: null },
+    ];
+    const ocProviders = [
+      account(
+        ocA,
+        [
+          { ...window(100), id: "go_weekly", kind: "weekly", label: "Go" },
+          {
+            ...window(15),
+            id: "anthropic_weekly",
+            kind: "weekly",
+            label: "Anthropic",
+            providerIds: ["anthropic"],
+          },
+        ],
+        { driver: ProviderDriverKind.make("opencode"), models: ocModels },
+      ),
+      account(
+        ocB,
+        [
+          { ...window(10), id: "go_weekly", kind: "weekly", label: "Go" },
+          {
+            ...window(70),
+            id: "anthropic_weekly",
+            kind: "weekly",
+            label: "Anthropic",
+            providerIds: ["anthropic"],
+          },
+        ],
+        { driver: ProviderDriverKind.make("opencode"), models: ocModels },
+      ),
+    ];
+    expect(choose(ocProviders, [], ocA, [ocA, ocB], { model: "opencode-go/model" })).toBe(ocB);
+    expect(choose(ocProviders, [], ocB, [ocA, ocB], { model: "anthropic/claude" })).toBe(ocA);
+  });
+
+  it("stops counting a window that reset before the environment's latest report and ignores future-skewed clocks", () => {
     const stale = account(personal, [window(100, "2026-09-03T11:30:00.000Z")]);
     expect(choose([account(work, [window(40)]), stale])).toBe(work);
     expect(
       choose([account(work, [window(40)], { checkedAt: "2026-09-03T12:00:00.000Z" }), stale]),
     ).toBe(personal);
-  });
 
-  it("stops counting a window that reset before the latest usage report", () => {
     const checkedAt = "2026-09-03T10:00:00.000Z";
-    const reset = account(personal, [window(100, "2026-09-03T11:00:00.000Z")], { checkedAt });
-    const fresh = account(work, [window(20)], {
-      checkedAt,
-      usageLimits: { checkedAt: "2026-09-03T12:00:00.000Z", windows: [window(20)] },
-    });
-    expect(choose([reset, fresh])).toBe(personal);
-    const unparsable = account(spare, [], {
-      driver: ProviderDriverKind.make("codex"),
-      checkedAt: "invalid",
-    });
-    expect(choose([reset, fresh, unparsable])).toBe(personal);
-    const report = (at: string) => ({
-      checkedAt,
-      usageLimits: { checkedAt: at, windows: [window(20)] },
-    });
     const isolated = account(personal, [window(100, "2026-09-03T11:00:00.000Z")], {
       checkedAt,
       usageLimits: { checkedAt, windows: [window(100, "2026-09-03T11:00:00.000Z")] },
+    });
+    const report = (at: string) => ({
+      checkedAt,
+      usageLimits: { checkedAt: at, windows: [window(20)] },
     });
     // A report at the exact reset time already sees the window empty.
     expect(choose([isolated, account(work, [], report("2026-09-03T11:00:00.000Z"))])).toBe(
@@ -168,6 +307,22 @@ describe("rotating a new thread across accounts of one provider", () => {
       driver: ProviderDriverKind.make("codex"),
     });
     expect(choose([isolated, account(work, [], report(checkedAt)), codex])).toBe(personal);
+
+    // A corrupted far-future checkedAt does not wipe out exhaustion when wall-clock `now` is supplied.
+    const futureSkewed = account(spare, [], {
+      driver: ProviderDriverKind.make("codex"),
+      checkedAt: "2099-01-01T00:00:00.000Z",
+      usageLimits: { checkedAt: "2099-01-01T00:00:00.000Z", windows: [] },
+    });
+    expect(
+      choose(
+        [isolated, account(work, [], report(checkedAt)), futureSkewed],
+        [],
+        personal,
+        [personal, work],
+        { now: Date.parse("2026-09-03T10:30:00.000Z") },
+      ),
+    ).toBe(work);
   });
 
   it("takes turns when accounts report the same usage or none", () => {
@@ -181,87 +336,212 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose(providers, third)).toBe(work);
   });
 
-  it("takes turns when a marked account reports no usage, since silence is not room left", () => {
-    const providers = [
-      account(work, [window(40)]),
-      account(personal, [window(5)]),
-      account(spare, [], {
-        usageLimits: {
-          checkedAt: "2026-09-03T11:00:00.000Z",
-          windows: [],
-          unavailable: { reason: "unsupported" },
-        },
+  it("prefers accounts with known room over silent or probeFailed accounts, spilling over when all reporting accounts are exhausted", () => {
+    const probeFailed = account(spare, [], {
+      usageLimits: {
+        checkedAt: "2026-09-03T11:00:00.000Z",
+        windows: [],
+        unavailable: { reason: "probeFailed" },
+      },
+    });
+    // One probeFailed account must not blind usage ranking between 40% and 5%.
+    expect(choose([account(work, [window(40)]), account(personal, [window(5)]), probeFailed])).toBe(
+      personal,
+    );
+    // When every reporting account is exhausted, rotation spills over to the silent account.
+    expect(
+      choose([account(work, [window(100)]), account(personal, [window(100)]), probeFailed]),
+    ).toBe(spare);
+  });
+
+  it("merges recency and freshest usage across aliased instances sharing the same underlying login", () => {
+    const berlinA = ProviderInstanceId.make("codex_berlin");
+    const berlinB = ProviderInstanceId.make("codex_agent_berlin");
+    const personalCodex = ProviderInstanceId.make("codex");
+    const codexModel = "gpt-6.2-sol";
+    const codexModels = [{ slug: codexModel, name: "Sol", isCustom: false, capabilities: null }];
+    const sharedAuth = {
+      status: "authenticated" as const,
+      email: "dev@example.com",
+      workspaceId: "ws-berlin",
+    };
+    const personalAuth = {
+      status: "authenticated" as const,
+      email: "personal@example.com",
+      workspaceId: "ws-personal",
+    };
+    // Recency on berlinA also counts for its alias berlinB, so equal usage rotates to personalCodex.
+    const tiedProviders = [
+      account(berlinA, [window(0)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: sharedAuth,
+        models: codexModels,
+      }),
+      account(berlinB, [window(0)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: sharedAuth,
+        models: codexModels,
+      }),
+      account(personalCodex, [window(0)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: personalAuth,
+        models: codexModels,
       }),
     ];
-    expect(choose(providers)).toBe(work);
-    const first = [startedAt(work, "2026-09-03T09:00:00.000Z")];
-    expect(choose(providers, first)).toBe(personal);
-    const second = [...first, startedAt(personal, "2026-09-03T10:00:00.000Z")];
-    expect(choose(providers, second)).toBe(spare);
-    const third = [...second, startedAt(spare, "2026-09-03T11:00:00.000Z")];
-    expect(choose(providers, third)).toBe(work);
-    // An unmarked silent account does not stop the others ranking by usage.
-    expect(choose(providers, third, work, [work, personal])).toBe(personal);
+    expect(
+      choose(
+        tiedProviders,
+        [startedAt(berlinA, "2026-09-03T10:00:00.000Z")],
+        berlinA,
+        [berlinA, berlinB, personalCodex],
+        { model: codexModel },
+      ),
+    ).toBe(personalCodex);
+
+    // Fresher exhaustion on berlinA propagates to stale alias berlinB so rotation moves to personalCodex.
+    const staleAliasProviders = [
+      account(berlinA, [window(100)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: sharedAuth,
+        models: codexModels,
+        checkedAt: "2026-09-03T11:05:00.000Z",
+        usageLimits: { checkedAt: "2026-09-03T11:05:00.000Z", windows: [window(100)] },
+      }),
+      account(berlinB, [window(20)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: sharedAuth,
+        models: codexModels,
+        checkedAt: "2026-09-03T11:00:00.000Z",
+        usageLimits: { checkedAt: "2026-09-03T11:00:00.000Z", windows: [window(20)] },
+      }),
+      account(personalCodex, [window(60)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: personalAuth,
+        models: codexModels,
+      }),
+    ];
+    expect(
+      choose(staleAliasProviders, [], berlinA, [berlinA, berlinB, personalCodex], {
+        model: codexModel,
+      }),
+    ).toBe(personalCodex);
   });
 
   it("passes over an exhausted account while another one has room", () => {
     expect(choose([account(work, [window(100)]), account(personal, [])])).toBe(personal);
     expect(choose([account(work, [window(100)]), account(personal, [window(100)])])).toBe(work);
-    // Room outranks turn order, in an unranked pool and in a ranked one.
     const late = [startedAt(personal, "2026-09-03T10:00:00.000Z")];
     expect(choose([account(work, [window(100)]), account(personal, [])], late)).toBe(personal);
-    const exhaustedTwice = [account(work, [window(100)]), account(personal, [window(100)])];
-    expect(choose([...exhaustedTwice, account(spare, [])])).toBe(spare);
-    // A window that reset before the latest report is room again.
     const reset = account(work, [window(100, "2026-09-03T10:30:00.000Z")]);
     expect(choose([reset, account(personal, [window(50)])])).toBe(work);
-    // With every account exhausted, turn order decides as before.
-    const all = [...exhaustedTwice, account(spare, [window(100)])];
+    const all = [
+      account(work, [window(100)]),
+      account(personal, [window(100)]),
+      account(spare, [window(100)]),
+    ];
     expect(choose(all, [startedAt(work, "2026-09-03T09:00:00.000Z")])).toBe(personal);
-    // An unmarked selection stays even when exhausted.
     expect(
       choose([account(work, [window(100)]), account(personal, [])], [], work, [personal]),
     ).toBe(work);
   });
 
-  it("judges the usage-limit fallback from the rotated default", () => {
-    const input = {
-      selection: { instanceId: work, model },
+  it("rotates the default before usage-limit fallback, rotates marked fallback accounts, and honors thread history", () => {
+    const codexA = ProviderInstanceId.make("codex");
+    const codexB = ProviderInstanceId.make("codex_personal");
+    const codexModel = "gpt-6.2-sol";
+    const codexModels = [{ slug: codexModel, name: "Sol", isCustom: false, capabilities: null }];
+    const now = Date.parse("2026-09-03T11:00:00.000Z");
+
+    const baseInput = {
+      configuredDefaultSelection: { instanceId: work, model },
+      fallbackDefaultSelection: null,
+      fallbackModelSelection: { instanceId: codexA, model: codexModel },
       rotation: {
         accountRotationEnabled: true,
-        accountRotationInstances: { [environmentId]: [work, personal] },
+        accountRotationInstances: { [environmentId]: [work, personal, codexA, codexB] },
       },
       projectDefaultSource: "environment" as const,
       environmentId,
-      providers: [account(work, [window(100)]), account(personal, [window(10)])],
+      providers: [
+        account(work, [window(100)]),
+        account(personal, [window(10)]),
+        account(codexA, [window(80)], {
+          driver: ProviderDriverKind.make("codex"),
+          models: codexModels,
+        }),
+        account(codexB, [window(15)], {
+          driver: ProviderDriverKind.make("codex"),
+          models: codexModels,
+        }),
+      ],
+      threads: [],
       projectId: null,
+      now,
     };
-    expect(rotatedDefaultSelection(input)).toEqual({ instanceId: personal, model });
-    const off = { ...input.rotation, accountRotationEnabled: false };
-    expect(rotatedDefaultSelection({ ...input, rotation: off })).toBe(input.selection);
-    expect(rotatedDefaultSelection({ ...input, projectDefaultSource: "project" })).toBe(
-      input.selection,
-    );
-    expect(rotatedDefaultSelection({ ...input, selection: null })).toBeNull();
-    // Marks belong to one environment.
-    const elsewhere = { ...input.rotation, accountRotationInstances: { vps: [work, personal] } };
-    expect(rotatedDefaultSelection({ ...input, rotation: elsewhere })).toBe(input.selection);
-    // An account the project turned off is not a place to rotate to.
-    const projectId = ProjectId.make("project-a");
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      projectSettingsOverrides: {
-        [projectId]: { providerInstances: { [personal]: { enabled: false } } },
-      },
-    };
-    expect(rotatedDefaultSelection({ ...input, settings, projectId })).toEqual(input.selection);
-    expect(rotatedDefaultSelection({ ...input, settings })).toEqual({
-      instanceId: personal,
-      model,
+
+    // Rotates to personal (10%) instead of falling back to codexA.
+    expect(resolveRotatedNewThreadSelection(baseInput)).toEqual({
+      selection: { instanceId: personal, model },
+      fallback: null,
     });
+
+    // When all marked default accounts are exhausted, falls back AND rotates the fallback to codexB (15%).
+    const allDefaultExhausted = resolveRotatedNewThreadSelection({
+      ...baseInput,
+      providers: [
+        account(work, [window(100)]),
+        account(personal, [window(100)]),
+        account(codexA, [window(80)], {
+          driver: ProviderDriverKind.make("codex"),
+          models: codexModels,
+        }),
+        account(codexB, [window(15)], {
+          driver: ProviderDriverKind.make("codex"),
+          models: codexModels,
+        }),
+      ],
+    });
+    expect(allDefaultExhausted.selection).toEqual({ instanceId: codexB, model: codexModel });
+    expect(allDefaultExhausted.fallback).not.toBeNull();
+
+    // Respects project-level default and disabled rotation.
+    expect(
+      resolveRotatedNewThreadSelection({
+        ...baseInput,
+        rotation: { ...baseInput.rotation, accountRotationEnabled: false },
+      }).selection,
+    ).toEqual({ instanceId: codexA, model: codexModel });
+    expect(
+      resolveRotatedNewThreadSelection({
+        ...baseInput,
+        projectDefaultSource: "project",
+        fallbackModelSelection: null,
+      }).selection,
+    ).toEqual({ instanceId: work, model });
+
+    // Leaves configuredDefaultSelection (null) untouched when rotation does not switch accounts.
+    expect(
+      resolveRotatedNewThreadSelection({
+        ...baseInput,
+        configuredDefaultSelection: null,
+        fallbackDefaultSelection: { instanceId: work, model },
+        fallbackModelSelection: null,
+        providers: [account(work, [window(10)]), account(personal, [window(50)])],
+      }),
+    ).toEqual({ selection: null, fallback: null });
+
+    // Uses thread history when seeding equal-usage accounts.
+    expect(
+      resolveRotatedNewThreadSelection({
+        ...baseInput,
+        fallbackModelSelection: null,
+        providers: [account(work, [window(0)]), account(personal, [window(0)])],
+        threads: [startedAt(work, "2026-09-03T10:00:00.000Z")],
+      }),
+    ).toEqual({ selection: { instanceId: personal, model }, fallback: null });
   });
 
-  it("gives a subagent thread no turn of its own", () => {
+  it("gives a subagent thread no turn of its own and ignores other environments", () => {
     const providers = [account(work, []), account(personal, [])];
     const spawned = startedAt(personal, "2026-09-03T10:00:00.000Z");
     expect(
@@ -275,17 +555,8 @@ describe("rotating a new thread across accounts of one provider", () => {
             relationshipToParent: "subagent" as const,
           },
         },
-      ]),
-    ).toBe(personal);
-  });
-
-  it("ignores threads on another environment's account of the same name", () => {
-    const providers = [account(work, []), account(personal, [])];
-    expect(
-      choose(providers, [
-        startedAt(work, "2026-09-03T09:00:00.000Z"),
         {
-          ...startedAt(personal, "2026-09-03T10:00:00.000Z"),
+          ...startedAt(personal, "2026-09-03T10:30:00.000Z"),
           environmentId: EnvironmentId.make("vps"),
         },
       ]),
@@ -326,53 +597,25 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(choose([account(work, [window(0)], broken), account(personal, [window(60)])])).toBe(
       personal,
     );
-    // With nowhere better to go, the selection stands and the composer reports it.
     expect(
       choose([account(work, [window(0)], broken), account(personal, [window(0)], broken)]),
     ).toBe(work);
   });
 
-  it("only chooses among the accounts marked for rotation", () => {
+  it("only chooses among marked accounts and leaves unmarked selections alone", () => {
     const providers = [
       account(work, [window(90)]),
       account(personal, [window(5)]),
       account(spare, [window(40)]),
     ];
     expect(choose(providers, [], work, [work, spare])).toBe(spare);
-  });
-
-  it("leaves a selection that is not marked for rotation where it is", () => {
-    const providers = [account(work, [window(90)]), account(personal, [window(5)])];
     expect(choose(providers, [], work, [personal])).toBe(work);
     expect(choose(providers, [], work, [])).toBe(work);
-  });
-
-  it("rotates any marked account, whatever it reports about its usage", () => {
-    const checkedAt = "2026-09-03T11:00:00.000Z";
-    const { usageLimits: _none, ...silent } = account(spare, []);
-    const providers = [
-      account(work, [], {
-        usageLimits: { checkedAt, windows: [], unavailable: { reason: "unsupported" } },
-      }),
-      account(personal, [], {
-        usageLimits: { checkedAt, windows: [], unavailable: { reason: "probeFailed" } },
-      }),
-      silent,
-    ];
-    const first = [startedAt(work, "2026-09-03T09:00:00.000Z")];
-    expect(choose(providers, first)).toBe(personal);
-    expect(choose(providers, [...first, startedAt(personal, "2026-09-03T10:00:00.000Z")])).toBe(
-      spare,
-    );
-  });
-
-  it("keeps the selection when it is not a configured account", () => {
-    expect(choose([account(personal, [window(0)])])).toBe(work);
   });
 });
 
 describe("the rotation choice is stable for any small pool", () => {
-  type Usage = "none" | "idle" | "half" | "halfReset";
+  type Usage = "none" | "idle" | "half" | "halfReset" | "exhausted";
   type Started = "never" | "early" | "late";
   interface Spec {
     readonly marked: boolean;
@@ -380,7 +623,7 @@ describe("the rotation choice is stable for any small pool", () => {
     readonly started: Started;
     readonly canStart: boolean;
   }
-  const usages: ReadonlyArray<Usage> = ["none", "idle", "half", "halfReset"];
+  const usages: ReadonlyArray<Usage> = ["none", "idle", "half", "halfReset", "exhausted"];
   const startedLevels: ReadonlyArray<Started> = ["never", "early", "late"];
   const specs: ReadonlyArray<Spec> = [];
   for (const marked of [true, false])
@@ -388,7 +631,6 @@ describe("the rotation choice is stable for any small pool", () => {
       for (const started of startedLevels)
         for (const canStart of [true, false])
           (specs as Spec[]).push({ marked, usage, started, canStart });
-  // Every two-account pool, then each with a marked third: silent and fresh, or half used and late.
   const thirdSpecs: ReadonlyArray<Spec> = [
     { marked: true, usage: "none", started: "never", canStart: true },
     { marked: true, usage: "half", started: "late", canStart: true },
@@ -404,7 +646,9 @@ describe("the rotation choice is stable for any small pool", () => {
         ? [window(0)]
         : usage === "half"
           ? [window(50)]
-          : [window(100, "2026-09-03T10:30:00.000Z")];
+          : usage === "exhausted"
+            ? [window(100)]
+            : [window(100, "2026-09-03T10:30:00.000Z")];
 
   /** The requirement, written from the spec rather than from the implementation. */
   function expected(selectedIndex: number, pool: ReadonlyArray<Spec>) {
@@ -414,25 +658,23 @@ describe("the rotation choice is stable for any small pool", () => {
       .map((spec, index) => ({ spec, index }))
       .filter(({ spec, index }) => spec.canStart && (index === selectedIndex || spec.marked));
     if (members.length === 0) return new Set([ids[selectedIndex]!]);
-    const ranked = members.every(({ spec }) => spec.usage !== "none");
-    const used = (spec: Spec) =>
-      spec.usage === "half" ? 50 : 0; /* none, idle and an already-reset window hold nothing */
+    const withRoom = members.filter(({ spec }) => spec.usage !== "exhausted");
+    const active = withRoom.length > 0 ? withRoom : members;
     const rank = ({ spec }: { spec: Spec }) =>
       [
-        ranked ? used(spec) : 0,
+        spec.usage === "none" ? 1 : 0,
+        spec.usage === "exhausted" ? 100 : spec.usage === "half" ? 50 : 0,
         spec.started === "never" ? 0 : spec.started === "early" ? 1 : 2,
       ] as const;
-    const best = members.reduce((a, b) => {
-      const [au, as] = rank(a);
-      const [bu, bs] = rank(b);
-      return bu < au || (bu === au && bs < as) ? b : a;
-    });
-    const [bestUsed, bestStart] = rank(best);
+    const less = (a: readonly [number, number, number], b: readonly [number, number, number]) =>
+      a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2];
+    const best = active.reduce((a, b) => (less(rank(b), rank(a)) ? b : a));
+    const bestRank = rank(best);
     return new Set(
-      members
+      active
         .filter(({ spec }) => {
-          const [u, s] = rank({ spec });
-          return u === bestUsed && s === bestStart;
+          const r = rank({ spec });
+          return r[0] === bestRank[0] && r[1] === bestRank[1] && r[2] === bestRank[2];
         })
         .map(({ index }) => ids[index]!),
     );

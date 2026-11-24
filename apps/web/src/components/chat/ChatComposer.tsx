@@ -1217,7 +1217,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     rotateDraftAccount && !composerSendState.hasSendableContent,
   );
   const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
-  const rotationEligibleIds = new Set(settings.accountRotationInstances[environmentId] ?? []);
+  const rotationMarkedInstanceIds = settings.accountRotationInstances[environmentId];
   // Rotation seeds the draft like any other default, so the picker shows the
   // account the thread starts on and an explicit pick still replaces it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted composer draft with the account chosen from live provider usage while the draft is empty
@@ -1225,13 +1225,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // A send in flight has already named its account.
     if (!rotateDraftAccount || isSendBusy || multipleModelSelections !== null) return;
     if (draftModelSelectionExplicit || composerSendState.hasSendableContent) return;
+    if (!rotationMarkedInstanceIds || rotationMarkedInstanceIds.length === 0) return;
     const rotatedInstanceId = chooseRotatedProviderInstance({
       selection: { instanceId: selectedInstanceId, model: selectedModel },
       environmentId,
       providers: providerStatuses,
       ...(activeProjectId ? { project: { settings, projectId: activeProjectId } } : {}),
-      eligibleInstanceIds: rotationEligibleIds,
+      eligibleInstanceIds: new Set(rotationMarkedInstanceIds),
       threads: rotationThreadShells,
+      now: Date.now(),
     });
     if (rotatedInstanceId === selectedInstanceId) return;
     setComposerDraftModelSelection(
@@ -1251,7 +1253,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectId,
     settings,
     rotateDraftAccount,
-    rotationEligibleIds,
+    rotationMarkedInstanceIds,
     selectedInstanceId,
     selectedModel,
     selectedModelOptionsForDispatch,
