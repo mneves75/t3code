@@ -23,12 +23,23 @@ export function seedDraftModelSelection(draftId: DraftId, projectRef: ScopedProj
   const defaultSelection = resolvedProjectSettings
     ? resolvedProjectSettings.settings.defaultModelSelection
     : (project?.defaultModelSelection ?? null);
+  const draftState = useComposerDraftStore.getState();
+  const stickySelection =
+    draftState.stickyActiveProvider !== null
+      ? (draftState.stickyModelSelectionByProvider?.[draftState.stickyActiveProvider] ?? null)
+      : null;
   const { selection } = resolveRotatedNewThreadSelection({
     configuredDefaultSelection: defaultSelection,
-    fallbackDefaultSelection:
-      useComposerDraftStore.getState().stickyActiveProvider !== null || !settings
-        ? null
-        : resolveProjectDefaultProviderModelSelection(providers, settings, projectRef.projectId),
+    fallbackDefaultSelection: defaultSelection
+      ? null
+      : (stickySelection ??
+        (draftState.stickyActiveProvider !== null || !settings
+          ? null
+          : resolveProjectDefaultProviderModelSelection(
+              providers,
+              settings,
+              projectRef.projectId,
+            ))),
     fallbackModelSelection: settings?.fallbackModelSelection ?? null,
     rotation: getClientSettings(),
     // Without environment settings the default is the project's own.

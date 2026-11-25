@@ -45,6 +45,7 @@ vi.mock("../../state/entities", () => ({
     resources.projects.find(
       (project) => project.environmentId === ref.environmentId && project.id === ref.projectId,
     ) ?? null,
+  readThreadShells: () => [],
 }));
 vi.mock("../../hooks/useScratchProject", () => ({ useScratchProject: () => ({}) }));
 

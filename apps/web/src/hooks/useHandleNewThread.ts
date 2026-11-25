@@ -206,16 +206,25 @@ export function createNewThreadHandler(router: AnyRouter) {
       project,
     );
     const configuredDefaultModelSelection = projectSettings.settings.defaultModelSelection ?? null;
+    const draftStoreState = useComposerDraftStore.getState();
+    const stickyModelSelection =
+      draftStoreState.stickyActiveProvider !== null
+        ? (draftStoreState.stickyModelSelectionByProvider?.[draftStoreState.stickyActiveProvider] ??
+          null)
+        : null;
     const projectDefaultModelSelection = resolveRotatedNewThreadSelection({
       configuredDefaultSelection: configuredDefaultModelSelection,
-      fallbackDefaultSelection:
-        carryModelSelection || useComposerDraftStore.getState().stickyActiveProvider !== null
-          ? null
-          : resolveProjectDefaultProviderModelSelection(
-              environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
-              targetServerSettings,
-              projectRef.projectId,
-            ),
+      fallbackDefaultSelection: configuredDefaultModelSelection
+        ? null
+        : (carryModelSelection ??
+          stickyModelSelection ??
+          (draftStoreState.stickyActiveProvider !== null
+            ? null
+            : resolveProjectDefaultProviderModelSelection(
+                environmentServerConfigs.get(projectRef.environmentId)?.providers ?? [],
+                targetServerSettings,
+                projectRef.projectId,
+              ))),
       fallbackModelSelection: targetServerSettings.fallbackModelSelection ?? null,
       rotation: getClientSettings(),
       projectDefaultSource: projectSettings.sources.defaultModelSelection,

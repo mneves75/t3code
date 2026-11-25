@@ -433,6 +433,8 @@ export interface ChatComposerProps {
   providerStatuses: ServerProvider[];
   providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
+  /** Non-null when an active usage-limit fallback replaced the draft's starting selection. */
+  draftFallbackSelection?: ModelSelection | null;
   activeThreadModelSelection: ModelSelection | null | undefined;
   reportedModelSelection?: ModelSelection | null;
   /** This unsent draft starts on the selected provider's least used account. */
@@ -569,6 +571,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     providerStatuses,
     providerCatalogKnown,
     activeProjectDefaultModelSelection,
+    draftFallbackSelection = null,
     activeThreadModelSelection,
     reportedModelSelection,
     rotateDraftAccount,
@@ -1145,9 +1148,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandInFlightRef = useRef(false);
   const pendingThreadImportsRef = useRef<Map<string, number>>(new Map());
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed checkpoint revert flag to a ref read by async handlers
+  const rotationProviderStatusesRef = useRef(providerStatuses);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes latest render-derived checkpoint and provider snapshots to refs read by async handlers and effects
   useLayoutEffect(() => {
     isRevertingCheckpointRef.current = isRevertingCheckpoint;
+    rotationProviderStatusesRef.current = providerStatuses;
   });
 
   const backgroundThread = use(BackgroundThreadContext);
@@ -1218,18 +1223,43 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const draftModelSelectionExplicit = composerDraft.modelSelectionExplicit === true;
   const rotationMarkedInstanceIds = settings.accountRotationInstances[environmentId];
+  // Keyed on provider data rather than array identity so workspace-catalog rebuilds don't rerun rotation.
+  const rotationProvidersSignature =
+    rotateDraftAccount && !draftModelSelectionExplicit && !composerSendState.hasSendableContent
+      ? providerStatuses
+          .map((provider) => {
+            const hasModel = provider.models.some(
+              (candidate) =>
+                candidate.slug === selectedModel ||
+                candidate.aliases?.includes(selectedModel) === true,
+            );
+            const windows =
+              provider.usageLimits?.windows
+                .map((window) => `${window.id}:${window.usedPercent}:${window.resetsAt ?? ""}`)
+                .join(",") ?? "";
+            return `${provider.instanceId}|${provider.enabled ? 1 : 0}|${provider.installed ? 1 : 0}|${provider.availability ?? ""}|${provider.status}|${provider.auth.status}|${provider.auth.email ?? ""}|${provider.auth.workspaceId ?? ""}|${hasModel ? 1 : 0}|${provider.checkedAt}|${provider.usageLimits?.checkedAt ?? ""}|${provider.usageLimits?.unavailable?.reason ?? ""}|${windows}`;
+          })
+          .join(";")
+      : "";
   // Rotation seeds the draft like any other default, so the picker shows the
   // account the thread starts on and an explicit pick still replaces it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted composer draft with the account chosen from live provider usage while the draft is empty
   useEffect(() => {
     // A send in flight has already named its account.
-    if (!rotateDraftAccount || isSendBusy || multipleModelSelections !== null) return;
+    if (isSendBusy || multipleModelSelections !== null) return;
     if (draftModelSelectionExplicit || composerSendState.hasSendableContent) return;
+    if (draftFallbackSelection && draftFallbackSelection.instanceId !== selectedInstanceId) {
+      setComposerDraftModelSelection(composerDraftTarget, draftFallbackSelection, {
+        replaceOptions: true,
+      });
+      return;
+    }
+    if (!rotateDraftAccount || rotationProvidersSignature.length === 0) return;
     if (!rotationMarkedInstanceIds || rotationMarkedInstanceIds.length === 0) return;
     const rotatedInstanceId = chooseRotatedProviderInstance({
       selection: { instanceId: selectedInstanceId, model: selectedModel },
       environmentId,
-      providers: providerStatuses,
+      providers: rotationProviderStatusesRef.current,
       ...(activeProjectId ? { project: { settings, projectId: activeProjectId } } : {}),
       eligibleInstanceIds: new Set(rotationMarkedInstanceIds),
       threads: rotationThreadShells,
@@ -1242,6 +1272,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       { replaceOptions: true },
     );
   }, [
+    draftFallbackSelection,
     composerDraftTarget,
     composerSendState.hasSendableContent,
     draftModelSelectionExplicit,
@@ -1249,7 +1280,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     rotationThreadShells,
     isSendBusy,
     multipleModelSelections,
-    providerStatuses,
+    rotationProvidersSignature,
     activeProjectId,
     settings,
     rotateDraftAccount,

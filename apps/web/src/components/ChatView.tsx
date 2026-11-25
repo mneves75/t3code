@@ -846,19 +846,25 @@ export default function ChatView(props: ChatViewProps) {
     ? draftProjectSettings.settings.defaultModelSelection
     : null;
   const draftRotationThreads = useThreadShells(
-    draftThread !== null &&
-      settings.accountRotationEnabled &&
-      draftProjectSettings?.sources.defaultModelSelection !== "project",
+    draftThread !== null && settings.accountRotationEnabled,
+  );
+  const stickyModelSelection = useComposerDraftStore((store) =>
+    store.stickyActiveProvider !== null
+      ? (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null)
+      : null,
   );
   const draftModelResolution =
     draftThread && draftProjectSettings
       ? resolveRotatedNewThreadSelection({
           configuredDefaultSelection: draftDefaultModelSelection,
-          fallbackDefaultSelection: resolveProjectDefaultProviderModelSelection(
-            providersByEnvironment.get(draftThread.environmentId) ?? [],
-            settings,
-            draftThread.projectId,
-          ),
+          fallbackDefaultSelection: draftDefaultModelSelection
+            ? null
+            : (stickyModelSelection ??
+              resolveProjectDefaultProviderModelSelection(
+                providersByEnvironment.get(draftThread.environmentId) ?? [],
+                settings,
+                draftThread.projectId,
+              )),
           fallbackModelSelection: settings.fallbackModelSelection,
           rotation: settings,
           projectDefaultSource: draftProjectSettings.sources.defaultModelSelection,
@@ -1251,7 +1257,7 @@ export default function ChatView(props: ChatViewProps) {
     isLocalDraftThread &&
     !draftThread?.promotedTo &&
     settings.accountRotationEnabled &&
-    activeProjectSettings.sources.defaultModelSelection !== "project";
+    (activeProjectSettings.sources.defaultModelSelection !== "project" || draftFallback !== null);
   const handleNewThreadInActiveProject = () => {
     startNewThreadForProject(activeProjectRef, handleNewThread);
   };
@@ -3959,6 +3965,7 @@ export default function ChatView(props: ChatViewProps) {
                                 activeProjectDefaultModelSelection={
                                   activeProjectDefaultModelSelection
                                 }
+                                draftFallbackSelection={draftFallback?.selection ?? null}
                                 rotateDraftAccount={rotateDraftAccount}
                                 activeThreadModelSelection={activeThread?.modelSelection}
                                 activeProjectId={activeProject?.id ?? null}

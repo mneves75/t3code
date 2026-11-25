@@ -1,4 +1,5 @@
 import type { EnvironmentId, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import { resolveAccountIdentities } from "@t3tools/client-runtime/account-rotation";
 import { useGT } from "gt-react";
 
 import {
@@ -17,12 +18,6 @@ interface RotationAccountRow {
   readonly enabled: boolean;
   readonly email?: string | undefined;
   readonly workspaceId?: string | undefined;
-}
-
-function loginIdentityKey(account: RotationAccountRow): string | null {
-  const email = account.email?.trim().toLowerCase();
-  if (!email) return null;
-  return `${account.driver}:${email}${account.workspaceId ? `:${account.workspaceId}` : ""}`;
 }
 
 export function AccountRotationSettings({
@@ -56,11 +51,12 @@ export function AccountRotationSettings({
   // Stays while rotation is on, so marks left from before can still be switched off.
   if (accounts.length === 0 && !settings.accountRotationEnabled) return null;
 
-  const loginCount = new Map<string, number>();
-  for (const account of accounts) {
-    if (!account.enabled) continue;
-    const key = loginIdentityKey(account);
-    if (key) loginCount.set(key, (loginCount.get(key) ?? 0) + 1);
+  const enabledAccounts = accounts.filter((account) => account.enabled);
+  const identities = resolveAccountIdentities(enabledAccounts);
+  const identityCounts = new Map<string, number>();
+  for (const account of enabledAccounts) {
+    const identity = identities.get(account.instanceId);
+    if (identity) identityCounts.set(identity, (identityCounts.get(identity) ?? 0) + 1);
   }
 
   const setMarked = (instanceId: ProviderInstanceId, value: boolean) => {
@@ -91,10 +87,10 @@ export function AccountRotationSettings({
       />
       {settings.accountRotationEnabled
         ? accounts.map((account) => {
-            const loginKey = account.enabled ? loginIdentityKey(account) : null;
+            const identity = account.enabled ? identities.get(account.instanceId) : undefined;
             const description = !account.enabled
               ? gt("Disabled")
-              : loginKey && (loginCount.get(loginKey) ?? 0) >= 2
+              : identity && (identityCounts.get(identity) ?? 0) >= 2
                 ? account.email
                 : undefined;
             return (
