@@ -1150,11 +1150,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
   const rotationProviderStatusesRef = useRef(providerStatuses);
   const draftFallbackSelectionRef = useRef(draftFallbackSelection);
+  const selectedModelOptionsForDispatchRef = useRef(selectedModelOptionsForDispatch);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes latest render-derived refs read by async handlers and effects
   useLayoutEffect(() => {
     isRevertingCheckpointRef.current = isRevertingCheckpoint;
     rotationProviderStatusesRef.current = providerStatuses;
     draftFallbackSelectionRef.current = draftFallbackSelection;
+    selectedModelOptionsForDispatchRef.current = selectedModelOptionsForDispatch;
   });
 
   const backgroundThread = use(BackgroundThreadContext);
@@ -1237,9 +1239,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             );
             const windows =
               provider.usageLimits?.windows
-                .map((window) => `${window.id}:${window.usedPercent}:${window.resetsAt ?? ""}`)
+                .map(
+                  (window) =>
+                    `${window.id}:${window.usedPercent}:${window.resetsAt ?? ""}:${window.modelIds?.join("/") ?? ""}:${window.providerIds?.join("/") ?? ""}`,
+                )
                 .join(",") ?? "";
-            return `${provider.instanceId}|${provider.enabled ? 1 : 0}|${provider.installed ? 1 : 0}|${provider.availability ?? ""}|${provider.status}|${provider.auth.status}|${provider.auth.email ?? ""}|${provider.auth.workspaceId ?? ""}|${hasModel ? 1 : 0}|${provider.checkedAt}|${provider.usageLimits?.checkedAt ?? ""}|${provider.usageLimits?.unavailable?.reason ?? ""}|${windows}`;
+            return `${provider.instanceId}|${provider.enabled ? 1 : 0}|${provider.installed ? 1 : 0}|${provider.availability ?? ""}|${provider.status}|${provider.auth.status}|${provider.auth.email ?? ""}|${provider.auth.workspaceId ?? ""}|${provider.usageLimits?.credentialFingerprint ?? ""}|${hasModel ? 1 : 0}|${provider.checkedAt}|${provider.usageLimits?.checkedAt ?? ""}|${provider.usageLimits?.unavailable?.reason ?? ""}|${windows}`;
           })
           .join(";")
       : "";
@@ -1277,7 +1282,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (rotatedInstanceId === selectedInstanceId) return;
     setComposerDraftModelSelection(
       composerDraftTarget,
-      createModelSelection(rotatedInstanceId, selectedModel, selectedModelOptionsForDispatch),
+      createModelSelection(
+        rotatedInstanceId,
+        selectedModel,
+        selectedModelOptionsForDispatchRef.current,
+      ),
       { replaceOptions: true },
     );
   }, [
@@ -1297,7 +1306,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     rotationMarkedInstanceIds,
     selectedInstanceId,
     selectedModel,
-    selectedModelOptionsForDispatch,
     setComposerDraftModelSelection,
   ]);
   const compactSlashCommandAvailable =

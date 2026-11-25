@@ -152,8 +152,10 @@ accounts.
 A new thread then starts on whichever marked account of that provider has the most applicable
 usage left for the selected model, keeping your model and model options. Accounts with the same
 remaining usage take turns starting threads. Accounts that report available usage rank ahead of
-accounts that report no usage (such as an API key or a failed usage probe); accounts without
-reported usage take turns when none report usage or once every reporting account is exhausted.
+accounts that report no usage (such as an API key or a failed usage probe), while an applicable
+100% window in a failed usage probe still counts as exhausted and propagates across duplicate
+logins; accounts without reported usage take turns when none report usage or once every reporting
+account is exhausted.
 Multiple provider instances signed into the same underlying login share turn recency and their
 freshest usage report, and **Account rotation** in Settings highlights duplicate logins as well
 as disabled marked accounts so you can switch off stale entries. When no marked account has room,

@@ -453,6 +453,63 @@ describe("rotating a new thread across accounts of one provider", () => {
       }),
     ).toBe(personalCodex);
 
+    // A newer partial probeFailed report exhausting one model preserves known exhaustion and room for other models.
+    const sonnetModel = "claude-sonnet-5-5";
+    const haikuModel = "claude-haiku-5-5";
+    const claudeFamilyModels = [
+      { slug: model, name: "Opus", isCustom: false, capabilities: null },
+      { slug: sonnetModel, name: "Sonnet", isCustom: false, capabilities: null },
+      { slug: haikuModel, name: "Haiku", isCustom: false, capabilities: null },
+    ];
+    const partialScopedAlias = [
+      account(
+        work,
+        [
+          { ...window(20), id: "seven_day", kind: "weekly", label: "Weekly" },
+          { ...window(100), id: "seven_day_sonnet", kind: "weekly", label: "Weekly · Sonnet" },
+        ],
+        {
+          auth: sharedAuth,
+          models: claudeFamilyModels,
+          checkedAt: "2026-09-03T11:00:00.000Z",
+          usageLimits: {
+            checkedAt: "2026-09-03T11:00:00.000Z",
+            windows: [
+              { ...window(20), id: "seven_day", kind: "weekly", label: "Weekly" },
+              { ...window(100), id: "seven_day_sonnet", kind: "weekly", label: "Weekly · Sonnet" },
+            ],
+          },
+        },
+      ),
+      account(
+        spare,
+        [{ ...window(100), id: "seven_day_opus", kind: "weekly", label: "Weekly · Opus" }],
+        {
+          auth: sharedAuth,
+          models: claudeFamilyModels,
+          checkedAt: "2026-09-03T11:05:00.000Z",
+          usageLimits: {
+            checkedAt: "2026-09-03T11:05:00.000Z",
+            windows: [
+              { ...window(100), id: "seven_day_opus", kind: "weekly", label: "Weekly · Opus" },
+            ],
+            unavailable: { reason: "probeFailed" },
+          },
+        },
+      ),
+      account(personal, [{ ...window(60), id: "seven_day", kind: "weekly", label: "Weekly" }], {
+        auth: personalAuth,
+        models: claudeFamilyModels,
+      }),
+    ];
+    expect(
+      choose(partialScopedAlias, [], work, [work, spare, personal], { model: sonnetModel }),
+    ).toBe(personal);
+    expect(choose(partialScopedAlias, [], work, [work, spare, personal], { model })).toBe(personal);
+    expect(
+      choose(partialScopedAlias, [], personal, [work, spare, personal], { model: haikuModel }),
+    ).toBe(work);
+
     // A project override disabling an alias does not discard its fresher exhaustion report.
     const projectId = ProjectId.make("project-a");
     const projectSettings = {
@@ -598,6 +655,61 @@ describe("rotating a new thread across accounts of one provider", () => {
             driver: ProviderDriverKind.make("codex"),
             models: aliasedFallbackModels,
           }),
+        ],
+      }),
+    ).toEqual({ selection: { instanceId: work, model }, fallback: null });
+
+    // Same-instance Claude fallback evaluates base and fallback windows independently.
+    const sonnetModel = "claude-sonnet-5-5";
+    const claudePairModels = [
+      { slug: model, name: "Opus", aliases: ["opus"], isCustom: false, capabilities: null },
+      {
+        slug: sonnetModel,
+        name: "Sonnet",
+        aliases: ["sonnet"],
+        isCustom: false,
+        capabilities: null,
+      },
+    ];
+    const sameInstanceHealthy = resolveRotatedNewThreadSelection({
+      ...baseInput,
+      fallbackModelSelection: { instanceId: work, model: "sonnet" },
+      rotation: {
+        accountRotationEnabled: true,
+        accountRotationInstances: { [environmentId]: [work] },
+      },
+      providers: [
+        account(
+          work,
+          [
+            { ...window(20), id: "seven_day", kind: "weekly", label: "Weekly" },
+            { ...window(100), id: "seven_day_opus", kind: "weekly", label: "Weekly · Opus" },
+            { ...window(10), id: "seven_day_sonnet", kind: "weekly", label: "Weekly · Sonnet" },
+          ],
+          { models: claudePairModels },
+        ),
+      ],
+    });
+    expect(sameInstanceHealthy.selection).toEqual({ instanceId: work, model: "sonnet" });
+    expect(sameInstanceHealthy.fallback).not.toBeNull();
+
+    expect(
+      resolveRotatedNewThreadSelection({
+        ...baseInput,
+        fallbackModelSelection: { instanceId: work, model: "sonnet" },
+        rotation: {
+          accountRotationEnabled: true,
+          accountRotationInstances: { [environmentId]: [work] },
+        },
+        providers: [
+          account(
+            work,
+            [
+              { ...window(100), id: "opus_cap", modelIds: [model] },
+              { ...window(100), id: "seven_day_sonnet", kind: "weekly", label: "Weekly · Sonnet" },
+            ],
+            { models: claudePairModels },
+          ),
         ],
       }),
     ).toEqual({ selection: { instanceId: work, model }, fallback: null });

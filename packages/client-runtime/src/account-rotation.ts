@@ -15,7 +15,8 @@ import {
 import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   antigravityWindowLimitsModel,
-  resolveNewThreadModelSelection,
+  exhaustedUsageWindow,
+  type resolveNewThreadModelSelection,
 } from "@t3tools/shared/usageLimits";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
@@ -130,6 +131,54 @@ function providerIdentityInput(provider: ServerProvider): AccountIdentityInput {
   };
 }
 
+const usageWindowKey = (window: ServerProviderUsageWindow) =>
+  `${window.id}|${window.modelIds?.join(",") ?? ""}|${window.providerIds?.join(",") ?? ""}`;
+
+function overlayPartialExhaustedLimits(
+  usable: { readonly limits: ServerProviderUsageLimits; readonly checkedAt: number } | undefined,
+  partials: ReadonlyArray<{
+    readonly limits: ServerProviderUsageLimits;
+    readonly checkedAt: number;
+  }>,
+  asOf: number,
+): ServerProviderUsageLimits | undefined {
+  const exhausted = new Map<
+    string,
+    { readonly window: ServerProviderUsageWindow; readonly checkedAt: number }
+  >();
+  let latestPartial:
+    | { readonly limits: ServerProviderUsageLimits; readonly checkedAt: number }
+    | undefined;
+  for (const entry of partials) {
+    if (usable && entry.checkedAt <= usable.checkedAt) continue;
+    for (const window of entry.limits.windows) {
+      if (windowUsedAt(window, asOf) < 100) continue;
+      if (!latestPartial || entry.checkedAt > latestPartial.checkedAt) latestPartial = entry;
+      const key = usageWindowKey(window);
+      const previous = exhausted.get(key);
+      if (!previous || entry.checkedAt > previous.checkedAt) {
+        exhausted.set(key, { window, checkedAt: entry.checkedAt });
+      }
+    }
+  }
+  if (exhausted.size === 0 || !latestPartial) return usable?.limits;
+  if (!usable) {
+    return {
+      ...latestPartial.limits,
+      windows: [...exhausted.values()].map((entry) => entry.window),
+    };
+  }
+  const mergedWindows = new Map<string, ServerProviderUsageWindow>(
+    usable.limits.windows.map((window) => [usageWindowKey(window), window]),
+  );
+  for (const [key, entry] of exhausted) mergedWindows.set(key, entry.window);
+  return {
+    ...usable.limits,
+    checkedAt: latestPartial.limits.checkedAt,
+    windows: [...mergedWindows.values()],
+  };
+}
+
 function resolveSharedUsageLimits(
   providers: ReadonlyArray<ServerProvider>,
   identities: ReadonlyMap<ProviderInstanceId, string>,
@@ -139,9 +188,9 @@ function resolveSharedUsageLimits(
     string,
     { readonly limits: ServerProviderUsageLimits; readonly checkedAt: number }
   >();
-  const bestExhausted = new Map<
+  const partialsByIdentity = new Map<
     string,
-    { readonly limits: ServerProviderUsageLimits; readonly checkedAt: number }
+    Array<{ readonly limits: ServerProviderUsageLimits; readonly checkedAt: number }>
   >();
   for (const provider of providers) {
     if (!provider.enabled) continue;
@@ -156,22 +205,17 @@ function resolveSharedUsageLimits(
       }
       continue;
     }
-    if (limits.windows.some((window) => windowUsedAt(window, asOf) >= 100)) {
-      const previous = bestExhausted.get(identity);
-      if (!previous || checkedAt > previous.checkedAt) {
-        bestExhausted.set(identity, { limits, checkedAt });
-      }
-    }
+    const list = partialsByIdentity.get(identity);
+    if (list) list.push({ limits, checkedAt });
+    else partialsByIdentity.set(identity, [{ limits, checkedAt }]);
   }
   const merged = new Map<string, ServerProviderUsageLimits>();
   for (const [identity, entry] of bestUsable) {
     merged.set(identity, entry.limits);
   }
-  for (const [identity, entry] of bestExhausted) {
-    const usable = bestUsable.get(identity);
-    if (!usable || entry.checkedAt > usable.checkedAt) {
-      merged.set(identity, entry.limits);
-    }
+  for (const [identity, partials] of partialsByIdentity) {
+    const combined = overlayPartialExhaustedLimits(bestUsable.get(identity), partials, asOf);
+    if (combined) merged.set(identity, combined);
   }
   return merged;
 }
@@ -457,31 +501,44 @@ export function resolveRotatedNewThreadSelection(input: {
   };
   const canonicalBase = resolveCanonicalSelection(rotatedBase);
   const canonicalFallback = resolveCanonicalSelection(rotatedFallback);
-  const normalizedProviders = providers.map((provider) => {
-    const identity = identities.get(provider.instanceId) ?? `instance:${provider.instanceId}`;
-    const merged = sharedLimits.get(identity);
-    if (canonicalBase && provider.instanceId === canonicalBase.instanceId) {
-      return normalizeProviderForFallback(provider, merged, canonicalBase.model);
+  if (canonicalBase && canonicalFallback) {
+    const rawBase = providers.find((entry) => entry.instanceId === canonicalBase.instanceId);
+    const rawFallback = providers.find(
+      (entry) => entry.instanceId === canonicalFallback.instanceId,
+    );
+    const normalizedBase = rawBase
+      ? normalizeProviderForFallback(
+          rawBase,
+          sharedLimits.get(identities.get(rawBase.instanceId) ?? `instance:${rawBase.instanceId}`),
+          canonicalBase.model,
+        )
+      : undefined;
+    const normalizedFallback = rawFallback
+      ? normalizeProviderForFallback(
+          rawFallback,
+          sharedLimits.get(
+            identities.get(rawFallback.instanceId) ?? `instance:${rawFallback.instanceId}`,
+          ),
+          canonicalFallback.model,
+        )
+      : undefined;
+    const exhaustedBase = exhaustedUsageWindow(normalizedBase, asOf, canonicalBase.model);
+    if (
+      normalizedBase &&
+      exhaustedBase &&
+      normalizedFallback?.enabled &&
+      normalizedFallback.installed &&
+      normalizedFallback.auth.status !== "unauthenticated" &&
+      isProviderAvailable(normalizedFallback) &&
+      !exhaustedUsageWindow(normalizedFallback, asOf, canonicalFallback.model) &&
+      (!settings ||
+        resolveProjectProviderInstanceEnabled(settings, projectId, normalizedFallback.instanceId))
+    ) {
+      return {
+        selection: rotatedFallback,
+        fallback: { provider: normalizedBase, resetsAt: exhaustedBase.resetsAt ?? null },
+      };
     }
-    if (canonicalFallback && provider.instanceId === canonicalFallback.instanceId) {
-      return normalizeProviderForFallback(provider, merged, canonicalFallback.model);
-    }
-    return provider;
-  });
-
-  const resolution = resolveNewThreadModelSelection({
-    defaultSelection: canonicalBase,
-    fallbackSelection: canonicalFallback,
-    providers: normalizedProviders,
-    ...(settings ? { settings } : {}),
-    projectId,
-    now,
-  });
-  if (resolution.fallback) {
-    return {
-      selection: rotatedFallback,
-      fallback: resolution.fallback,
-    };
   }
   return {
     selection: rotatedBase !== baseSelection ? rotatedBase : configuredDefaultSelection,
