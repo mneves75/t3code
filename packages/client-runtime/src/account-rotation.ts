@@ -15,7 +15,6 @@ import {
 import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   antigravityWindowLimitsModel,
-  exhaustedUsageWindow,
   type resolveNewThreadModelSelection,
 } from "@t3tools/shared/usageLimits";
 
@@ -270,53 +269,44 @@ function summarizeModelUsage(
   limits: ServerProviderUsageLimits | undefined,
   asOf: number,
   model: string,
-): { readonly hasUsage: boolean; readonly used: number; readonly exhausted: boolean } {
+): {
+  readonly hasUsage: boolean;
+  readonly used: number;
+  readonly exhausted: boolean;
+  readonly exhaustedWindow: ServerProviderUsageWindow | undefined;
+} {
   const rawWindows = limits?.windows ?? [];
   const applicable = rawWindows.filter((window) =>
     windowAppliesToModel(driver, rawWindows, window, model),
   );
   if (applicable.length === 0) {
-    return { hasUsage: false, used: 0, exhausted: false };
+    return { hasUsage: false, used: 0, exhausted: false, exhaustedWindow: undefined };
   }
   let used = 0;
-  if (driver === "cursor" && CURSOR_AUTO_MODEL_PATTERN.test(model)) {
-    const auto = applicable.find((window) => window.id === "autoPercentUsed");
-    const api = applicable.find((window) => window.id === "apiPercentUsed");
-    used =
-      auto && api
-        ? Math.min(windowUsedAt(auto, asOf), windowUsedAt(api, asOf))
-        : Math.max(...applicable.map((window) => windowUsedAt(window, asOf)));
+  let exhaustedWindow: ServerProviderUsageWindow | undefined;
+  const cursorAuto =
+    driver === "cursor" && CURSOR_AUTO_MODEL_PATTERN.test(model)
+      ? {
+          auto: applicable.find((window) => window.id === "autoPercentUsed"),
+          api: applicable.find((window) => window.id === "apiPercentUsed"),
+        }
+      : null;
+  if (cursorAuto?.auto && cursorAuto.api) {
+    used = Math.min(windowUsedAt(cursorAuto.auto, asOf), windowUsedAt(cursorAuto.api, asOf));
+    exhaustedWindow = used >= 100 ? cursorAuto.api : undefined;
   } else {
     for (const window of applicable) {
-      used = Math.max(used, windowUsedAt(window, asOf));
+      const windowUsed = windowUsedAt(window, asOf);
+      if (windowUsed > used) used = windowUsed;
+      if (!exhaustedWindow && windowUsed >= 100) exhaustedWindow = window;
     }
   }
   const exhausted = used >= 100;
   // Partial `unavailable` (e.g. probeFailed) reports still flag exhaustion, never outrank known room.
   if (limits?.unavailable !== undefined) {
-    return { hasUsage: false, used: 0, exhausted };
+    return { hasUsage: false, used: 0, exhausted, exhaustedWindow };
   }
-  return { hasUsage: true, used, exhausted };
-}
-
-function normalizeProviderForFallback(
-  provider: ServerProvider,
-  mergedLimits: ServerProviderUsageLimits | undefined,
-  model: string,
-): ServerProvider {
-  const limits = mergedLimits ?? provider.usageLimits;
-  if (!limits) return provider;
-  const canonicalModel = resolveModelSlug(provider, model) ?? model;
-  const windows =
-    provider.driver === "claudeAgent"
-      ? limits.windows.filter((window) =>
-          windowAppliesToModel(provider.driver, limits.windows, window, canonicalModel),
-        )
-      : limits.windows;
-  if (limits === provider.usageLimits && windows.length === limits.windows.length) {
-    return provider;
-  }
-  return { ...provider, usageLimits: { ...limits, windows } };
+  return { hasUsage: true, used, exhausted, exhaustedWindow };
 }
 
 export interface AccountRotationInput {
@@ -506,37 +496,39 @@ export function resolveRotatedNewThreadSelection(input: {
     const rawFallback = providers.find(
       (entry) => entry.instanceId === canonicalFallback.instanceId,
     );
-    const normalizedBase = rawBase
-      ? normalizeProviderForFallback(
-          rawBase,
-          sharedLimits.get(identities.get(rawBase.instanceId) ?? `instance:${rawBase.instanceId}`),
-          canonicalBase.model,
-        )
+    const baseLimits = rawBase
+      ? (sharedLimits.get(identities.get(rawBase.instanceId) ?? `instance:${rawBase.instanceId}`) ??
+        rawBase.usageLimits)
       : undefined;
-    const normalizedFallback = rawFallback
-      ? normalizeProviderForFallback(
-          rawFallback,
-          sharedLimits.get(
-            identities.get(rawFallback.instanceId) ?? `instance:${rawFallback.instanceId}`,
-          ),
-          canonicalFallback.model,
-        )
+    const fallbackLimits = rawFallback
+      ? (sharedLimits.get(
+          identities.get(rawFallback.instanceId) ?? `instance:${rawFallback.instanceId}`,
+        ) ?? rawFallback.usageLimits)
       : undefined;
-    const exhaustedBase = exhaustedUsageWindow(normalizedBase, asOf, canonicalBase.model);
+    const baseUsage = rawBase
+      ? summarizeModelUsage(rawBase.driver, baseLimits, asOf, canonicalBase.model)
+      : undefined;
+    const fallbackUsage = rawFallback
+      ? summarizeModelUsage(rawFallback.driver, fallbackLimits, asOf, canonicalFallback.model)
+      : undefined;
     if (
-      normalizedBase &&
-      exhaustedBase &&
-      normalizedFallback?.enabled &&
-      normalizedFallback.installed &&
-      normalizedFallback.auth.status !== "unauthenticated" &&
-      isProviderAvailable(normalizedFallback) &&
-      !exhaustedUsageWindow(normalizedFallback, asOf, canonicalFallback.model) &&
+      rawBase &&
+      baseUsage?.exhaustedWindow &&
+      rawFallback?.enabled &&
+      rawFallback.installed &&
+      rawFallback.auth.status !== "unauthenticated" &&
+      isProviderAvailable(rawFallback) &&
+      !fallbackUsage?.exhausted &&
       (!settings ||
-        resolveProjectProviderInstanceEnabled(settings, projectId, normalizedFallback.instanceId))
+        resolveProjectProviderInstanceEnabled(settings, projectId, rawFallback.instanceId))
     ) {
+      const provider =
+        baseLimits && baseLimits !== rawBase.usageLimits
+          ? { ...rawBase, usageLimits: baseLimits }
+          : rawBase;
       return {
         selection: rotatedFallback,
-        fallback: { provider: normalizedBase, resetsAt: exhaustedBase.resetsAt ?? null },
+        fallback: { provider, resetsAt: baseUsage.exhaustedWindow.resetsAt ?? null },
       };
     }
   }

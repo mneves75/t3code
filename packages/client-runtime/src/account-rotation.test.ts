@@ -714,6 +714,30 @@ describe("rotating a new thread across accounts of one provider", () => {
       }),
     ).toEqual({ selection: { instanceId: work, model }, fallback: null });
 
+    // A Cursor total-only 100% cap triggers the configured fallback consistently with rotation.
+    const cursorA = ProviderInstanceId.make("cursor");
+    const cursorFallback = resolveRotatedNewThreadSelection({
+      ...baseInput,
+      configuredDefaultSelection: { instanceId: cursorA, model: "auto" },
+      fallbackModelSelection: { instanceId: codexA, model: codexModel },
+      rotation: {
+        accountRotationEnabled: true,
+        accountRotationInstances: { [environmentId]: [cursorA] },
+      },
+      providers: [
+        account(cursorA, [{ ...window(100), id: "totalPercentUsed", kind: "monthly" }], {
+          driver: ProviderDriverKind.make("cursor"),
+          models: [{ slug: "auto", name: "Auto", isCustom: false, capabilities: null }],
+        }),
+        account(codexA, [window(10)], {
+          driver: ProviderDriverKind.make("codex"),
+          models: codexModels,
+        }),
+      ],
+    });
+    expect(cursorFallback.selection).toEqual({ instanceId: codexA, model: codexModel });
+    expect(cursorFallback.fallback).not.toBeNull();
+
     // Handles partial/missing client settings without throwing.
     expect(
       resolveRotatedNewThreadSelection({
