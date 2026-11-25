@@ -133,23 +133,47 @@ function providerIdentityInput(provider: ServerProvider): AccountIdentityInput {
 function resolveSharedUsageLimits(
   providers: ReadonlyArray<ServerProvider>,
   identities: ReadonlyMap<ProviderInstanceId, string>,
+  asOf: number,
 ): ReadonlyMap<string, ServerProviderUsageLimits> {
-  const bestByIdentity = new Map<
+  const bestUsable = new Map<
+    string,
+    { readonly limits: ServerProviderUsageLimits; readonly checkedAt: number }
+  >();
+  const bestExhausted = new Map<
     string,
     { readonly limits: ServerProviderUsageLimits; readonly checkedAt: number }
   >();
   for (const provider of providers) {
     if (!provider.enabled) continue;
     const limits = provider.usageLimits;
-    if (!limits || limits.unavailable !== undefined || limits.windows.length === 0) continue;
+    if (!limits || limits.windows.length === 0) continue;
     const identity = identities.get(provider.instanceId) ?? `instance:${provider.instanceId}`;
     const checkedAt = parseTimestamp(limits.checkedAt) ?? parseTimestamp(provider.checkedAt) ?? 0;
-    const previous = bestByIdentity.get(identity);
-    if (!previous || checkedAt > previous.checkedAt) {
-      bestByIdentity.set(identity, { limits, checkedAt });
+    if (limits.unavailable === undefined) {
+      const previous = bestUsable.get(identity);
+      if (!previous || checkedAt > previous.checkedAt) {
+        bestUsable.set(identity, { limits, checkedAt });
+      }
+      continue;
+    }
+    if (limits.windows.some((window) => windowUsedAt(window, asOf) >= 100)) {
+      const previous = bestExhausted.get(identity);
+      if (!previous || checkedAt > previous.checkedAt) {
+        bestExhausted.set(identity, { limits, checkedAt });
+      }
     }
   }
-  return new Map([...bestByIdentity].map(([key, entry]) => [key, entry.limits]));
+  const merged = new Map<string, ServerProviderUsageLimits>();
+  for (const [identity, entry] of bestUsable) {
+    merged.set(identity, entry.limits);
+  }
+  for (const [identity, entry] of bestExhausted) {
+    const usable = bestUsable.get(identity);
+    if (!usable || entry.checkedAt > usable.checkedAt) {
+      merged.set(identity, entry.limits);
+    }
+  }
+  return merged;
 }
 
 function windowAppliesToModel(
@@ -276,9 +300,10 @@ export interface AccountRotationInput {
  */
 export function chooseRotatedProviderInstance(input: AccountRotationInput): ProviderInstanceId {
   const { selection, project } = input;
+  const asOf = resolveAsOf(input.providers, input.now);
   // Merge freshest alias usage from machine-enabled providers before applying project enablement.
   const identities = resolveAccountIdentities(input.providers.map(providerIdentityInput));
-  const sharedLimits = resolveSharedUsageLimits(input.providers, identities);
+  const sharedLimits = resolveSharedUsageLimits(input.providers, identities, asOf);
 
   const providers = project
     ? input.providers.map((provider) => ({
@@ -328,7 +353,6 @@ export function chooseRotatedProviderInstance(input: AccountRotationInput): Prov
   ];
   if (startable.length === 0) return selection.instanceId;
 
-  const asOf = resolveAsOf(input.providers, input.now);
   const candidates = startable.map((provider) => {
     const identity = identities.get(provider.instanceId) ?? `instance:${provider.instanceId}`;
     const limits = sharedLimits.get(identity) ?? provider.usageLimits;
@@ -422,23 +446,32 @@ export function resolveRotatedNewThreadSelection(input: {
   const rotatedBase = rotate(baseSelection, true);
   const rotatedFallback = rotate(fallbackModelSelection, false);
 
+  const asOf = resolveAsOf(providers, now);
   const identities = resolveAccountIdentities(providers.map(providerIdentityInput));
-  const sharedLimits = resolveSharedUsageLimits(providers, identities);
+  const sharedLimits = resolveSharedUsageLimits(providers, identities, asOf);
+  const resolveCanonicalSelection = (selection: ModelSelection | null) => {
+    if (!selection) return null;
+    const provider = providers.find((entry) => entry.instanceId === selection.instanceId);
+    const slug = provider ? resolveModelSlug(provider, selection.model) : null;
+    return slug && slug !== selection.model ? { ...selection, model: slug } : selection;
+  };
+  const canonicalBase = resolveCanonicalSelection(rotatedBase);
+  const canonicalFallback = resolveCanonicalSelection(rotatedFallback);
   const normalizedProviders = providers.map((provider) => {
     const identity = identities.get(provider.instanceId) ?? `instance:${provider.instanceId}`;
     const merged = sharedLimits.get(identity);
-    if (rotatedBase && provider.instanceId === rotatedBase.instanceId) {
-      return normalizeProviderForFallback(provider, merged, rotatedBase.model);
+    if (canonicalBase && provider.instanceId === canonicalBase.instanceId) {
+      return normalizeProviderForFallback(provider, merged, canonicalBase.model);
     }
-    if (rotatedFallback && provider.instanceId === rotatedFallback.instanceId) {
-      return normalizeProviderForFallback(provider, merged, rotatedFallback.model);
+    if (canonicalFallback && provider.instanceId === canonicalFallback.instanceId) {
+      return normalizeProviderForFallback(provider, merged, canonicalFallback.model);
     }
     return provider;
   });
 
   const resolution = resolveNewThreadModelSelection({
-    defaultSelection: rotatedBase,
-    fallbackSelection: rotatedFallback,
+    defaultSelection: canonicalBase,
+    fallbackSelection: canonicalFallback,
     providers: normalizedProviders,
     ...(settings ? { settings } : {}),
     projectId,
@@ -446,7 +479,7 @@ export function resolveRotatedNewThreadSelection(input: {
   });
   if (resolution.fallback) {
     return {
-      selection: resolution.selection,
+      selection: rotatedFallback,
       fallback: resolution.fallback,
     };
   }

@@ -165,8 +165,9 @@ Pick an account in the model picker to use it for that thread instead. A project
 own configured model keeps that model's account. A marked account must be signed in and offer
 the selected model to take a turn.
 
-An account that is not marked is never chosen for you. Picking one by hand also makes it the
-account new threads start on, like any other model pick, so rotation pauses until you pick a
+An account that is not marked is never chosen by rotation (though a configured **Fallback model**
+still applies when no marked account has room). Picking an unmarked account by hand also makes it
+the account new threads start on, like any other model pick, so rotation pauses until you pick a
 marked account again.
 
 Rotation never moves a thread that has started, including one stopped by a usage limit.

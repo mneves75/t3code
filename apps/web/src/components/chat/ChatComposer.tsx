@@ -1149,10 +1149,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const pendingThreadImportsRef = useRef<Map<string, number>>(new Map());
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
   const rotationProviderStatusesRef = useRef(providerStatuses);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes latest render-derived checkpoint and provider snapshots to refs read by async handlers and effects
+  const draftFallbackSelectionRef = useRef(draftFallbackSelection);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes latest render-derived refs read by async handlers and effects
   useLayoutEffect(() => {
     isRevertingCheckpointRef.current = isRevertingCheckpoint;
     rotationProviderStatusesRef.current = providerStatuses;
+    draftFallbackSelectionRef.current = draftFallbackSelection;
   });
 
   const backgroundThread = use(BackgroundThreadContext);
@@ -1241,6 +1243,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           })
           .join(";")
       : "";
+  const draftFallbackInstanceId = draftFallbackSelection?.instanceId ?? null;
+  const draftFallbackModel = draftFallbackSelection?.model ?? null;
   // Rotation seeds the draft like any other default, so the picker shows the
   // account the thread starts on and an explicit pick still replaces it.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- syncs the persisted composer draft with the account chosen from live provider usage while the draft is empty
@@ -1248,8 +1252,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // A send in flight has already named its account.
     if (isSendBusy || multipleModelSelections !== null) return;
     if (draftModelSelectionExplicit || composerSendState.hasSendableContent) return;
-    if (draftFallbackSelection && draftFallbackSelection.instanceId !== selectedInstanceId) {
-      setComposerDraftModelSelection(composerDraftTarget, draftFallbackSelection, {
+    if (
+      draftFallbackInstanceId &&
+      draftFallbackModel &&
+      draftFallbackInstanceId !== selectedInstanceId &&
+      draftFallbackSelectionRef.current
+    ) {
+      setComposerDraftModelSelection(composerDraftTarget, draftFallbackSelectionRef.current, {
         replaceOptions: true,
       });
       return;
@@ -1272,7 +1281,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       { replaceOptions: true },
     );
   }, [
-    draftFallbackSelection,
+    draftFallbackInstanceId,
+    draftFallbackModel,
     composerDraftTarget,
     composerSendState.hasSendableContent,
     draftModelSelectionExplicit,

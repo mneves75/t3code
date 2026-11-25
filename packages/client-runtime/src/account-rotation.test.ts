@@ -421,6 +421,38 @@ describe("rotating a new thread across accounts of one provider", () => {
       }),
     ).toBe(personalCodex);
 
+    // A newer partial probeFailed report at 100% on an alias still overrides a stale 20% report.
+    const partialExhaustedAlias = [
+      account(berlinA, [window(100)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: sharedAuth,
+        models: codexModels,
+        checkedAt: "2026-09-03T11:05:00.000Z",
+        usageLimits: {
+          checkedAt: "2026-09-03T11:05:00.000Z",
+          windows: [window(100)],
+          unavailable: { reason: "probeFailed" },
+        },
+      }),
+      account(berlinB, [window(20)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: sharedAuth,
+        models: codexModels,
+        checkedAt: "2026-09-03T11:00:00.000Z",
+        usageLimits: { checkedAt: "2026-09-03T11:00:00.000Z", windows: [window(20)] },
+      }),
+      account(personalCodex, [window(60)], {
+        driver: ProviderDriverKind.make("codex"),
+        auth: personalAuth,
+        models: codexModels,
+      }),
+    ];
+    expect(
+      choose(partialExhaustedAlias, [], berlinB, [berlinA, berlinB, personalCodex], {
+        model: codexModel,
+      }),
+    ).toBe(personalCodex);
+
     // A project override disabling an alias does not discard its fresher exhaustion report.
     const projectId = ProjectId.make("project-a");
     const projectSettings = {
@@ -550,6 +582,25 @@ describe("rotating a new thread across accounts of one provider", () => {
     });
     expect(aliasFallback.selection).toEqual({ instanceId: codexA, model: codexModel });
     expect(aliasFallback.fallback).not.toBeNull();
+
+    // A fallback configured via a model alias does not select an account whose canonical slug is capped.
+    const aliasedFallbackModels = [
+      { slug: codexModel, name: "Sol", aliases: ["sol"], isCustom: false, capabilities: null },
+    ];
+    expect(
+      resolveRotatedNewThreadSelection({
+        ...baseInput,
+        fallbackModelSelection: { instanceId: codexA, model: "sol" },
+        providers: [
+          account(work, [window(100)]),
+          account(personal, [window(100)]),
+          account(codexA, [{ ...window(100), id: "primary", modelIds: [codexModel] }], {
+            driver: ProviderDriverKind.make("codex"),
+            models: aliasedFallbackModels,
+          }),
+        ],
+      }),
+    ).toEqual({ selection: { instanceId: work, model }, fallback: null });
 
     // Handles partial/missing client settings without throwing.
     expect(
