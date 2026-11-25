@@ -152,16 +152,16 @@ accounts.
 A new thread then starts on whichever marked account of that provider has the most applicable
 usage left for the selected model, keeping your model and model options. Accounts with the same
 remaining usage take turns starting threads. Accounts that report available usage rank ahead of
-accounts that report no usage (such as an API key or a failed usage probe), while an applicable
-100% window in a newer failed usage probe still counts as exhausted and propagates across duplicate
-logins without overriding a newer complete report; accounts without reported usage take turns when
-none report usage or once every reporting account is exhausted.
+accounts that report no usage (such as an API key or a failed usage probe), while 100% windows
+from a newer failed usage probe still apply when evaluating exhaustion and propagate across
+duplicate logins without overriding a newer complete report; accounts without reported usage take
+turns when none report usage or once every reporting account is exhausted.
 Multiple provider instances signed into the same underlying login share turn recency and their
 freshest usage report, and **Account rotation** in Settings highlights duplicate logins as well
 as disabled marked accounts so you can switch off stale entries. When no marked account has room,
-the **Fallback model** from Settings starts the thread — rotating across marked accounts of the
-fallback provider too. The model picker shows the account before you send, and it stops changing
-once you start writing.
+the **Fallback model** from Settings starts the thread if it is available and not exhausted —
+rotating across marked accounts of the fallback provider too. The model picker shows the account
+before you send, and it stops changing once you start writing.
 
 Pick an account in the model picker to use it for that thread instead. A project with its
 own configured model keeps that model's account. A marked account must be signed in and offer
