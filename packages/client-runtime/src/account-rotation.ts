@@ -162,9 +162,13 @@ function overlayPartialExhaustedLimits(
   }
   if (exhausted.size === 0 || !latestPartial) return usable?.limits;
   if (!usable) {
+    const mergedWindows = new Map<string, ServerProviderUsageWindow>(
+      latestPartial.limits.windows.map((window) => [usageWindowKey(window), window]),
+    );
+    for (const [key, entry] of exhausted) mergedWindows.set(key, entry.window);
     return {
       ...latestPartial.limits,
-      windows: [...exhausted.values()].map((entry) => entry.window),
+      windows: [...mergedWindows.values()],
     };
   }
   const mergedWindows = new Map<string, ServerProviderUsageWindow>(

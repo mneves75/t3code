@@ -347,6 +347,37 @@ describe("rotating a new thread across accounts of one provider", () => {
     expect(
       choose([account(work, [window(100)]), account(personal, [window(100)]), partialProbeFailed]),
     ).toBe(spare);
+
+    // A partial-only Codex probeFailed report preserves sibling plan windows so individual credits don't falsely exhaust.
+    const cxPartial = ProviderInstanceId.make("codex_partial");
+    const cxCapped = ProviderInstanceId.make("codex_capped");
+    const cxModels = [{ slug: "gpt-6.2-sol", name: "Sol", isCustom: false, capabilities: null }];
+    expect(
+      choose(
+        [
+          account(cxCapped, [{ ...window(100), id: "primary", kind: "weekly" }], {
+            driver: ProviderDriverKind.make("codex"),
+            models: cxModels,
+          }),
+          account(cxPartial, [], {
+            driver: ProviderDriverKind.make("codex"),
+            models: cxModels,
+            usageLimits: {
+              checkedAt: "2026-09-03T11:00:00.000Z",
+              windows: [
+                { ...window(40), id: "primary", kind: "weekly" },
+                { ...window(100), id: "individual", kind: "other" },
+              ],
+              unavailable: { reason: "probeFailed" },
+            },
+          }),
+        ],
+        [],
+        cxCapped,
+        [cxCapped, cxPartial],
+        { model: "gpt-6.2-sol" },
+      ),
+    ).toBe(cxPartial);
   });
 
   it("merges recency and freshest usage across aliased instances sharing the same underlying login", () => {
