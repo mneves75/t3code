@@ -1300,7 +1300,10 @@ export function remoteArchivePlatformKey(unameOutput: string): string | null {
       : machine === "x86_64" || machine === "amd64"
         ? "x64"
         : null;
-  return platform === null || arch === null ? null : `${platform}-${arch}`;
+  if (platform === null || arch === null || (platform === "darwin" && arch === "x64")) {
+    return null;
+  }
+  return `${platform}-${arch}`;
 }
 
 /** The archive's sha256 from a SHA256SUMS file (`<hash>  <name>` or `<hash> *<name>`). */

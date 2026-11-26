@@ -349,6 +349,7 @@ describe("ssh tunnel scripts", () => {
     assert.isNull(SshTunnel.archiveChecksum(sums, "t3-1.0.0-darwin-arm64.tar.gz"));
     assert.strictEqual(SshTunnel.remoteArchivePlatformKey("Linux aarch64\n"), "linux-arm64");
     assert.strictEqual(SshTunnel.remoteArchivePlatformKey("Darwin arm64"), "darwin-arm64");
+    assert.isNull(SshTunnel.remoteArchivePlatformKey("Darwin x86_64"));
     assert.strictEqual(SshTunnel.remoteArchivePlatformKey("Linux x86_64"), "linux-x64");
     assert.isNull(SshTunnel.remoteArchivePlatformKey("FreeBSD amd64"));
   });

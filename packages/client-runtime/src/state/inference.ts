@@ -109,19 +109,16 @@ export function createInferenceAtoms<R, E>(
 
   /**
    * The thread's latest gateway request, read again when its latest run or status changes.
-   * Keyed only by thread so Effect Atom keeps showing the previous request while refetching.
+   * Keyed only by thread so Effect Atom keeps showing the previous request while refetching,
+   * and yielding `command.run` directly lets Atom cancel superseded reads cleanly.
    */
   const threadInferenceRequestAtom = Atom.family(({ environmentId, threadId }: ThreadKey) =>
     Atom.make((get) => {
       void get(threadRunKeyAtom({ environmentId, threadId }));
-      return Effect.promise(() =>
-        runAtomCommand(
-          get.registry,
-          server.getThreadInferenceRequest,
-          { environmentId, input: { threadId } },
-          { reportFailure: false },
-        ),
-      ).pipe(Effect.flatMap(settled));
+      return server.getThreadInferenceRequest.run(get.registry, {
+        environmentId,
+        input: { threadId },
+      });
     }).pipe(Atom.withLabel(`inference-thread-request:${environmentId}:${threadId}`)),
   );
 
@@ -132,14 +129,10 @@ export function createInferenceAtoms<R, E>(
   const threadInferenceStopAtom = Atom.family(({ environmentId, threadId }: ThreadKey) =>
     Atom.make((get) => {
       void get(threadRunKeyAtom({ environmentId, threadId }));
-      return Effect.promise(() =>
-        runAtomCommand(
-          get.registry,
-          server.getThreadInferenceStop,
-          { environmentId, input: { threadId } },
-          { reportFailure: false },
-        ),
-      ).pipe(Effect.flatMap(settled));
+      return server.getThreadInferenceStop.run(get.registry, {
+        environmentId,
+        input: { threadId },
+      });
     }).pipe(
       Atom.setIdleTTL(60_000),
       Atom.withLabel(`inference-thread-stop:${environmentId}:${threadId}`),

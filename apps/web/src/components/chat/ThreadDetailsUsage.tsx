@@ -204,7 +204,10 @@ interface ThreadKey {
 /** Measured numbers for the thread's latest request through T3's gateway, read when details open. */
 export function ThreadDetailsLastRequest(thread: ThreadKey) {
   const hasInferenceServers = useAtomValue(hasInferenceServersAtom(thread.environmentId));
-  return hasInferenceServers ? <LastRequestSection {...thread} /> : null;
+  const canRead = useAtomValue(
+    serverEnvironment.getThreadInferenceRequest.permissionAtom(thread.environmentId),
+  );
+  return hasInferenceServers && canRead ? <LastRequestSection {...thread} /> : null;
 }
 
 function LastRequestSection({ environmentId, threadId }: ThreadKey) {

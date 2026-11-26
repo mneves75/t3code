@@ -37,23 +37,13 @@ const fixture = await vi.hoisted(async () => {
   const shell = Atom.make<{ latestRun: ThreadRunSummary | null } | null>({ latestRun: null });
   let nextResponse: () => Promise<{
     readonly last: InferenceThreadLastRequest | null;
-  }> = async () => ({
-    last: null,
-  });
-  let fetchCount = 0;
+  }> = async () => ({ last: null });
   return {
     shell,
-    get fetchCount() {
-      return fetchCount;
-    },
-    resetFetchCount() {
-      fetchCount = 0;
-    },
     setResponder(fn: () => Promise<{ readonly last: InferenceThreadLastRequest | null }>) {
       nextResponse = fn;
     },
     invoke() {
-      fetchCount += 1;
       return nextResponse();
     },
   };
@@ -76,6 +66,7 @@ vi.mock(import("../../state/server"), async (importOriginal) => {
   const Effect = await import("effect/Effect");
   const getThreadInferenceRequest = {
     label: "getThreadInferenceRequest",
+    permissionAtom: () => Atom.make(true),
     run: () => Effect.promise(() => fixture.invoke()),
   };
   return {
@@ -98,9 +89,14 @@ const threadRef: ScopedThreadRef = {
 const run = (runId: string, status: ThreadRunSummary["status"]) =>
   ({ runId, status }) as unknown as ThreadRunSummary;
 
-it("refreshes when a turn completes, keeps the row visible during refetch, and does not double the aria-label prefix", async () => {
-  fixture.resetFetchCount();
-  fixture.setResponder(async () => ({ last: null }));
+it("refreshes when a turn completes even mid-flight, keeps the row visible during refetch, and uses a single aria-label prefix", async () => {
+  let resolveInitial!: (value: { readonly last: InferenceThreadLastRequest | null }) => void;
+  fixture.setResponder(
+    () =>
+      new Promise((resolve) => {
+        resolveInitial = resolve;
+      }),
+  );
   const registry = AtomRegistry.make();
   registry.set(fixture.shell, { latestRun: run("run-1", "running") });
 
@@ -111,9 +107,10 @@ it("refreshes when a turn completes, keeps the row visible during refetch, and d
   );
   await expect.element(page.getByLabelText(/^Last request: /)).not.toBeInTheDocument();
 
-  // Completing run-1 refetches and renders a single "Last request: " prefix.
+  // Transition run-1 to completed WHILE the initial request is still in flight.
   fixture.setResponder(async () => ({ last: FIRST_REQUEST }));
   registry.set(fixture.shell, { latestRun: run("run-1", "completed") });
+  resolveInitial({ last: null });
 
   const firstLabel =
     "Last request: 10.9K prompt tokens (100% cached) · TTFT 0.2 s · – · waited 0.6 s";
@@ -123,7 +120,7 @@ it("refreshes when a turn completes, keeps the row visible during refetch, and d
   await expect.element(row).toBeVisible();
   await expect.element(row).toHaveAttribute("aria-label", firstLabel);
 
-  // Starting run-2 triggers a pending refetch; the previous row stays visible (no blink).
+  // Run-2 triggers a pending refetch; the previous row stays visible (no blink) until it resolves.
   let resolveSecond!: (value: { readonly last: InferenceThreadLastRequest | null }) => void;
   fixture.setResponder(
     () =>

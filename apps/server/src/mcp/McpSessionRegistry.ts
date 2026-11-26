@@ -261,6 +261,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     },
   );
 
+  // Untraced internal helper; public resolve/resolveInference callers carry the routineSpan.
   const resolveRecord = Effect.fnUntraced(function* <K extends CredentialRecord["kind"]>(
     rawToken: string,
     kind: K,
@@ -296,6 +297,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
 
   const resolveInference: McpSessionRegistryShape["resolveInference"] = Effect.fn(
     "McpSessionRegistry.resolveInference",
+    { attributes: routineSpan },
   )(function* (rawToken) {
     return (yield* resolveRecord(rawToken, "inference"))?.caller;
   });
@@ -330,11 +332,10 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     ProviderInstanceId,
     Set<(harnessSessionId: string) => ThreadId | undefined>
   >();
-  const attributeHarnessSessions: McpSessionRegistryShape["attributeHarnessSessions"] = (
-    providerInstanceId,
-    threadOf,
-  ) =>
-    Effect.acquireRelease(
+  const attributeHarnessSessions: McpSessionRegistryShape["attributeHarnessSessions"] = Effect.fn(
+    "McpSessionRegistry.attributeHarnessSessions",
+  )(function* (providerInstanceId, threadOf) {
+    yield* Effect.acquireRelease(
       Effect.sync(() => {
         const held = harnessSessions.get(providerInstanceId) ?? new Set();
         held.add(threadOf);
@@ -347,17 +348,16 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           if (held?.size === 0) harnessSessions.delete(providerInstanceId);
         }),
     );
-  const harnessSessionThread: McpSessionRegistryShape["harnessSessionThread"] = (
-    providerInstanceId,
-    harnessSessionId,
-  ) =>
-    Effect.sync(() => {
-      for (const threadOf of harnessSessions.get(providerInstanceId) ?? []) {
-        const threadId = threadOf(harnessSessionId);
-        if (threadId !== undefined) return threadId;
-      }
-      return undefined;
-    });
+  });
+  const harnessSessionThread: McpSessionRegistryShape["harnessSessionThread"] = Effect.fn(
+    "McpSessionRegistry.harnessSessionThread",
+  )(function* (providerInstanceId, harnessSessionId) {
+    for (const threadOf of harnessSessions.get(providerInstanceId) ?? []) {
+      const threadId = threadOf(harnessSessionId);
+      if (threadId !== undefined) return threadId;
+    }
+    return undefined;
+  });
 
   const touch: McpSessionRegistryShape["touch"] = Effect.fn("McpSessionRegistry.touch")(
     function* (threadId) {

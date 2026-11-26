@@ -1895,7 +1895,7 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:thread-inference-stop",
       tag: WS_METHODS.serverGetThreadInferenceStop,
       concurrency: {
-        mode: "singleFlight",
+        mode: "latest",
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
       },
     }),
@@ -1903,7 +1903,7 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:thread-inference-request",
       tag: WS_METHODS.serverGetThreadInferenceRequest,
       concurrency: {
-        mode: "singleFlight",
+        mode: "latest",
         key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
       },
     }),

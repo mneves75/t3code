@@ -6,7 +6,8 @@ import { Atom } from "effect/reactivity";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { OctagonPauseIcon } from "lucide-react";
 
-import { threadInferenceStopAtom } from "../../state/inference";
+import { hasInferenceServersAtom, threadInferenceStopAtom } from "../../state/inference";
+import { serverEnvironment } from "../../state/server";
 import { Button } from "../ui/button";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 
@@ -18,12 +19,6 @@ const TITLES: Record<InferenceStopReason, string> = {
   idle: msg("Stopped a reply that went silent"),
 };
 
-const WHY: Record<InferenceStopReason, string> = {
-  loop: msg("kept repeating the same text"),
-  "reasoning-limit": msg("reasoned at length without answering"),
-  idle: msg("stopped sending anything"),
-};
-
 // A run that is still going may yet recover; the notice waits for it to end.
 const SETTLED_RUN: ReadonlySet<ThreadRunSummary["status"]> = new Set([
   "completed",
@@ -31,6 +26,31 @@ const SETTLED_RUN: ReadonlySet<ThreadRunSummary["status"]> = new Set([
   "failed",
   "cancelled",
 ]);
+
+function stopDescription(
+  gt: ReturnType<typeof useGT>,
+  reason: InferenceStopReason,
+  model: string,
+  serverId: string,
+): string {
+  switch (reason) {
+    case "loop":
+      return gt(
+        "{model} on {serverId} kept repeating the same text, so T3 Code stopped it and freed the server.",
+        { model, serverId },
+      );
+    case "reasoning-limit":
+      return gt(
+        "{model} on {serverId} reasoned at length without answering, so T3 Code stopped it and freed the server.",
+        { model, serverId },
+      );
+    case "idle":
+      return gt(
+        "{model} on {serverId} stopped sending anything, so T3 Code stopped it and freed the server.",
+        { model, serverId },
+      );
+  }
+}
 
 /** After T3's gateway stopped a runaway reply in the thread's latest run: why, and what next. */
 export function useInferenceStopBannerItem(
@@ -42,17 +62,24 @@ export function useInferenceStopBannerItem(
 ): ComposerBannerStackItem | null {
   const gt = useGT();
   const messages = useMessages();
+  const hasServers = useAtomValue(hasInferenceServersAtom(environmentId));
+  const canRead = useAtomValue(
+    serverEnvironment.getThreadInferenceStop.permissionAtom(environmentId),
+  );
+  const canQuery =
+    hasServers &&
+    canRead &&
+    threadId !== undefined &&
+    latestRun != null &&
+    SETTLED_RUN.has(latestRun.status);
   const result = useAtomValue(
-    threadId === undefined || latestRun == null
-      ? NO_STOP
-      : threadInferenceStopAtom({ environmentId, threadId }),
+    canQuery ? threadInferenceStopAtom({ environmentId, threadId }) : NO_STOP,
   );
   const stop = AsyncResult.getOrElse(result, () => null)?.stop ?? null;
   if (
+    !canQuery ||
     stop === null ||
-    latestRun == null ||
     latestRun.startedAt === null ||
-    !SETTLED_RUN.has(latestRun.status) ||
     Date.parse(stop.at) < Date.parse(latestRun.startedAt)
   ) {
     return null;
@@ -63,11 +90,7 @@ export function useInferenceStopBannerItem(
     variant: "warning",
     icon: <OctagonPauseIcon />,
     title: messages(TITLES[stop.reason]),
-    description: gt("{model} on {serverId} {why}, so T3 Code stopped it and freed the server.", {
-      model: stop.model,
-      serverId: stop.serverId,
-      why: messages(WHY[stop.reason]),
-    }),
+    description: stopDescription(gt, stop.reason, stop.model, stop.serverId),
     actions: (
       <>
         <Button size="xs" variant="ghost" onClick={onContinue}>
