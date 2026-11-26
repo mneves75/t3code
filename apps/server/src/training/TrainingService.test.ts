@@ -517,6 +517,31 @@ describe("TrainingService", () => {
           const stored = yield* service.getEval({ evalRunId: started.id });
           expect(stored.evalRun?.status).toBe("completed");
           expect(stored.evalRun?.tunedSummary?.testLoss).toBe(1.4);
+
+          // T3-02: deleteDataset refuses to tombstone row if storagePath exists outside active allowedRoots
+          const externalDir = yield* Effect.promise(() =>
+            NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-outside-root-ds-")),
+          );
+          try {
+            yield* Effect.promise(() =>
+              NodeFSP.writeFile(NodePath.join(externalDir, "train.jsonl"), '{"messages":[]}\n'),
+            );
+            yield* store.insertDataset({
+              ...dataset,
+              id: "ds-outside-root" as never,
+              name: "Outside Root DS",
+              storagePath: externalDir,
+            });
+            const blockedDelete = yield* Effect.exit(
+              service.deleteDataset({ datasetId: "ds-outside-root" as never }),
+            );
+            expect(Exit.isFailure(blockedDelete)).toBe(true);
+            const stillPresent = yield* store.getDataset("ds-outside-root" as never);
+            expect(stillPresent).not.toBeNull();
+            expect(NodeFS.existsSync(externalDir)).toBe(true);
+          } finally {
+            yield* Effect.promise(() => NodeFSP.rm(externalDir, { recursive: true, force: true }));
+          }
         }).pipe(Effect.provide(fullLayer)),
       );
     }),

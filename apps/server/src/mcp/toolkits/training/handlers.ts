@@ -15,10 +15,12 @@ const mapTrainingError = (error: TrainingOperationError): OrchestratorMcpFailure
   });
 
 export const layer = McpToolAccess.toLayer(TrainingToolkit, {
-  training_preview_dataset: McpToolAccess.reads((input) =>
-    Effect.flatMap(TrainingService.TrainingService, (training) =>
-      training.previewDataset(input).pipe(Effect.mapError(mapTrainingError)),
-    ),
+  training_preview_dataset: McpToolAccess.writesOwnerWork(
+    "preview local training datasets",
+    (input) =>
+      Effect.flatMap(TrainingService.TrainingService, (training) =>
+        training.previewDataset(input).pipe(Effect.mapError(mapTrainingError)),
+      ),
   ),
   training_create_dataset: McpToolAccess.writesOwnerWork(
     "create local training datasets",

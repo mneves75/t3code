@@ -229,25 +229,12 @@ describe("Training MCP Toolkit", () => {
   );
 
   it.effect(
-    "blocks supervised callers from creating datasets, starting/cancelling jobs, or running evals while allowing preview_dataset and get_job",
+    "blocks supervised callers from previewing or creating datasets, starting/cancelling jobs, or running evals while allowing get_job",
     () =>
       Effect.gen(function* () {
-        const preview: TrainingDatasetPreview = {
-          objective: "sft",
-          matchedThreadCount: 1,
-          skippedThreadCount: 0,
-          totalExamples: 1,
-          trainExamples: 1,
-          validExamples: 0,
-          testExamples: 0,
-          estimatedTokens: 100,
-          redactionAudit: emptyAudit,
-          sampleSftRecords: [],
-          warnings: [],
-        };
         const layer = handlersWith(
           {
-            previewDataset: () => Effect.succeed(preview),
+            previewDataset: () => Effect.die("should not run"),
             createDataset: () => Effect.die("should not run"),
             startJob: () => Effect.succeed(sampleJob),
             cancelJob: () => Effect.succeed(sampleJob),
@@ -279,7 +266,7 @@ describe("Training MCP Toolkit", () => {
           invokeTool("training_get_job", { jobId: TrainingJobId.make("job-1") }),
         ]).pipe(Effect.provide(layer));
 
-        expect(previewRes).toEqual(preview);
+        expect(previewRes).toMatchObject({ code: "capability_denied" });
         expect(createRes).toMatchObject({ code: "capability_denied" });
         expect(startRes).toMatchObject({ code: "capability_denied" });
         expect(cancelRes).toMatchObject({ code: "capability_denied" });

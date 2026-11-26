@@ -899,10 +899,6 @@ const make = Effect.gen(function* () {
         return { datasetId: input.datasetId, deleted: false };
       }
 
-      const deleted = yield* store
-        .softDeleteDataset(input.datasetId)
-        .pipe(mapStoreErr("deleteDataset", input.datasetId));
-
       const envDir = hostEnv.T3_TRAINING_DIR?.trim();
       const configuredDir = yield* settings.getSettings.pipe(
         Effect.map((current) => current.training.storageDir?.trim() || undefined),
@@ -912,11 +908,50 @@ const make = Effect.gen(function* () {
       const isContained = allowedRoots.some((root) =>
         isPathContainedWithin(root, dataset.storagePath),
       );
-      if (isContained) {
-        yield* Effect.promise(() =>
-          NodeFSP.rm(dataset.storagePath, { recursive: true, force: true }),
-        ).pipe(Effect.ignore);
+      const pathExists = yield* Effect.tryPromise({
+        try: () =>
+          NodeFSP.access(dataset.storagePath).then(
+            () => true,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === "ENOENT") return false;
+              throw error;
+            },
+          ),
+        catch: (cause) =>
+          new TrainingOperationError({
+            code: "io_error",
+            operation: "deleteDataset",
+            resourceId: input.datasetId,
+            reason: `Could not inspect dataset files before deletion: ${String(cause)}`,
+            cause,
+          }),
+      });
+      if (pathExists && !isContained) {
+        return yield* new TrainingOperationError({
+          code: "io_error",
+          operation: "deleteDataset",
+          resourceId: input.datasetId,
+          reason:
+            "Dataset files lie outside the active training storage root; restore the previous storage root or remove the files before deleting this dataset.",
+        });
       }
+      if (pathExists) {
+        yield* Effect.tryPromise({
+          try: () => NodeFSP.rm(dataset.storagePath, { recursive: true, force: true }),
+          catch: (cause) =>
+            new TrainingOperationError({
+              code: "io_error",
+              operation: "deleteDataset",
+              resourceId: input.datasetId,
+              reason: `Could not delete dataset files: ${String(cause)}`,
+              cause,
+            }),
+        });
+      }
+
+      const deleted = yield* store
+        .softDeleteDataset(input.datasetId)
+        .pipe(mapStoreErr("deleteDataset", input.datasetId));
 
       yield* emitEvent({
         type: "dataset_changed",

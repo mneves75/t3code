@@ -1089,3 +1089,26 @@ it.effect("returns 400 on malformed percent-encoding in server id path (SEC-09)"
     expect(res.status).toBe(400);
   }),
 );
+
+it.effect("returns 404 for Object.prototype property names on /v1/ routes (T3-03)", () =>
+  Effect.gen(function* () {
+    const { gateway } = yield* makeLifecycle();
+    for (const route of ["toString", "constructor", "hasOwnProperty"]) {
+      const res = yield* gateway
+        .handle(
+          HttpServerRequest.fromWeb(
+            new Request(`http://gateway.test/inference/${rtx}/v1/${route}`, {
+              method: "POST",
+              headers: {
+                authorization: "Bearer thread-token",
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({ model: "m" }),
+            }),
+          ),
+        )
+        .pipe(Effect.scoped);
+      expect(res.status).toBe(404);
+    }
+  }),
+);

@@ -363,4 +363,96 @@ describe("DatasetExtractor", () => {
         expect(sftJsonl).not.toContain("Buggy linear scan");
       }).pipe(Effect.provide(makeTestLayer())),
   );
+
+  it.effect(
+    "withholds webhook signing secrets and webhook URL tokens in dynamic_tool inputs (T3-01)",
+    () =>
+      Effect.gen(function* () {
+        yield* runMigrations();
+        const sql = yield* SqlClient.SqlClient;
+        const extractor = yield* DatasetExtractor.DatasetExtractor;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+
+        yield* seedBasicThread({ threadId: "thread-hook-secret", settled: true });
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_runs (
+            run_id, thread_id, ordinal, provider, provider_thread_id, status, requested_at, completed_at, payload_json
+          ) VALUES (
+            'run-hook-1', 'thread-hook-secret', 1, 'codex', 'pt-hook', 'completed',
+            '2026-11-24T18:01:00.000Z', '2026-11-24T18:02:00.000Z', '{}'
+          )
+        `;
+
+        const signingSecret = "whsec_live_super_secret_signing_value";
+        const hookToken = "WebhookBearerToken_ABC123xyz";
+        const items = [
+          {
+            id: "hook-item-1",
+            ord: 1,
+            type: "user_message",
+            payload: { messageId: "m-hook-u", text: "Create a scheduled webhook task." },
+          },
+          {
+            id: "hook-item-2",
+            ord: 2,
+            type: "dynamic_tool",
+            payload: {
+              tool: "create_scheduled_task",
+              input: {
+                name: "CI hook",
+                schedule: {
+                  type: "webhook",
+                  signature: { header: "x-sig", secret: signingSecret },
+                },
+              },
+              output: `Created https://relay.example.test/v1/hooks/0123456789abcdef/task-1/${hookToken}`,
+            },
+          },
+          {
+            id: "hook-item-3",
+            ord: 3,
+            type: "assistant_message",
+            payload: { messageId: "m-hook-a", text: "Webhook task configured." },
+          },
+        ];
+
+        for (const item of items) {
+          yield* sql`
+            INSERT INTO orchestration_v2_projection_turn_items (
+              turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
+              parent_item_id, ordinal, type, status, updated_at, payload_json
+            ) VALUES (
+              ${item.id}, 'thread-hook-secret', 'run-hook-1', 'node-1', 'pt-hook', 'turn-hook-1',
+              NULL, ${item.ord}, ${item.type}, 'completed', '2026-11-24T18:02:00.000Z',
+              ${JSON.stringify(item.payload)}
+            )
+          `;
+          yield* sql`
+            INSERT INTO orchestration_v2_turn_item_positions (thread_id, turn_item_id, ordinal)
+            VALUES ('thread-hook-secret', ${item.id}, ${item.ord})
+          `;
+        }
+
+        const outDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ds-hook-" });
+        yield* extractor.materialize({
+          datasetId: TrainingDatasetId.make("ds-hook-1"),
+          name: "Webhook Redaction Test",
+          objective: "sft",
+          filter: DEFAULT_FILTER,
+          redactionOptions: {
+            redactEnvAssignments: false,
+            redactHomePaths: false,
+            redactEmails: false,
+            redactHighEntropy: false,
+          },
+          outputDir: outDir,
+        });
+
+        const trainJsonl = yield* fs.readFileString(path.join(outDir, "train.jsonl"));
+        expect(trainJsonl).not.toContain(signingSecret);
+        expect(trainJsonl).not.toContain(hookToken);
+        expect(trainJsonl).toContain("[withheld]");
+      }).pipe(Effect.provide(makeTestLayer())),
+  );
 });

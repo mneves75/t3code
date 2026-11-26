@@ -17,6 +17,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { WEBHOOK_URL_TOKEN, WITHHELD } from "../scheduledTasks/webhookUrlToken.ts";
+
 export const REDACTOR_VERSION = "1.0.0";
 const MAX_SAMPLE_FINDINGS = 100;
 const SNIPPET_CONTEXT_CHARS = 24;
@@ -463,6 +465,40 @@ function redactAuthHeaders(text: string, session: RedactionSession): string {
   return result;
 }
 
+function redactWebhookUrlTokens(text: string, session: RedactionSession): string {
+  const regex = new RegExp(WEBHOOK_URL_TOKEN.source, WEBHOOK_URL_TOKEN.flags);
+  let result = "";
+  let lastIndex = 0;
+  let matched = false;
+
+  for (const match of text.matchAll(regex)) {
+    const index = match.index;
+    const prefix = match[1] ?? "";
+    const token = match[2] ?? "";
+    if (
+      token.length === 0 ||
+      token === WITHHELD ||
+      session.overlapsSentinel(text, index, match[0].length) ||
+      session.containsSentinel(token)
+    ) {
+      continue;
+    }
+    matched = true;
+    result += text.slice(lastIndex, index);
+    result += prefix;
+    result += session.emit({
+      category: "url_credentials",
+      ruleId: "webhook_url_token",
+      rawMatch: token,
+      placeholder: WITHHELD,
+    });
+    lastIndex = index + match[0].length;
+  }
+  if (!matched) return text;
+  result += text.slice(lastIndex);
+  return result;
+}
+
 function redactUrlCredentials(text: string, session: RedactionSession): string {
   const regex = new RegExp(URL_CREDENTIAL_PATTERN.source, URL_CREDENTIAL_PATTERN.flags);
   let result = "";
@@ -725,6 +761,7 @@ function redactTextPassPipeline(
   );
   text = redactAuthHeaders(text, session);
   text = redactUrlCredentials(text, session);
+  text = redactWebhookUrlTokens(text, session);
 
   if (options.redactEnvAssignments) {
     text = redactEnvAssignments(text, session);

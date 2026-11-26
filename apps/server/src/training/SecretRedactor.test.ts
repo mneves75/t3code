@@ -299,4 +299,27 @@ describe("SecretRedactor", () => {
     expect(redacted).not.toContain("lQOYBGX1234567890");
     expect(report.totalRedactions).toBe(4);
   });
+
+  it("always withholds scheduled task webhook URL tokens even with optional passes off (T3-01)", () => {
+    const relayToken = "RelayHookSecretToken_99887766";
+    const localToken = "LocalHookSecretToken_11223344";
+    const input = [
+      `Relay: https://relay.example.test/v1/hooks/0123456789abcdef/hook-1/${relayToken}`,
+      `Local: http://127.0.0.1:3773/api/hooks/hook-2/${localToken}`,
+    ].join("\n");
+    const collector = createRedactionAuditCollector();
+    const redacted = redactText(input, ALL_OPTIONAL_OFF, collector, {
+      threadId: THREAD_ID,
+      sourceKind: "tool_output",
+    });
+    const report = collector.toReport();
+
+    expect(redacted).toContain("/v1/hooks/0123456789abcdef/hook-1/[withheld]");
+    expect(redacted).toContain("/api/hooks/hook-2/[withheld]");
+    expect(redacted).not.toContain(relayToken);
+    expect(redacted).not.toContain(localToken);
+    expect(JSON.stringify(report)).not.toContain(relayToken);
+    expect(JSON.stringify(report)).not.toContain(localToken);
+    expect(report.countsByCategory.url_credentials).toBe(2);
+  });
 });

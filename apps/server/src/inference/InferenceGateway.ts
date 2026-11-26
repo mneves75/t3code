@@ -50,12 +50,12 @@ import { flattenNamespaceTools, makeResponseRestorer } from "./responsesNamespac
 
 const INFERENCE_ROUTE_PREFIX = "/inference";
 
-const GENERATION_PATHS: Readonly<Record<string, InferenceApiProtocol>> = {
-  "chat/completions": "chat-completions",
-  completions: "completions",
-  responses: "responses",
-  messages: "messages",
-};
+const GENERATION_PATHS = new Map<string, InferenceApiProtocol>([
+  ["chat/completions", "chat-completions"],
+  ["completions", "completions"],
+  ["responses", "responses"],
+  ["messages", "messages"],
+]);
 
 /** Prompts with inline images can be large; anything past this is refused before buffering more. */
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
@@ -382,7 +382,7 @@ const make = Effect.gen(function* () {
     }
     const serverId = InferenceServerId.make(rawServerId);
     const route = match[2]!;
-    const protocol = GENERATION_PATHS[route];
+    const protocol = GENERATION_PATHS.get(route);
     const listsModels = route === "models";
     if (!listsModels && protocol === undefined) {
       return errorResponse(404, "not_found", "T3's gateway does not forward this route.");

@@ -23,6 +23,8 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { WITHHELD } from "../scheduledTasks/webhookUrlToken.ts";
+
 import * as SecretRedactor from "./SecretRedactor.ts";
 
 export class DatasetExtractionError extends Schema.TaggedError<DatasetExtractionError>()(
@@ -147,6 +149,20 @@ function safeJsonParse(raw: string): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
+  return typeof value === "object" && value !== null
+    ? (value as Readonly<Record<string, unknown>>)
+    : null;
+}
+
+function withoutWebhookSigningSecret(toolInput: unknown): unknown {
+  const input = asRecord(toolInput);
+  const schedule = asRecord(input?.schedule);
+  const signature = asRecord(schedule?.signature);
+  if (typeof signature?.secret !== "string") return toolInput;
+  return { ...input, schedule: { ...schedule, signature: { ...signature, secret: WITHHELD } } };
 }
 
 function deterministicClip(value: string, maxChars: number): string {
@@ -372,12 +388,13 @@ function buildToolTurnFromItem(
         typeof payload.toolName === "string" && payload.toolName.trim().length > 0
           ? payload.toolName.trim()
           : "tool";
+      const sanitizedInput = withoutWebhookSigningSecret(payload.input ?? {});
       return {
         toolName,
         call: {
           id: callId,
           type: "function",
-          function: { name: toolName, arguments: JSON.stringify(payload.input ?? {}) },
+          function: { name: toolName, arguments: JSON.stringify(sanitizedInput) },
         },
         result: {
           role: "tool",
