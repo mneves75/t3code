@@ -1,3 +1,4 @@
+import { makeLocalUsageModelsAtom } from "@t3tools/client-runtime/state/provider-instance-display";
 import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
 import {
   createOutdatedServerDescriptionCommand,
@@ -18,6 +19,7 @@ export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRunt
   providerStatusDeltas: true,
   omitRefreshedProviders: true,
 });
+export const localUsageModelsAtom = makeLocalUsageModelsAtom(serverEnvironment);
 export const describeOutdatedServer = createOutdatedServerDescriptionCommand(connectionAtomRuntime);
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({

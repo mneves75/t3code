@@ -164,7 +164,11 @@ const decodeCachedSources = Schema.decodeUnknownOption(
 export class UsageService extends Context.Service<
   UsageService,
   {
-    readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    /** localModels: from collectLocalUsageModels; their runs are never priced as cloud spend. */
+    readonly readSummary: (
+      input: UsageSummaryInput,
+      localModels?: ReadonlySet<string>,
+    ) => Effect.Effect<UsageSummary, UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
 >()("t3/usage/UsageService") {}
@@ -831,6 +835,7 @@ export const make = Effect.gen(function* () {
   const scanSummary = Effect.fn("UsageService.scanSummary")(function* (
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
+    localModels: ReadonlySet<string>,
     provisional: boolean,
   ) {
     if (input.sinceDay > input.untilDay) {
@@ -1025,6 +1030,7 @@ export const make = Effect.gen(function* () {
       rates,
       priceOverrides,
       modelAliases,
+      localModels,
       rateModel: (provider, model) => providerRateModels.get(provider)?.(model),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
     });
@@ -1207,11 +1213,12 @@ export const make = Effect.gen(function* () {
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
     provisional: boolean,
+    localModels: ReadonlySet<string>,
   ) {
-    const { summary, fromMemory } = yield* scanSummary(input, settings, provisional);
+    const { summary, fromMemory } = yield* scanSummary(input, settings, localModels, provisional);
     // With nothing marked refreshing the client would keep a saved answer as final.
     return fromMemory && !summary.sources.some((source) => source.refreshing === true)
-      ? (yield* scanSummary(input, settings, false)).summary
+      ? (yield* scanSummary(input, settings, localModels, false)).summary
       : summary;
   });
 
@@ -1220,9 +1227,11 @@ export const make = Effect.gen(function* () {
   const scanKey = (
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
+    localModels: ReadonlySet<string>,
     provisional: boolean,
   ): string =>
     JSON.stringify([
+      [...localModels].sort(),
       input.timeZone,
       input.sinceDay,
       input.untilDay,
@@ -1237,13 +1246,14 @@ export const make = Effect.gen(function* () {
 
   const readSummary = Effect.fn("UsageService.readSummary")(function* (
     requested: UsageSummaryInput,
+    localModels: ReadonlySet<string> = new Set(),
   ) {
     const { modelFilter: requestedFilter, ...unfiltered } = requested;
     const modelFilter = canonicalModelFilter(requestedFilter);
     const input = modelFilter === undefined ? unfiltered : { ...unfiltered, modelFilter };
     const settings = yield* readSettings;
     const provisional = input.provisional === true && input.awaitRefresh !== true;
-    const key = scanKey(input, settings, provisional);
+    const key = scanKey(input, settings, localModels, provisional);
     const deferred = yield* Effect.uninterruptible(
       Effect.gen(function* () {
         const existing = inflightScans.get(key);
@@ -1254,7 +1264,7 @@ export const make = Effect.gen(function* () {
         inflightScans.set(key, created);
         // Detach so caller departure cannot cancel shared scans; finished scans warm the cache.
         // Register writes before releasing waiters, but start writing after delivering their summary.
-        yield* readWindow(input, settings, provisional).pipe(
+        yield* readWindow(input, settings, provisional, localModels).pipe(
           Effect.onExit((exit) =>
             Effect.sync(() => inflightScans.delete(key)).pipe(
               Effect.andThen(Exit.isSuccess(exit) ? schedulePersist : Effect.void),

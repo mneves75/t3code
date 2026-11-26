@@ -3,6 +3,11 @@ import { ChatGptUsageSummary } from "./ChatGptUsageSummary";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { EnvironmentId, USAGE_CONTRACT_VERSION, type UsageProviderKind } from "@t3tools/contracts";
 import { type RouteProp, useIsFocused, useRoute } from "@react-navigation/native";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  type LocalUsageModels,
+  localUsageModelCost,
+} from "@t3tools/client-runtime/state/provider-instance-display";
 import {
   updatingProvidersLabel,
   usageEnvironmentProgress,
@@ -40,12 +45,14 @@ import type { MessageResolver } from "../../i18n/messages";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { NativeWorkspaceTabActivityContext } from "../../native/v5-workspace-context";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import { localUsageModelsAtom } from "../../state/server";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { usageAxisDayLabel, usageAxisHourLabel } from "./usageAxisLabels";
 import { UsageDailyChart } from "./UsageDailyChart";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
+import { UsageLocalCompute } from "./UsageLocalCompute";
 import type { UsageChartMetric } from "./usageChartData";
 import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
 
@@ -133,6 +140,11 @@ function UsageScreen(props: {
     window,
     selectedEnvironmentIds,
     !headerOnly,
+  );
+  const localModels = useAtomValue(
+    localUsageModelsAtom(
+      JSON.stringify(selectedEnvironments.map((environment) => environment.environmentId)),
+    ),
   );
   const isFocused = useIsFocused();
   const limits = useRefreshLimits(
@@ -395,10 +407,21 @@ function UsageScreen(props: {
                           columns={width >= 900 ? 6 : wide ? 3 : 2}
                         />
                         <CostSection merged={merged} wide={wide} />
-                        <ModelsSection merged={merged} metric={metric} columns={wide ? 2 : 1} />
+                        <ModelsSection
+                          merged={merged}
+                          metric={metric}
+                          columns={wide ? 2 : 1}
+                          localModels={localModels}
+                        />
                       </UsageUpdating>
                     </>
                   )}
+                  {selectedEnvironments.length > 0 ? (
+                    <UsageLocalCompute
+                      environments={selectedEnvironments}
+                      initialWindow={isPast24Hours ? "24h" : "7d"}
+                    />
+                  ) : null}
                 </>
               )}
             </Animated.View>
@@ -841,6 +864,7 @@ function ModelsSection(props: {
   readonly merged: MergedUsage;
   readonly metric: UsageChartMetric;
   readonly columns: 1 | 2;
+  readonly localModels: LocalUsageModels;
 }) {
   const { merged, metric } = props;
   const colors = useProviderColors();
@@ -857,53 +881,69 @@ function ModelsSection(props: {
   return (
     <SettingsSection title={gt("By model")}>
       <View className="flex-row flex-wrap">
-        {ordered.map((model, index) => (
-          <View
-            key={`${model.provider}:${model.model}`}
-            className={cn(
-              "flex-row items-center gap-3 p-4",
-              index >= props.columns && "border-t border-border-subtle",
-              index % props.columns === 1 && "border-l border-border-subtle",
-            )}
-            style={{ width: `${100 / props.columns}%` }}
-          >
-            <View
-              className="size-2.5 shrink-0 rounded-full"
-              style={{ backgroundColor: colors[model.provider] }}
-            />
-            <View className="min-w-0 flex-1 gap-0.5">
-              <Text className="text-base text-foreground" numberOfLines={1}>
-                {model.model}
-              </Text>
-              <Text className="text-sm text-foreground-muted">
-                {metric === "tokens"
-                  ? isModelCostUnknown(model)
-                    ? gt("{share} of tokens · no known rates", {
-                        share: formatPercent(model.tokenShare),
-                      })
-                    : gt("{share} of tokens · {cost}", {
-                        share: formatPercent(model.tokenShare),
-                        cost: formatUsd(model.costUsd),
-                      })
-                  : isModelCostUnknown(model)
-                    ? gt("no known rates · {tokens} tokens", {
-                        tokens: formatTokens(model.totalTokens),
-                      })
-                    : gt("{share} of cost · {tokens} tokens", {
-                        share: formatPercent(model.costShare),
-                        tokens: formatTokens(model.totalTokens),
-                      })}
-              </Text>
-            </View>
-            <Text className="text-base tabular-nums text-foreground">
-              {metric === "tokens"
-                ? formatTokens(model.totalTokens)
+        {ordered.map((model, index) => {
+          const localCost = localUsageModelCost(model, props.localModels);
+          const costUnknown = localCost !== null || isModelCostUnknown(model);
+          const cost =
+            localCost === "estimate"
+              ? `~${formatUsd(model.estimatedCostUsd)}`
+              : localCost === "local"
+                ? gt("Local", { $context: "locally hosted model usage cost" })
                 : isModelCostUnknown(model)
                   ? gt("Unpriced", { $context: "model with no known price" })
-                  : formatUsd(model.costUsd)}
-            </Text>
-          </View>
-        ))}
+                  : formatUsd(model.costUsd);
+          const rates =
+            localCost === "estimate"
+              ? gt("estimated API spend")
+              : localCost === "local"
+                ? gt("local", { $context: "locally hosted model pricing detail" })
+                : gt("no known rates");
+          return (
+            <View
+              key={`${model.provider}:${model.model}`}
+              className={cn(
+                "flex-row items-center gap-3 p-4",
+                index >= props.columns && "border-t border-border-subtle",
+                index % props.columns === 1 && "border-l border-border-subtle",
+              )}
+              style={{ width: `${100 / props.columns}%` }}
+            >
+              <View
+                className="size-2.5 shrink-0 rounded-full"
+                style={{ backgroundColor: colors[model.provider] }}
+              />
+              <View className="min-w-0 flex-1 gap-0.5">
+                <Text className="text-base text-foreground" numberOfLines={1}>
+                  {model.model}
+                </Text>
+                <Text className="text-sm text-foreground-muted">
+                  {metric === "tokens"
+                    ? localCost === "estimate" || !costUnknown
+                      ? gt("{share} of tokens · {cost}", {
+                          share: formatPercent(model.tokenShare),
+                          cost,
+                        })
+                      : gt("{share} of tokens · {rates}", {
+                          share: formatPercent(model.tokenShare),
+                          rates,
+                        })
+                    : costUnknown
+                      ? gt("{rates} · {tokens} tokens", {
+                          rates,
+                          tokens: formatTokens(model.totalTokens),
+                        })
+                      : gt("{share} of cost · {tokens} tokens", {
+                          share: formatPercent(model.costShare),
+                          tokens: formatTokens(model.totalTokens),
+                        })}
+                </Text>
+              </View>
+              <Text className="text-base tabular-nums text-foreground">
+                {metric === "tokens" ? formatTokens(model.totalTokens) : cost}
+              </Text>
+            </View>
+          );
+        })}
       </View>
     </SettingsSection>
   );

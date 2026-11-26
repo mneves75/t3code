@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
   globalIdleCompaction,
+  InferenceServerId,
   type ManagedPolicyDocument,
   ModelSelection,
   ProjectId,
@@ -304,6 +305,41 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       // Shipped clients decode the switch as a boolean and drop the config otherwise.
       assert.strictEqual(settings.compactIdleThreads, false);
       assert.equal(settings.idleCompaction, "off");
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect.each([
+    [
+      "a selection saved before the flag existed",
+      `{ "textGenerationModelSelection": { "instanceId": "claudeAgent", "model": "claude-haiku-5-5" } }`,
+      true,
+    ],
+    ["no saved selection", `{ "compactIdleThreads": "off" }`, false],
+  ] as const)("reads text generation intent from %s", ([, file, explicit]) =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fs.writeFileString(config.settingsPath, file);
+
+      assert.strictEqual(
+        (yield* service.getSettings).textGenerationModelSelectionExplicit,
+        explicit,
+      );
+    }).pipe(Effect.provide(layerServerSettings())),
+  );
+
+  it.effect("keeps a deliberately picked built-in text generation model after restart", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      yield* service.updateSettings({
+        textGenerationModelSelection: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+      });
+
+      const persisted = JSON.parse(yield* fs.readFileString(config.settingsPath));
+      assert.strictEqual(persisted.textGenerationModelSelectionExplicit, true);
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
@@ -770,7 +806,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
             },
           };
 
+          // Moving to another provider is the "Any provider" policy.
           yield* serverSettings.updateSettings({
+            textGenerationFallback: "any",
             providerInstances,
             textGenerationModelSelection: selection,
           });
@@ -811,6 +849,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const next = yield* serverSettings.updateSettings({
+        textGenerationFallback: "any",
         providerInstances: {
           [ProviderInstanceId.make("codex")]: {
             driver: ProviderDriverKind.make("codex"),
@@ -843,6 +882,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       };
 
       const custom = yield* serverSettings.updateSettings({
+        textGenerationFallback: "any",
         providerInstances,
         defaultModelSelection: {
           instanceId: claude,
@@ -1494,6 +1534,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
               enabled: true,
             },
           },
+          inferenceServers: {
+            [InferenceServerId.make("rtx")]: {
+              baseUrl: "http://localhost:8888/v1",
+              apiKey: "inference-secret",
+              enabled: true,
+            },
+          },
           easDeviceHosts: [
             {
               kind: "eas",
@@ -1513,6 +1560,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           "bitbucket-secret",
           "gitcafe-secret",
           "quota-secret",
+          "inference-secret",
           "expo-secret",
         ];
         const client = ServerSettingsModule.redactServerSettingsForClient(saved, {
@@ -1530,6 +1578,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           providerInstances: client.providerInstances,
           sourceControlHosts: client.sourceControlHosts,
           usageLimitSources: client.usageLimitSources,
+          inferenceServers: client.inferenceServers,
           easDeviceHosts: client.easDeviceHosts,
         });
         for (const value of values) assert.include(JSON.stringify(echoed), value);
@@ -1582,6 +1631,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           }),
           sourceControlHostSecretName({ kind: "gitcafe", field: "token", serverHost: null }),
           "usage-limit-source-aHVi",
+          "inference-server-cnR4-YXBpS2V5",
         ];
         for (const name of secretNames) {
           assert.isTrue(Option.isSome(yield* store.get(name)), name);
@@ -1614,6 +1664,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
             gitcafe: { token: "" },
           },
           usageLimitSources: { [UsageLimitSourceId.make("hub")]: null },
+          inferenceServers: { [InferenceServerId.make("rtx")]: null },
         });
         for (const name of secretNames) {
           assert.isTrue(Option.isNone(yield* store.get(name)));
@@ -1792,10 +1843,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         const antigravity = ProviderInstanceId.make("antigravity");
         const openCode = ProviderInstanceId.make("opencode");
         const hub = UsageLimitSourceId.make("hub");
+        const rtx = InferenceServerId.make("rtx");
         const quota = UsageLimitSourceId.make("quota");
         const router = ProviderInstanceId.make("openrouter");
         const withUsage = yield* serverSettings.updateSettings({
           cloudSpeechCredentials: { openai: usageReference, xai: "literal-fixture" },
+          inferenceServers: {
+            [rtx]: { baseUrl: "http://localhost:8888/v1", apiKey: usageReference, enabled: true },
+          },
           textGenerators: {
             [router]: {
               kind: "openaiCompatible",
@@ -1862,6 +1917,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         });
         assert.equal(legacy.sourceControlHosts.bitbucket?.accessToken, SECRET_REDACTED);
         assert.equal(legacy.usageLimitSources[hub]?.managementKey, SECRET_REDACTED);
+        assert.equal(legacy.inferenceServers[rtx]?.apiKey, SECRET_REDACTED);
         assert.deepEqual(
           Object.keys(
             decodePreHttpUsageLimitSources(encodeServerSettings(legacy).usageLimitSources),
@@ -1886,6 +1942,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           cloudSpeechCredentials: legacy.cloudSpeechCredentials,
           sourceControlHosts: legacy.sourceControlHosts,
           usageLimitSources: legacy.usageLimitSources,
+          inferenceServers: legacy.inferenceServers,
           textGenerators: legacy.textGenerators,
           easDeviceHosts: legacy.easDeviceHosts,
           simlockDeviceHosts: legacy.simlockDeviceHosts,
@@ -1897,6 +1954,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
           "ghe.acme.test": "ghp_ghe",
         });
         assert.deepEqual(echoed.usageLimitSources[hub]?.managementKey, usageReference);
+        assert.deepEqual(echoed.inferenceServers[rtx]?.apiKey, usageReference);
         assert.equal(echoed.usageLimitSources[quota]?.kind, "http");
         assert.deepEqual(echoed.textGenerators[router]?.apiKey, usageReference);
         assert.deepEqual(echoed.cloudSpeechCredentials, {
@@ -2154,6 +2212,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
         "easDeviceHosts.[].accessToken",
         "simlockDeviceHosts.[].agentToken",
         "usageLimitSources.*.managementKey",
+        "inferenceServers.*.apiKey",
         "textGenerators.*.apiKey",
       ]);
     }),
@@ -2920,6 +2979,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
               // A default instance id is no proof of its driver.
               codex: { driver: cursor, enabled: true },
             },
+            textGenerationFallback: "any",
             textGenerationModelSelection: { instanceId: cursorId, model: "auto" },
           }),
         );
@@ -3435,7 +3495,11 @@ it.effect("publishes edits made before the restored settings watch is registered
                       Stream.concat(Stream.never),
                     );
                   }
-                  if (directory !== active) return fs.watch(directory, options);
+                  if (directory !== active) {
+                    // Avoid real OS fs.watch events from the pre-start symlink creation racing the test clock.
+                    options?.onReady?.();
+                    return Stream.never;
+                  }
                   if (yield* Deferred.isDone(replaced)) {
                     yield* Deferred.succeed(registering, undefined);
                     yield* Deferred.await(allowRegistration);

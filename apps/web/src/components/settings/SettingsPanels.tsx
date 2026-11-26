@@ -15,6 +15,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
   type SidebarProjectGroupingMode,
+  type TextGenerationFallback,
 } from "@t3tools/contracts";
 import {
   DEFAULT_UNIFIED_SETTINGS,
@@ -2212,9 +2213,18 @@ export function ThreadsSettingsPanel() {
           serverScoped
           settingKeys={["textGenerationModelSelection"]}
           {...setting("text-generation-model")}
-          description={gt(
-            "For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.",
-          )}
+          description={
+            !settings.textGenerationModelSelectionExplicit &&
+            Object.values(settings.providerInstances).some(
+              (instance) => instance.inference === "local",
+            )
+              ? gt(
+                  "Automatic: a ready local model writes thread titles and other generated text until you pick a model here. Source control can override it.",
+                )
+              : gt(
+                  "For thread titles and other generated text. Source control has its own setting. Text generators from Providers also appear here.",
+                )
+          }
           resetAction={
             hasServerTargets && isTextGenerationModelDirty ? (
               <SettingResetButton
@@ -2223,6 +2233,7 @@ export function ThreadsSettingsPanel() {
                   updateSettings({
                     textGenerationModelSelection:
                       DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+                    textGenerationModelSelectionExplicit: false,
                   })
                 }
               />
@@ -2314,6 +2325,51 @@ export function ThreadsSettingsPanel() {
             )
           }
         />
+        <SettingsRow
+          serverScoped
+          settingKeys={["textGenerationFallback"]}
+          {...setting("text-generation-fallback")}
+          description={gt(
+            "Where background writing goes when its model cannot run. Local models only never sends it to a cloud provider you did not choose.",
+          )}
+          resetAction={
+            settings.textGenerationFallback !== DEFAULT_UNIFIED_SETTINGS.textGenerationFallback ? (
+              <SettingResetButton
+                ariaLabel={gt("Reset text generation fallback")}
+                onClick={() =>
+                  updateSettings({
+                    textGenerationFallback: DEFAULT_UNIFIED_SETTINGS.textGenerationFallback,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.textGenerationFallback}
+              onValueChange={(value) => {
+                if (value === "local" || value === "any" || value === "none") {
+                  updateSettings({ textGenerationFallback: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label={gt("Fallback")}>
+                <SelectValue>
+                  {(value: TextGenerationFallback) =>
+                    messages(TEXT_GENERATION_FALLBACK_LABELS[value])
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {TEXT_GENERATION_FALLBACKS.map((value) => (
+                  <SelectItem key={value} hideIndicator value={value}>
+                    {messages(TEXT_GENERATION_FALLBACK_LABELS[value])}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
         <AdvancedSettings
           targetIds={[setting("thread-title-instructions").id, setting("response-streaming").id]}
         >
@@ -2375,6 +2431,13 @@ export function ThreadsSettingsPanel() {
     </SettingsPageContainer>
   );
 }
+
+const TEXT_GENERATION_FALLBACKS = ["local", "any", "none"] as const;
+const TEXT_GENERATION_FALLBACK_LABELS: Record<TextGenerationFallback, string> = {
+  local: msg("Local models only"),
+  any: msg("Any provider"),
+  none: msg("Don't fall back"),
+};
 
 export function MaintenanceSettingsPanel() {
   const setting = useSearchableSetting();

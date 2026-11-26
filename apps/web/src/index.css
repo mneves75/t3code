@@ -493,6 +493,51 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   }
 }
 
+/* Eliminating backdrop-filter entirely when opaque or reduced-transparency is enabled
+   prevents Chromium/Metal from allocating a framebuffer readback pass over scrolling
+   or streaming timelines on macOS Retina displays. */
+:root[data-glass-opaque="true"] {
+  --glass-blur: 0px;
+  --glass-saturation: 1;
+}
+
+:root[data-glass-opaque="true"] .surface-glass,
+:root[data-glass-opaque="true"] .alert-glass,
+:root[data-glass-opaque="true"] .dialog-glass,
+:root[data-glass-opaque="true"] .dropdown-glass,
+:root[data-glass-opaque="true"] [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+:root[data-glass-opaque="true"] [class*="before:backdrop-blur"]::before {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-opacity: 100%;
+    --glass-blur: 0px;
+    --glass-saturation: 1;
+  }
+
+  .surface-glass,
+  .alert-glass,
+  .dialog-glass,
+  .dropdown-glass,
+  .dialog-backdrop,
+  [class*="backdrop-blur"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  [class*="before:backdrop-blur"]::before {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
 @utility topbar-scroll-fade {
   -webkit-mask-image:
     linear-gradient(
@@ -1307,6 +1352,28 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --sidebar-stage-fade: var(--card);
     /* Row metadata sits a step below read titles (75% white). */
     --secondary-label: #8f8f8f;
+  }
+}
+
+/* The standard dark mode is two-tone, gray panels over a near-black canvas, unless the device
+   picks OLED, which keeps the true-black values above. `:where` keeps these at the specificity
+   of the blocks they follow, so palette themes still win. */
+:root:where([data-dark-style="gray"]) {
+  @variant dark {
+    --background: #0b0b0b;
+    --surface-raised: #191919;
+    --card: #191919;
+    --popover: #1d1d1d;
+    --message-surface: #1f1f1f;
+  }
+}
+
+:where([data-dark-style="gray"]) [data-app-sidebar] {
+  @variant dark {
+    --background: #191919;
+    --card: #191919;
+    --muted: #212121;
+    --accent: #2a2a2a;
   }
 }
 

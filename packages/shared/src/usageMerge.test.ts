@@ -1,4 +1,5 @@
 import {
+  InferenceServerId,
   USAGE_CONTRACT_VERSION,
   USAGE_MERGE_COMPATIBLE_SINCE,
   type EnvironmentId,
@@ -10,7 +11,13 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { isModelCostUnknown, mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import {
+  collectLocalUsageModels,
+  isLocalUsageModel,
+  isModelCostUnknown,
+  mergeUsage,
+  type EnvironmentUsage,
+} from "./usageMerge.ts";
 
 const decodeSummary = Schema.decodeUnknownSync(UsageSummary);
 
@@ -705,5 +712,45 @@ describe("mergeUsage", () => {
 
     expect(merged.sessions).toBe(1);
     expect(merged.providers[0]?.sessions).toBe(1);
+  });
+
+  it("accumulates estimatedCostUsd separately from costUsd and collects local model keys", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [
+              bucket({
+                provider: "pi",
+                model: "mlx-community/Qwen3-Coder",
+                costUsd: 0,
+                estimatedCostUsd: 1.75,
+                costSource: "unpriced",
+                unpricedRecords: 5,
+              }),
+            ],
+            [{ provider: "pi", hostId: "mac", homePath: "/a/.pi" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    expect(merged.costUsd).toBe(0);
+    expect(merged.models[0]?.estimatedCostUsd).toBe(1.75);
+
+    const local = collectLocalUsageModels(
+      [],
+      [
+        {
+          id: InferenceServerId.make("mlx"),
+          enabled: true,
+          models: [{ id: "mlx-community/Qwen3-Coder" }],
+        },
+      ],
+    );
+    expect(isLocalUsageModel("mlx-community/Qwen3-Coder", local)).toBe(true);
+    expect(isLocalUsageModel("qwen3-coder", local)).toBe(true);
+    expect(isLocalUsageModel("claude-fable-5", local)).toBe(false);
   });
 });

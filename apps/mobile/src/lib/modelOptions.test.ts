@@ -601,6 +601,62 @@ describe("mobile model options", () => {
     expect(resolveDefaultableModelSelection(null, legacy, null)).toBe(legacy);
   });
 
+  it("starts a local instance's new tasks on a model its server serves, not the harness default", () => {
+    const local = (
+      instanceId: string,
+      driver: string,
+      models: ReadonlyArray<{ slug: string; isDefault?: boolean }>,
+      link: { inference?: "local"; inferenceServerId?: string } = {},
+    ) => ({
+      instanceId,
+      driver,
+      enabled: true,
+      installed: true,
+      auth: { status: "authenticated" },
+      ...link,
+      models: models.map((model) => ({
+        name: model.slug,
+        isCustom: false,
+        capabilities: null,
+        ...model,
+      })),
+    });
+    const resolveFor = (provider: ReturnType<typeof local>) =>
+      resolveNewTaskModelSelection({
+        draftSelection: null,
+        projectDefaultSelection: null,
+        stickySelection: null,
+        modelOptions: buildModelOptions(
+          { providers: [provider] } as unknown as ServerConfig,
+          null,
+          undefined,
+          null,
+        ),
+      });
+    // "default" defers to Pi's own configured model, which need not be the linked server's.
+    const piModels = [{ slug: "default", isDefault: true }, { slug: "t3-mlx/qwen-0.5b" }];
+    expect(resolveFor(local("pi-mlx", "pi", piModels, { inference: "local" }))).toEqual({
+      instanceId: "pi-mlx",
+      model: "t3-mlx/qwen-0.5b",
+    });
+    expect(resolveFor(local("pi", "pi", piModels))).toEqual({ instanceId: "pi", model: "default" });
+    const openCodeModels = [
+      { slug: "opencode/beam-free", isDefault: true },
+      { slug: "t3-mlx-studio/qwen3-4b" },
+    ];
+    const link = { inference: "local", inferenceServerId: "mlx-studio" } as const;
+    expect(resolveFor(local("opencode-mlx", "opencode", openCodeModels, link))).toEqual({
+      instanceId: "opencode-mlx",
+      model: "t3-mlx-studio/qwen3-4b",
+    });
+    // Codex reaches its linked server under the server's bare model ids.
+    const codexModels = [{ slug: "default", isDefault: true }, { slug: "qwen3-4b" }];
+    expect(resolveFor(local("codex-mlx", "codex", codexModels, link))).toEqual({
+      instanceId: "codex-mlx",
+      model: "qwen3-4b",
+    });
+  });
+
   it("resolves new tasks from draft, project, sticky, then provider defaults", () => {
     const draft = { instanceId: ProviderInstanceId.make("codex"), model: "draft" };
     const project = { instanceId: ProviderInstanceId.make("codex"), model: "project" };

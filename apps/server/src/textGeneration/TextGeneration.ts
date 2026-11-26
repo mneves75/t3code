@@ -1,7 +1,12 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ModelSelection, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
+import type {
+  ModelSelection,
+  ProjectId,
+  ProviderInstanceId,
+  ServerProvider,
+} from "@t3tools/contracts";
 import {
   isProviderAvailable,
   isProviderTextGenerationCapable,
@@ -9,13 +14,20 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { exhaustedUsageWindow } from "@t3tools/shared/usageLimits";
-import { fallbackTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
+import {
+  defaultTextGenerationModel,
+  fallbackTextGenerationModelSelection,
+  isImplicitTextGenerationSelection,
+  localTextGenerationModelSelection,
+  withLowReasoningOption,
+} from "@t3tools/shared/serverSettings";
 import * as ServerSettings from "../serverSettings.ts";
 import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
 import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import { orderProviderSnapshots } from "../provider/providerStatusCache.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
@@ -79,30 +91,74 @@ export const make = Effect.gen(function* () {
   const textGenerators = yield* TextGenerators.TextGenerators;
   const generate = Effect.fn("TextGeneration.generate")(function* <A>(
     operation: TextGenerationOp,
-    selection: ModelSelection,
+    requested: ModelSelection,
     projectId: ProjectId | null | undefined,
     invoke: (
       service: ProviderTextGeneration,
       modelSelection: ModelSelection,
     ) => Effect.Effect<A, TextGenerationError>,
   ) {
-    const textGenerator = yield* textGenerators.runner(selection.instanceId);
+    const textGenerator = yield* textGenerators.runner(requested.instanceId);
     // A review guide reaches a text generator only through a fallback; it needs an agent instead.
-    const textGeneratorId = selection.instanceId;
+    const textGeneratorId = requested.instanceId;
     const textGeneratorCannotRun =
       textGenerator !== undefined && operation === "generateReviewGuide";
     if (textGenerator !== undefined && !textGeneratorCannotRun) {
       return yield* invoke(
         TextGenerationOperations.fromRunner("TextGenerator", textGenerator),
-        selection,
+        requested,
       );
     }
-    const snapshots = yield* registry.listInstances.pipe(
-      Effect.flatMap((instances) =>
-        Effect.forEach(instances, (instance) => instance.snapshot.getSnapshot),
+    const snapshots = orderProviderSnapshots(
+      yield* registry.listInstances.pipe(
+        Effect.flatMap((instances) =>
+          Effect.forEach(instances, (instance) => instance.snapshot.getSnapshot),
+        ),
+      ),
+    );
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({
+            operation,
+            detail: "Could not read text generation settings.",
+            cause,
+          }),
       ),
     );
     const now = DateTime.toEpochMillis(yield* DateTime.now);
+    const canRun = (provider: ServerProvider, model: string) =>
+      provider.enabled &&
+      resolveProjectProviderInstanceEnabled(settings, projectId ?? null, provider.instanceId) &&
+      provider.installed &&
+      provider.auth.status !== "unauthenticated" &&
+      provider.status !== "error" &&
+      isProviderAvailable(provider) &&
+      isProviderTextGenerationCapable(provider) &&
+      (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(provider.driver)) &&
+      !exhaustedUsageWindow(provider, now, model);
+    // "Local models only" holds even before any instance is marked local.
+    const localPolicy = settings.textGenerationFallback !== "any";
+    const noLocalModel = new TextGenerationError({
+      operation,
+      detail:
+        operation === "generateReviewGuide"
+          ? "Review guides need a Codex or Claude instance, and no local one is ready. Link one to a model server, or allow any provider in Settings, Models."
+          : "No local model is ready for background writing. Set up a local model, or allow any provider in Settings, Models.",
+    });
+
+    let selection = requested;
+    let substituted = false;
+    if (isImplicitTextGenerationSelection(settings, selection)) {
+      const local = localTextGenerationModelSelection(snapshots, (provider) =>
+        canRun(provider, ""),
+      );
+      if (local !== null) {
+        selection = local;
+        substituted = true;
+      } else if (localPolicy) return yield* noLocalModel;
+    }
+
     const selected = snapshots.find((provider) => provider.instanceId === selection.instanceId);
     const selectedDisabled = selected?.enabled === false;
     // Only a failed probe counts: a pending one is also not installed yet.
@@ -114,43 +170,58 @@ export const make = Effect.gen(function* () {
           selected.models.find((model) => model.slug === selection.model)
             ?.supportsTextGeneration === false ||
           (selected.status === "error" &&
-            (!selected.installed || selected.auth.status === "unauthenticated"))));
+            (!selected.installed || selected.auth.status === "unauthenticated")))) ||
+      (operation === "generateReviewGuide" &&
+        selected !== undefined &&
+        !INVESTIGATING_DRIVERS.has(selected.driver));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
-      const settings = yield* serverSettings.getSettings.pipe(
-        Effect.mapError(
-          (cause) =>
-            new TextGenerationError({
-              operation,
-              detail: "Could not read fallback model settings.",
-              cause,
-            }),
-        ),
-      );
       const rejected = selection;
+      const usableCandidate = (provider: ServerProvider, model: string) =>
+        canRun(provider, model) &&
+        (model === "" ||
+          provider.models.find((candidate) => candidate.slug === model)?.supportsTextGeneration !==
+            false);
       const fallbackWhere = (sameInstance: boolean) =>
         fallbackTextGenerationModelSelection(
           settings.providerInstances,
           (instanceId, driver, model) => {
             const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
+            const targetModel = model || defaultTextGenerationModel(driver);
             return (
-              (sameInstance ? model !== rejected.model : instanceId !== rejected.instanceId) &&
-              provider?.enabled === true &&
-              resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
-              provider.installed &&
-              provider.auth.status !== "unauthenticated" &&
-              provider.status !== "error" &&
-              isProviderAvailable(provider) &&
-              isProviderTextGenerationCapable(provider) &&
-              provider.models.find((candidate) => candidate.slug === model)
-                ?.supportsTextGeneration !== false &&
-              (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
-              !exhaustedUsageWindow(provider, now, model)
+              provider !== undefined &&
+              (sameInstance
+                ? targetModel !== rejected.model
+                : instanceId !== rejected.instanceId) &&
+              usableCandidate(provider, targetModel)
             );
           },
-          { defaultModelSelection: settings.defaultModelSelection },
+          {
+            includeConfiguredInstances: true,
+            defaultModelSelection: settings.defaultModelSelection,
+            policy: settings.textGenerationFallback,
+            inferenceServers: settings.inferenceServers,
+          },
         );
-      // Another instance first; the rejected instance's other models only when none qualifies.
-      selection = fallbackWhere(false) ?? fallbackWhere(true) ?? selection;
+      // Local instance first, then another instance, then the rejected instance's other models.
+      const fallback =
+        settings.textGenerationFallback === "none"
+          ? null
+          : (localTextGenerationModelSelection(
+              snapshots,
+              (provider) =>
+                provider.instanceId !== rejected.instanceId && usableCandidate(provider, ""),
+            ) ??
+            fallbackWhere(false) ??
+            fallbackWhere(true));
+      if (fallback !== null) {
+        selection = fallback;
+        substituted = true;
+      } else if (localPolicy) return yield* noLocalModel;
+    }
+    // Only a selection T3 chose; one the user picked keeps the options they gave it.
+    if (substituted) {
+      const provider = snapshots.find((candidate) => candidate.instanceId === selection.instanceId);
+      if (provider?.inference === "local") selection = withLowReasoningOption(selection, provider);
     }
     if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {
       return yield* new TextGenerationError({

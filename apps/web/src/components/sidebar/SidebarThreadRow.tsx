@@ -157,6 +157,8 @@ export type SidebarProviderEntry = Pick<
   | "acpRegistryIconUrl"
   | "models"
 >;
+const DEFAULT_BRANCH_NAMES = new Set(["main", "master"]);
+
 function compactSidebarTimeLabel(timestamp: string, nowMs: number, resolve: MessageResolver) {
   const parts = formatRelativeTime(timestamp, nowMs, resolve);
   if (parts === null) return "";
@@ -634,6 +636,8 @@ type SidebarThreadRowProps = {
   environmentMachine: EnvironmentMachineKind;
   project: EnvironmentProject | null;
   projectDisplayName: string | null;
+  projectShortName?: string | null;
+  showProviderIcon?: boolean | undefined;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
   timestampFormat: TimestampFormat;
   onThreadClick: (event: ReactMouseEvent, threadRef: ScopedThreadRef) => void;
@@ -1116,7 +1120,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       ref={isRegeneratingTitle ? observeVisibleAnimation : undefined}
       className={cn(
         "min-w-0 flex-1 text-start text-sm transition-opacity motion-reduce:transition-none",
-        shouldRecede ? "font-normal" : "font-medium",
+        shouldRecede ? "font-normal" : variant === "card" ? "font-semibold" : "font-medium",
         isRegeneratingTitle
           ? "relative truncate text-muted-foreground"
           : variant !== "slim"
@@ -1318,19 +1322,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         aria-hidden
         className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
       >
-        <SidebarProviderStack
-          thread={thread}
-          providerEntryByInstanceId={props.providerEntryByInstanceId}
-        />
+        {props.showProviderIcon === false ? null : (
+          <SidebarProviderStack
+            thread={thread}
+            providerEntryByInstanceId={props.providerEntryByInstanceId}
+          />
+        )}
       </span>
     </div>
   );
   const titleLineIcons = metaLineEmpty ? (
     <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
-      <SidebarProviderStack
-        thread={thread}
-        providerEntryByInstanceId={props.providerEntryByInstanceId}
-      />
+      {props.showProviderIcon === false ? null : (
+        <SidebarProviderStack
+          thread={thread}
+          providerEntryByInstanceId={props.providerEntryByInstanceId}
+        />
+      )}
     </span>
   ) : null;
 
@@ -1549,6 +1557,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     );
   }
 
+  const cardProjectLabel = props.projectShortName ?? props.projectDisplayName;
+  const nonDefaultBranch =
+    checkoutThread.branch && !DEFAULT_BRANCH_NAMES.has(checkoutThread.branch)
+      ? checkoutThread.branch
+      : null;
+
   return (
     <li
       data-thread-item={threadKey}
@@ -1557,8 +1571,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       // The hints are the rendered heights inside py-0.5. Revealing the open thread measures rows
       // that have not rendered yet, so a hint off by a pixel lands it a pixel short per row above.
       className={cn(
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        metaLineEmpty && "[contain-intrinsic-size:auto_60px]",
+        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_60px]",
         sortable?.isDragging && "relative z-20",
       )}
     >
@@ -1587,35 +1600,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           />
         }
       >
-        <div
-          className={cn(
-            "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-            metaLineEmpty && "h-auto",
-          )}
-        >
+        <div className="relative z-10 px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)">
           <div className="flex h-5 min-w-0 items-center gap-1.5">
             {draftIndicator}
-            {props.project ? (
-              <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+            {title}
+            {isRegeneratingTitle ? (
+              <span role="status" className="sr-only">
+                <T>Regenerating title</T>
+              </span>
             ) : null}
             {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
             {pinIndicator}
-            {props.projectDisplayName ? (
-              <span
-                className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
-              >
-                {props.projectDisplayName}
-              </span>
-            ) : (
-              <span className="flex-1" />
-            )}
             {sortable?.isDragging ? (
               dragDestination
             ) : (
               <span
                 className={cn(
-                  "group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs",
+                  "group/sidebar-status-slot relative ml-auto flex h-5 shrink-0 items-stretch justify-end text-xs",
+                  (pendingSync || topStatus || jumpHintLabel) && "min-w-8",
                   props.sweepAction !== null && "hidden",
                   jumpHintLabel && JUMP_HINT_SLOT_CLASS_NAME,
                 )}
@@ -1683,9 +1686,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         ) : null}
                       </span>
                     )
-                  ) : (
-                    <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
-                  )}
+                  ) : null}
                 </span>
                 {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
                   <span
@@ -1753,16 +1754,67 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             )}
             {props.sweepAction !== null ? dragDestination : null}
           </div>
-          <div className="mt-1 flex min-w-0 items-center gap-1.5">
-            {title}
-            {isRegeneratingTitle ? (
-              <span role="status" className="sr-only">
-                <T>Regenerating title</T>
+          <div className="mt-1 flex h-4.5 min-w-0 items-center gap-1.5 text-secondary-label text-xs">
+            {props.project ? (
+              <ProjectFavicon project={props.project} className="size-3.5 shrink-0" />
+            ) : null}
+            {cardProjectLabel ? (
+              <span
+                className={cn(
+                  "min-w-0 truncate",
+                  (nonDefaultBranch !== null || props.environmentLabel !== null) &&
+                    "max-w-[45%] shrink-0",
+                )}
+              >
+                {cardProjectLabel}
               </span>
             ) : null}
-            {titleLineIcons}
+            {nonDefaultBranch ? (
+              <span className="flex min-w-0 items-center gap-1 text-secondary-label/80">
+                <GitBranchIcon aria-hidden className="size-3 shrink-0" />
+                <MiddleTruncate value={nonDefaultBranch} showTitle={false} className="min-w-0" />
+              </span>
+            ) : null}
+            {props.environmentLabel !== null ? (
+              <span className="flex min-w-0 items-center gap-1">
+                <EnvironmentMachineIcon
+                  aria-hidden
+                  kind={props.environmentMachine}
+                  className="size-3.5 shrink-0 text-icon-muted"
+                />
+                <span className="min-w-0 truncate">{props.environmentLabel}</span>
+              </span>
+            ) : null}
+            <span className="ml-auto flex shrink-0 items-center gap-1.5">
+              {terminalStatusIcon}
+              {prBadge}
+              {issueBadge}
+              {diff ? (
+                <span className="shrink-0 font-mono">
+                  <span className="text-diff-addition-foreground">
+                    +{formatDiffCount(diff.insertions)}
+                  </span>{" "}
+                  <span className="text-diff-deletion-foreground">
+                    −{formatDiffCount(diff.deletions)}
+                  </span>
+                </span>
+              ) : null}
+              {props.showProviderIcon === false ? null : (
+                <span
+                  aria-hidden
+                  className="pointer-events-none inline-flex shrink-0 items-center gap-1"
+                >
+                  <SidebarProviderStack
+                    thread={thread}
+                    providerEntryByInstanceId={props.providerEntryByInstanceId}
+                  />
+                </span>
+              )}
+              <span className="shrink-0 tabular-nums text-secondary-label">
+                <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
+              </span>
+            </span>
           </div>
-          {metaLine}
         </div>
       </ThreadHoverCardTrigger>
     </li>

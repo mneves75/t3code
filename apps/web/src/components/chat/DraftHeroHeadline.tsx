@@ -8,7 +8,7 @@ import { FolderPlusIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 
-import { openCommandPalette } from "~/commandPaletteBus";
+import { openAddProjectDialog } from "../AddProjectDialog";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
@@ -71,7 +71,6 @@ export function DraftHeroHeadline({
   const isTriageDraftPrompt = useComposerDraftStore((store) =>
     draftId ? isTriagePrompt(store.getComposerDraft(draftId)?.prompt ?? "") : false,
   );
-  const openAddProject = () => openCommandPalette({ open: "add-project", draftId });
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const openProjectDraft = useNewThreadHandler();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -208,7 +207,7 @@ export function DraftHeroHeadline({
         if (!item) return;
         setPickerOpen(false);
         if (item.value === ADD_PROJECT_VALUE) {
-          openAddProject();
+          openAddProjectDialog();
           return;
         }
         const entry = projectEntryByKey.get(item.value);
@@ -303,7 +302,7 @@ export function DraftHeroHeadline({
   ) : (
     <button
       type="button"
-      onClick={openAddProject}
+      onClick={openAddProjectDialog}
       className="pointer-events-auto inline min-w-0 max-w-full cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <DraftProjectName value={activeProjectTitle ?? gt("Add a project")} singleLine />

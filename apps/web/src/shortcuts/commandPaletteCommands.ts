@@ -7,9 +7,15 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { overlayModeForCommand } from "../components/CommandPalette.logic";
-import { APPEARANCE_OPTIONS, notifyThemeSaveFailure } from "../components/CommandPaletteThemeItems";
+import {
+  APPEARANCE_OPTIONS,
+  appearanceLabel,
+  applyAppearanceOption,
+  notifyThemeSaveFailure,
+} from "../components/CommandPaletteThemeItems";
 import { toggleThemeEditorForTheme } from "../components/settings/themeEditorStore";
 import { toastManager } from "../components/ui/toast";
+import { getClientSettings } from "../hooks/useSettings";
 import { getThemeSnapshot, setAppearanceMode } from "../hooks/useTheme";
 import { m } from "../i18n/messages";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
@@ -69,20 +75,23 @@ export function installCommandPaletteCommands(
         consume(event);
         if (event.repeat) return;
         const { appearanceMode } = getThemeSnapshot();
-        const index = APPEARANCE_OPTIONS.findIndex((option) => option.mode === appearanceMode);
-        const nextMode = APPEARANCE_OPTIONS[(index + 1) % APPEARANCE_OPTIONS.length]!.mode;
-        if (!setAppearanceMode(nextMode)) {
+        const darkStyle = getClientSettings().darkStyle;
+        const index = APPEARANCE_OPTIONS.findIndex(
+          (option) =>
+            option.mode === appearanceMode &&
+            (option.darkStyle === null || option.darkStyle === darkStyle),
+        );
+        const nextOption = APPEARANCE_OPTIONS[(index + 1) % APPEARANCE_OPTIONS.length]!;
+        const nextMode = nextOption.mode;
+        if (!applyAppearanceOption(nextOption, setAppearanceMode)) {
           notifyThemeSaveFailure();
           return;
         }
         toastManager.add({
           id: "appearance-cycle",
-          title: m(
-            msg(
-              "{mode, select, system {Appearance: System} light {Appearance: Light} other {Appearance: Dark}}",
-            ),
-            { mode: nextMode },
-          ),
+          title: m(msg("Appearance: {appearance}"), {
+            appearance: appearanceLabel(nextMode, nextOption.darkStyle ?? darkStyle),
+          }),
           timeout: 1500,
         });
       },

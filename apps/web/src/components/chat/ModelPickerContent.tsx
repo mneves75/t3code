@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { resolveSelectableModel } from "@t3tools/shared/model";
 import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import {
   formatProviderUpdateRequiredNotice,
   providerUpdateChannelLags,
@@ -50,7 +51,7 @@ import {
 import { ModelEsque } from "./providerIconUtils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { registerModelPickerContent } from "../../modelPickerVisibility";
-import { primaryServerKeybindingsAtom } from "../../state/server";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
 import {
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
@@ -75,9 +76,33 @@ import {
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 import { hasRuntimeModelCatalog } from "../../providerModels";
 
+const NO_SERVER_NAMES = Atom.make<Readonly<Record<string, string>>>({});
+/** Each inference server's name by id; load updates keep the names, so they re-render nothing. */
+const serverNamesAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): Readonly<Record<string, string>> =>
+    Object.fromEntries(
+      (get(serverEnvironment.configValueAtom(environmentId))?.inferenceServers ?? []).map(
+        (server) => [server.id, server.displayName],
+      ),
+    ),
+  ).pipe(
+    Atom.withEquality(
+      (left: Readonly<Record<string, string>>, right: Readonly<Record<string, string>>) =>
+        Object.keys(left).length === Object.keys(right).length &&
+        Object.keys(left).every((id) => left[id] === right[id]),
+    ),
+  ),
+);
+
+export function useInferenceServerNames(environmentId: EnvironmentId | null) {
+  return useAtomValue(environmentId === null ? NO_SERVER_NAMES : serverNamesAtom(environmentId));
+}
+
 type ModelPickerItem = {
   slug: string;
   name: string;
+  /** The inference server the instance is linked to. */
+  serverName?: string;
   shortName?: string;
   subProvider?: string;
   badge?: "new";
@@ -206,11 +231,16 @@ function ModelPickerProviderNotices({
   setupEntries,
   updateRequiredNotices,
   emptyLabel,
+  offerLocalSetup,
+  environmentId,
   onRequestClose,
   onOpenProviderSetup,
 }: {
   setupEntries: ReadonlyArray<ProviderInstanceEntry>;
   emptyLabel: string;
+  offerLocalSetup: boolean;
+  /** Setup runs on the environment this picker chooses for, not the settings default. */
+  environmentId: EnvironmentId | null;
   updateRequiredNotices: ReadonlyArray<{
     instanceId: ProviderInstanceId;
     notice: string;
@@ -248,6 +278,27 @@ function ModelPickerProviderNotices({
       ) : (
         <ComboboxEmpty className="empty:h-0">{emptyLabel}</ComboboxEmpty>
       )}
+      {offerLocalSetup ? (
+        <p className="shrink-0 border-t border-border/70 px-3 py-2 text-xs leading-snug text-muted-foreground">
+          <T>
+            No model runs on your own hardware yet.{" "}
+            <InlineButton
+              onClick={() => {
+                onRequestClose?.();
+                void navigate({
+                  to: "/settings/inference",
+                  search: {
+                    setup: "local",
+                    ...(environmentId === null ? {} : { machine: environmentId }),
+                  },
+                });
+              }}
+            >
+              Use a local model
+            </InlineButton>
+          </T>
+        </p>
+      ) : null}
       {updateRequiredNotices.map(({ instanceId, notice, canUpdateInSettings }) => (
         <p
           key={instanceId}
@@ -487,6 +538,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ),
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const serverNames = useInferenceServerNames(props.environmentId);
   const keybindings = providedKeybindings ?? serverKeybindings;
   const [searchHeight, setSearchHeight] = useState(0);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
@@ -594,6 +646,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       if (!entry) {
         continue;
       }
+      const serverId = entry.snapshot.inferenceServerId;
+      const serverName = serverId === undefined ? undefined : serverNames[serverId];
       for (const model of models) {
         const key = modelPickerModelKey(instanceId, model.slug);
         if (
@@ -611,6 +665,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         out.push({
           slug: model.slug,
           name: model.name,
+          ...(serverName ? { serverName } : {}),
           ...(model.shortName ? { shortName: model.shortName } : {}),
           ...(model.subProvider ? { subProvider: model.subProvider } : {}),
           ...(model.badge ? { badge: model.badge } : {}),
@@ -981,6 +1036,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             onSelectInstance={handleSelectInstance}
             onFocusSearch={focusSearchInput}
             instanceEntries={sidebarInstanceEntries}
+            environmentId={props.environmentId}
             showFavorites
             {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
             {...(lockedDisabledInstanceIds
@@ -1215,6 +1271,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     index={index}
                     slug={model.slug}
                     name={model.name}
+                    serverName={model.serverName}
                     subProvider={model.subProvider}
                     instanceId={model.instanceId}
                     driverKind={model.driverKind}
@@ -1241,6 +1298,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             />
             <ModelPickerProviderNotices
               setupEntries={providerSetupEntries}
+              offerLocalSetup={
+                !props.instanceEntries.some((entry) => entry.snapshot.inference === "local")
+              }
+              environmentId={props.environmentId}
               updateRequiredNotices={updateRequiredNotices}
               emptyLabel={
                 selectedInstanceId === "favorites" && !isSearching

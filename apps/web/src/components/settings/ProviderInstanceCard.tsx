@@ -26,11 +26,13 @@ import {
   type ProviderInstanceId,
   type AcpRegistryUrlAuthAction,
   type EnvironmentId,
+  type InferenceServerId,
   type ProjectId,
   type ProviderDriverKind,
   type SecretReference,
   type ServerProvider,
   type ServerProviderModel,
+  type UnifiedSettings,
 } from "@t3tools/contracts";
 
 import {
@@ -47,6 +49,7 @@ import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { SecretSourceInput, type SecretSource } from "./SecretSourceInput";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ManagedControl, ManagedNotice } from "../ManagedPolicy";
 import { managedInstanceLocks, useManagedPolicy } from "../../state/managedPolicy";
@@ -70,6 +73,11 @@ import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayo
 import { AcpSessionManagementSection } from "./AcpSessionManagementSection";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { readCodexSetupMode } from "./CodexSetupSection.logic";
+import {
+  inferenceServerDisplayName,
+  presentInferenceServers,
+  resolveInferenceServerLink,
+} from "@t3tools/client-runtime/state/inference-presentation";
 import {
   type CustomModelSave,
   customModelsKey,
@@ -725,6 +733,7 @@ interface ProviderInstanceCardProps {
   readonly onAcceptUrlAuth?: ((action: AcpRegistryUrlAuthAction) => void) | undefined;
   readonly environmentId?: EnvironmentId | undefined;
   readonly secretSources?: ReadonlyArray<SecretSource>;
+  readonly inferenceServers?: UnifiedSettings["inferenceServers"];
   readonly projectOverride?: ProjectOverrideControl | undefined;
   readonly acpProjects?:
     | ReadonlyArray<{
@@ -738,6 +747,8 @@ interface ProviderInstanceCardProps {
 const EMPTY_ACP_PROJECTS: NonNullable<ProviderInstanceCardProps["acpProjects"]> = [];
 const NO_SECRET_SOURCES: ReadonlyArray<SecretSource> = [];
 const NO_CUSTOM_MODELS: ReadonlyArray<CustomModelDefinition> = [];
+const NO_INFERENCE_SERVERS: UnifiedSettings["inferenceServers"] = {};
+const NO_INFERENCE_SERVER = "";
 
 /**
  * Every custom model save writes the whole list, so the next edit starts from the last list sent
@@ -797,6 +808,7 @@ export function ProviderInstanceCard({
   environmentId,
   acpProjects = EMPTY_ACP_PROJECTS,
   secretSources = NO_SECRET_SOURCES,
+  inferenceServers = NO_INFERENCE_SERVERS,
   projectOverride,
 }: ProviderInstanceCardProps) {
   const gt = useGT();
@@ -926,6 +938,34 @@ export function ProviderInstanceCard({
       normalized
         ? ({ ...rest, accentColor: normalized } as ProviderInstanceConfig)
         : (rest as ProviderInstanceConfig),
+    );
+  };
+
+  const updateInference = (local: boolean) => {
+    const { inference: _omit, ...rest } = instance;
+    onUpdate(local ? { ...rest, inference: "local" } : rest);
+  };
+
+  const inferenceLink = resolveInferenceServerLink(instance.inferenceServerId, inferenceServers);
+  const inferenceServerOptions = presentInferenceServers(inferenceServers).map(([id, config]) => ({
+    id: id as string,
+    label: config.enabled
+      ? inferenceServerDisplayName(id, config)
+      : gt("{name} (disabled)", { name: inferenceServerDisplayName(id, config) }),
+  }));
+  if (inferenceLink.kind === "missing") {
+    inferenceServerOptions.push({
+      id: inferenceLink.id,
+      label: gt("{name} (removed)", { name: inferenceLink.id }),
+    });
+  }
+  const selectedInferenceServer = instance.inferenceServerId ?? NO_INFERENCE_SERVER;
+  const updateInferenceServer = (value: string) => {
+    const { inferenceServerId: _omit, ...rest } = instance;
+    onUpdate(
+      value === NO_INFERENCE_SERVER
+        ? rest
+        : { ...rest, inferenceServerId: value as InferenceServerId },
     );
   };
 
@@ -1374,6 +1414,84 @@ export function ProviderInstanceCard({
                 spellCheck={false}
               />
             </div>
+          }
+        />
+        {inferenceServerOptions.length > 0 ? (
+          <SettingsRow
+            title={gt("Inference server")}
+            description={gt(
+              "The registered server this instance's models run on. Manage servers in Settings, Inference.",
+            )}
+            control={
+              <div className="w-full @min-[32rem]/settings-row:w-48">
+                <Select
+                  value={selectedInferenceServer}
+                  disabled={readOnly}
+                  onValueChange={(value) => {
+                    if (typeof value === "string") updateInferenceServer(value);
+                  }}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="w-full min-w-0"
+                    aria-label={gt("Inference server")}
+                  >
+                    <SelectValue>
+                      {inferenceServerOptions.find(
+                        (option) => option.id === selectedInferenceServer,
+                      )?.label ?? gt("None")}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    <SelectItem value={NO_INFERENCE_SERVER}>{gt("None")}</SelectItem>
+                    {inferenceServerOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              </div>
+            }
+          />
+        ) : null}
+        {inferenceLink.kind === "disabled" || inferenceLink.kind === "missing" ? (
+          <SettingsRow
+            title={
+              <span className="flex items-center gap-1.5">
+                <AlertTriangleIcon className="size-3.5 shrink-0 text-warning" aria-hidden />
+                <T>Inference server unavailable</T>
+              </span>
+            }
+            description={
+              inferenceLink.kind === "disabled"
+                ? gt(
+                    "{name} is disabled in Settings, Inference. Enable it or pick another server.",
+                    { name: inferenceLink.name },
+                  )
+                : gt(
+                    "The linked server {id} is no longer registered. Pick another server or None.",
+                    { id: inferenceLink.id },
+                  )
+            }
+          />
+        ) : null}
+        <SettingsRow
+          title={gt("Runs local models")}
+          description={
+            inferenceLink.kind === "enabled"
+              ? gt("Linked to {name}", { name: inferenceLink.name })
+              : gt(
+                  "Every model this instance can select runs on hardware you control. Local instances come first and handle background writing such as titles and commit messages.",
+                )
+          }
+          control={
+            <Switch
+              checked={inferenceLink.kind === "enabled" || instance.inference === "local"}
+              disabled={readOnly || inferenceLink.kind === "enabled"}
+              onCheckedChange={(checked) => updateInference(Boolean(checked))}
+              aria-label={gt("Runs local models")}
+            />
           }
         />
       </SettingsSection>

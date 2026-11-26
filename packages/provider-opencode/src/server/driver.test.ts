@@ -93,7 +93,11 @@ const create = (config: Partial<OpenCodeSettings>, http: HttpClient.HttpClient, 
   OpenCodeDriver.create({
     instanceId: ProviderInstanceId.make("opencode-test"),
     displayName: undefined,
-    environment: [],
+    // Isolate from the host's ~/.local/share/opencode/auth.json so local-binary tests never hit Go usage HTTP.
+    environment: [
+      { name: "OPENCODE_AUTH_CONTENT", sensitive: true, value: "{}" },
+      { name: "OPENCODE_API_KEY", sensitive: true, value: "" },
+    ],
     enabled,
     config: { ...OpenCodeDriver.defaultConfig(), ...config },
   }).pipe(Effect.provideService(HttpClient.HttpClient, http));

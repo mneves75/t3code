@@ -88,4 +88,32 @@ describe("buildThreadActionMenuItems", () => {
     const items = buildThreadActionMenuItems({ ...baseState, canRename: false });
     expect(items.filter((item) => item.disabled).map((item) => item.id)).toEqual(["rename"]);
   });
+
+  it("offers add/remove training dataset actions with reverse state and operate gating", () => {
+    const addItems = buildThreadActionMenuItems({
+      ...baseState,
+      canCurateForTraining: true,
+      isInTrainingDataset: false,
+    });
+    expect(addItems.map((item) => item.id)).toContain("add-to-training-dataset");
+    expect(addItems.map((item) => item.id)).not.toContain("remove-from-training-dataset");
+
+    const removeItems = buildThreadActionMenuItems({
+      ...baseState,
+      canCurateForTraining: true,
+      isInTrainingDataset: true,
+    });
+    expect(removeItems.map((item) => item.id)).toContain("remove-from-training-dataset");
+    expect(removeItems.map((item) => item.id)).not.toContain("add-to-training-dataset");
+
+    const readOnlyItems = buildThreadActionMenuItems({
+      ...baseState,
+      canOperate: false,
+      canCurateForTraining: true,
+      isInTrainingDataset: false,
+    });
+    expect(readOnlyItems.find((item) => item.id === "add-to-training-dataset")?.disabled).toBe(
+      true,
+    );
+  });
 });

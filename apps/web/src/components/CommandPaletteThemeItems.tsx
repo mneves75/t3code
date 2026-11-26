@@ -1,10 +1,12 @@
 import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
+import type { DarkStyle } from "@t3tools/contracts/settings";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { MonitorIcon, MoonIcon, PaletteIcon, SunIcon } from "lucide-react";
+import { MonitorIcon, MoonIcon, MoonStarIcon, PaletteIcon, SunIcon } from "lucide-react";
 
 import { m } from "../i18n/messages";
 import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
+import { updateClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 import { getThemeDefinition } from "../themePalette";
 import {
@@ -22,10 +24,38 @@ import {
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 export const APPEARANCE_OPTIONS = [
-  { mode: "system", label: msg("System"), icon: MonitorIcon },
-  { mode: "light", label: msg("Light"), icon: SunIcon },
-  { mode: "dark", label: msg("Dark"), icon: MoonIcon },
+  { key: "system", mode: "system", darkStyle: null, label: msg("System"), icon: MonitorIcon },
+  { key: "light", mode: "light", darkStyle: null, label: msg("Light"), icon: SunIcon },
+  { key: "dark", mode: "dark", darkStyle: "gray", label: msg("Dark"), icon: MoonIcon },
+  { key: "oled", mode: "dark", darkStyle: "oled", label: msg("OLED"), icon: MoonStarIcon },
 ] as const;
+export type AppearanceOption = (typeof APPEARANCE_OPTIONS)[number];
+
+export function isAppearanceOptionActive(
+  option: AppearanceOption,
+  appearanceMode: AppearanceOption["mode"],
+  darkStyle: DarkStyle,
+): boolean {
+  return (
+    option.mode === appearanceMode && (option.darkStyle === null || option.darkStyle === darkStyle)
+  );
+}
+
+export function appearanceLabel(mode: AppearanceOption["mode"], darkStyle: DarkStyle): string {
+  const option = APPEARANCE_OPTIONS.find((candidate) =>
+    isAppearanceOptionActive(candidate, mode, darkStyle),
+  );
+  return option ? m(option.label) : mode;
+}
+
+/** Picks the mode, and for Dark or OLED the standard theme's dark style on this device. */
+export function applyAppearanceOption(
+  option: AppearanceOption,
+  setAppearanceMode: (mode: AppearanceOption["mode"]) => boolean,
+): boolean {
+  if (option.darkStyle !== null) void updateClientSettings({ darkStyle: option.darkStyle });
+  return setAppearanceMode(option.mode);
+}
 
 export function notifyThemeSaveFailure(): void {
   toastManager.add(
@@ -66,6 +96,7 @@ export function useCommandPaletteThemeItems() {
     setThemeHalf,
   } = useTheme();
   const themeCards = useThemeCards();
+  const darkStyle = useClientSettings((settings) => settings.darkStyle);
   const gt = useGT();
   const messages = useMessages();
 
@@ -127,7 +158,7 @@ export function useCommandPaletteThemeItems() {
   const changeAppearanceItem: CommandPaletteSubmenuItem = {
     kind: "submenu",
     value: "action:change-appearance",
-    searchTerms: ["change appearance", "light", "dark", "system", "mode", "toggle"],
+    searchTerms: ["change appearance", "light", "dark", "oled", "system", "mode", "toggle"],
     title: gt("Change appearance"),
     icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
     addonIcon: <MonitorIcon className={ADDON_ICON_CLASS} />,
@@ -136,20 +167,19 @@ export function useCommandPaletteThemeItems() {
       {
         value: "appearance",
         label: gt("Change appearance"),
-        items: APPEARANCE_OPTIONS.map(({ mode, label, icon: Icon }) => ({
+        items: APPEARANCE_OPTIONS.map((option) => ({
           kind: "action",
-          value: `appearance:${mode}`,
-          title: messages(label),
-          searchTerms: [messages(label), label, "appearance", "mode"],
-          icon: <Icon className={ITEM_ICON_CLASS} />,
-          titleTrailingContent:
-            appearanceMode === mode ? (
-              <span className="text-xs text-muted-foreground/70">
-                <T context="the theme or mode in use now">Current</T>
-              </span>
-            ) : undefined,
+          value: `appearance:${option.key}`,
+          title: messages(option.label),
+          searchTerms: [messages(option.label), option.label, "appearance", "mode"],
+          icon: <option.icon className={ITEM_ICON_CLASS} />,
+          titleTrailingContent: isAppearanceOptionActive(option, appearanceMode, darkStyle) ? (
+            <span className="text-xs text-muted-foreground/70">
+              <T context="the theme or mode in use now">Current</T>
+            </span>
+          ) : undefined,
           run: async () => {
-            if (!setAppearanceMode(mode)) notifyThemeSaveFailure();
+            if (!applyAppearanceOption(option, setAppearanceMode)) notifyThemeSaveFailure();
           },
         })),
       },

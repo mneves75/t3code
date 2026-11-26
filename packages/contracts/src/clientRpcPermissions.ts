@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { GitPreparePullRequestThreadInput, GitRunStackedActionInput } from "./git.ts";
 import {
   AuthAccessWriteScope,
+  AuthDiagnosticsReadScope,
   AuthEnvironmentMaintainScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
@@ -34,6 +35,37 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   // Listing models spends the stored API key, so only those who can choose a model may.
   [WS_METHODS.serverListTextGeneratorModels]: AuthSettingsWriteScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverRefreshInferenceServers]: AuthOrchestrationReadScope,
+  // Probing hosts and ports to register inference servers requires provider management scope.
+  [WS_METHODS.serverDiscoverInferenceServers]: AuthProvidersManageScope,
+  [WS_METHODS.serverCheckInferenceModelImages]: AuthSettingsWriteScope,
+  [WS_METHODS.serverGetInferenceUsage]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetThreadInferenceRequest]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetThreadInferenceStop]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingListCuratedThreads]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingSetCuratedThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.trainingGetCapabilities]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingListDatasets]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingGetDataset]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingPreviewDataset]: AuthOrchestrationOperateScope,
+  [WS_METHODS.trainingCreateDataset]: AuthOrchestrationOperateScope,
+  [WS_METHODS.trainingConvertDpoDatasetToSft]: AuthOrchestrationOperateScope,
+  [WS_METHODS.trainingDeleteDataset]: AuthOrchestrationOperateScope,
+  [WS_METHODS.trainingListJobs]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingGetJob]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingGetJobLogs]: AuthDiagnosticsReadScope,
+  [WS_METHODS.trainingSubscribe]: AuthOrchestrationReadScope,
+  // Training, fusing, serving, and evals spawn local MLX processes on the host.
+  [WS_METHODS.trainingStartJob]: AuthTerminalOperateScope,
+  [WS_METHODS.trainingCancelJob]: AuthTerminalOperateScope,
+  [WS_METHODS.trainingFuseArtifact]: AuthTerminalOperateScope,
+  [WS_METHODS.trainingServeArtifact]: AuthTerminalOperateScope,
+  [WS_METHODS.trainingStopServedArtifact]: AuthTerminalOperateScope,
+  [WS_METHODS.trainingRegisterArtifactInInference]: AuthProvidersManageScope,
+  [WS_METHODS.trainingRunEval]: AuthTerminalOperateScope,
+  [WS_METHODS.trainingGetEval]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingListArtifacts]: AuthOrchestrationReadScope,
+  [WS_METHODS.trainingListEvals]: AuthOrchestrationReadScope,
   [WS_METHODS.pullRequestsRunAction]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsUpdate]: AuthSourceControlWriteScope,
   [WS_METHODS.pullRequestsComment]: AuthSourceControlWriteScope,
@@ -136,6 +168,13 @@ export function clientRpcRequiredScopes(
   }
   if (method === WS_METHODS.guestShareCreate) {
     return [AuthAccessWriteScope, AuthOrchestrationReadScope];
+  }
+  if (
+    method === WS_METHODS.trainingServeArtifact ||
+    method === WS_METHODS.trainingStopServedArtifact ||
+    method === WS_METHODS.trainingRegisterArtifactInInference
+  ) {
+    return [AuthTerminalOperateScope, AuthProvidersManageScope];
   }
   return Object.hasOwn(CLIENT_GUARDED_RPC_SCOPES, method)
     ? [CLIENT_GUARDED_RPC_SCOPES[method as ClientGuardedRpcTag]]

@@ -24,6 +24,8 @@ export type ThreadActionMenuId =
   | "regenerate-title"
   | "mark-unread"
   | "share-guest"
+  | "add-to-training-dataset"
+  | "remove-from-training-dataset"
   | "copy"
   | "copy-path"
   | "copy-branch"
@@ -127,6 +129,10 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
+  /** Whether the user can curate threads for local MLX fine-tuning on this environment. */
+  readonly canCurateForTraining?: boolean;
+  /** Whether this thread is already curated for the local training dataset. */
+  readonly isInTrainingDataset?: boolean;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -238,6 +244,21 @@ export function buildThreadActionMenuItems(
       : []),
     ...(state.canShareWithGuest
       ? [{ id: "share-guest" as const, label: resolve(msg("Share with guest")), icon: "user-plus" }]
+      : []),
+    ...(state.canCurateForTraining && state.hasCompletedRun
+      ? [
+          state.isInTrainingDataset
+            ? {
+                id: "remove-from-training-dataset" as const,
+                label: resolve(msg("Remove from training dataset")),
+                icon: "sliders-horizontal",
+              }
+            : {
+                id: "add-to-training-dataset" as const,
+                label: resolve(msg("Add to training dataset")),
+                icon: "sliders-horizontal",
+              },
+        ]
       : []),
     ...(state.projectFilter
       ? [

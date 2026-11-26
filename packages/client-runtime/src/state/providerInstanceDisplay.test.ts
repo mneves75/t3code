@@ -1,9 +1,16 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import {
+  InferenceServerId,
+  ProviderDriverKind,
+  type InferenceServerSnapshot,
+} from "@t3tools/contracts";
+import { collectLocalUsageModels } from "@t3tools/shared/usageMerge";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  localUsageModelCost,
   normalizeProviderAccentColor,
   providerAccentForegroundColor,
+  providerInstanceInferenceLabel,
   providerInstanceInitials,
   shouldShowInstanceBadge,
 } from "./providerInstanceDisplay.ts";
@@ -86,5 +93,70 @@ describe("shouldShowInstanceBadge", () => {
     expect(shouldShowInstanceBadge(disabled, [enabled, disabled])).toBe(true);
     expect(shouldShowInstanceBadge(disabled, [disabled, { ...disabled }])).toBe(true);
     expect(shouldShowInstanceBadge(disabled, [disabled])).toBe(false);
+  });
+});
+
+describe("providerInstanceInferenceLabel", () => {
+  const rtx = InferenceServerId.make("rtx");
+  const server = (patch: Partial<InferenceServerSnapshot> = {}): InferenceServerSnapshot => ({
+    id: rtx,
+    displayName: "rtx",
+    baseUrl: "http://localhost:8888/v1",
+    enabled: true,
+    status: "ready",
+    checkedAt: null,
+    models: [],
+    ...patch,
+  });
+
+  it("names the linked server and its status, falling back to the manual mark", () => {
+    const linked = { inferenceServerId: rtx };
+    expect(providerInstanceInferenceLabel("Pi", linked, [server()])).toBe("Pi · rtx · Ready");
+    expect(providerInstanceInferenceLabel("Pi", linked, [server({ status: "unreachable" })])).toBe(
+      "Pi · rtx · Unreachable",
+    );
+    expect(providerInstanceInferenceLabel("Pi", linked, [server({ enabled: false })])).toBe(
+      "Pi · rtx · Disabled",
+    );
+    expect(providerInstanceInferenceLabel("Pi", { ...linked, inference: "local" }, [])).toBe(
+      "Pi · Local",
+    );
+    expect(providerInstanceInferenceLabel("Pi", linked, null)).toBe("Pi");
+    expect(providerInstanceInferenceLabel("Codex", {}, [server()])).toBe("Codex");
+  });
+
+  // Local model setup names a linked instance "Pi · <server>".
+  it("names the server once when the instance is already named after it", () => {
+    const linked = { inferenceServerId: rtx };
+    expect(providerInstanceInferenceLabel("Pi · rtx", linked, [server()])).toBe("Pi · rtx · Ready");
+    expect(providerInstanceInferenceLabel("Pi rtx box", linked, [server()])).toBe(
+      "Pi rtx box · rtx · Ready",
+    );
+  });
+});
+
+describe("localUsageModelCost", () => {
+  const model = (slug: string) => ({ slug, name: slug, isCustom: false, capabilities: null });
+  const models = collectLocalUsageModels(
+    [
+      { inference: "local", models: [model("llama3")] },
+      { inferenceServerId: InferenceServerId.make("old"), models: [model("mistral")] },
+      { models: [model("gpt-5")] },
+    ],
+    [
+      { id: InferenceServerId.make("rtx"), enabled: true, models: [{ id: "GLM-5.3-Flash" }] },
+      { id: InferenceServerId.make("old"), enabled: false, models: [{ id: "qwen3" }] },
+    ],
+  );
+  const cost = (name: string, estimatedCostUsd = 0) =>
+    localUsageModelCost({ model: name, estimatedCostUsd }, models);
+
+  it("marks local models, matching a provider prefix, and estimates only priced ones", () => {
+    expect(cost("glm-5.3-flash", 1.5)).toBe("estimate");
+    expect(cost("t3-rtx/GLM-5.3-Flash")).toBe("local");
+    expect(cost("llama3")).toBe("local");
+    expect(cost("qwen3")).toBeNull();
+    expect(cost("mistral")).toBeNull();
+    expect(cost("gpt-5")).toBeNull();
   });
 });

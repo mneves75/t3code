@@ -408,6 +408,26 @@ function FloatingStatusLabel(props: {
       </StatusLabelRow>
     );
   }
+  if (props.status.kind === "inference-wait") {
+    return (
+      <StatusLabelRow
+        key="inference-wait"
+        accessibilityLabel={props.status.label}
+        className="gap-2"
+        onLayout={props.onLayout}
+      >
+        <SymbolView
+          name="clock"
+          size={13}
+          tintColorClassName="accent-foreground"
+          type="monochrome"
+        />
+        <Text className="shrink font-t3-medium text-xs text-foreground" numberOfLines={1}>
+          {props.status.label}
+        </Text>
+      </StatusLabelRow>
+    );
+  }
   if (props.status.kind === "child-input") {
     return (
       <StatusLabelRow

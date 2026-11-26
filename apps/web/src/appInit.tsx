@@ -88,6 +88,11 @@ function startClientAppearance(): void {
     if (previous?.diffColorScheme !== settings.diffColorScheme) {
       root.dataset.diffColorScheme = settings.diffColorScheme;
     }
+    if (previous?.darkStyle !== settings.darkStyle) {
+      root.dataset.darkStyle = settings.darkStyle;
+      // The window and theme-color meta copy the painted background, so repaint them too.
+      if (previous !== null) syncBrowserChromeTheme();
+    }
     if (previous?.chatWidth !== settings.chatWidth) {
       root.dataset.chatWidth = settings.chatWidth;
     }
@@ -99,9 +104,11 @@ function startClientAppearance(): void {
     }
     if (previous?.glassOpacity !== settings.glassOpacity) {
       root.style.setProperty("--glass-opacity", `${settings.glassOpacity}%`);
-      if (settings.glassOpacity === 100) {
+      if (settings.glassOpacity >= 100) {
+        root.dataset.glassOpaque = "true";
         root.style.setProperty("--glass-blur", "0px");
       } else {
+        delete root.dataset.glassOpaque;
         root.style.removeProperty("--glass-blur");
       }
     }

@@ -491,4 +491,60 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         }
       }),
   );
+
+  it.effect("locks training.mlxBinDir and training.storageDir under maxRuntimeMode (SEC-01)", () =>
+    Effect.gen(function* () {
+      const policy = yield* loadFrom(
+        JSON.stringify({
+          schemaVersion: 1,
+          organization: "Example Corp",
+          limits: { maxRuntimeMode: "auto-accept-edits" },
+        }),
+      );
+      assert.include(policy.settings.lockedPaths, "training.mlxBinDir");
+      assert.include(policy.settings.lockedPaths, "training.storageDir");
+
+      const withStored = {
+        ...DEFAULT_SERVER_SETTINGS,
+        training: {
+          ...DEFAULT_SERVER_SETTINGS.training,
+          mlxBinDir: "/tmp/evil-bin",
+          storageDir: "/tmp/evil-storage",
+        },
+      };
+      const overlaid = policy.settings.applyLocks(withStored);
+      assert.isUndefined(overlaid.training.mlxBinDir);
+      assert.isUndefined(overlaid.training.storageDir);
+
+      const badBin = policy.settings.vetWrite(
+        DEFAULT_SERVER_SETTINGS,
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          training: { ...DEFAULT_SERVER_SETTINGS.training, mlxBinDir: "/tmp/evil-bin" },
+        },
+        { training: { mlxBinDir: "/tmp/evil-bin" } },
+      );
+      assert.deepEqual(badBin, { _tag: "Locked", path: "training.mlxBinDir" });
+
+      const badStorage = policy.settings.vetWrite(
+        DEFAULT_SERVER_SETTINGS,
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          training: { ...DEFAULT_SERVER_SETTINGS.training, storageDir: "/tmp/evil-storage" },
+        },
+        { training: { storageDir: "/tmp/evil-storage" } },
+      );
+      assert.deepEqual(badStorage, { _tag: "Locked", path: "training.storageDir" });
+
+      const allowedToggle = policy.settings.vetWrite(
+        DEFAULT_SERVER_SETTINGS,
+        {
+          ...DEFAULT_SERVER_SETTINGS,
+          training: { ...DEFAULT_SERVER_SETTINGS.training, defaultPauseLocalInference: false },
+        },
+        { training: { defaultPauseLocalInference: false } },
+      );
+      assert.equal(allowedToggle._tag, "Allowed");
+    }),
+  );
 });

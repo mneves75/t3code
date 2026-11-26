@@ -1,4 +1,57 @@
 import {
+  InferenceDiscoveryInput,
+  InferenceDiscoveryResult,
+  InferenceImageCheckInput,
+  InferenceImageCheckResult,
+  InferenceServerId,
+  InferenceServerSnapshot,
+  InferenceThreadLastRequest,
+  InferenceThreadStop,
+  InferenceUsageSummary,
+  InferenceUsageWindow,
+} from "./inference.ts";
+import {
+  TrainingArtifact,
+  TrainingCancelJobInput,
+  TrainingCapabilitiesResult,
+  TrainingConvertDpoDatasetToSftInput,
+  TrainingCreateDatasetInput,
+  TrainingDatasetPreview,
+  TrainingDatasetSummary,
+  TrainingDeleteDatasetInput,
+  TrainingDeleteDatasetResult,
+  TrainingEvalComparison,
+  TrainingFuseArtifactInput,
+  TrainingGetDatasetInput,
+  TrainingGetDatasetResult,
+  TrainingGetEvalInput,
+  TrainingGetEvalResult,
+  TrainingGetJobInput,
+  TrainingGetJobLogsInput,
+  TrainingGetJobLogsResult,
+  TrainingGetJobResult,
+  TrainingJobSnapshot,
+  TrainingJobStreamEvent,
+  TrainingListArtifactsResult,
+  TrainingListCuratedThreadsInput,
+  TrainingListCuratedThreadsResult,
+  TrainingListDatasetsResult,
+  TrainingListEvalsInput,
+  TrainingListEvalsResult,
+  TrainingListJobsResult,
+  TrainingOperationError,
+  TrainingPreviewDatasetInput,
+  TrainingRegisterArtifactInInferenceInput,
+  TrainingRegisterArtifactInInferenceResult,
+  TrainingRunEvalInput,
+  TrainingServeArtifactInput,
+  TrainingServeArtifactResult,
+  TrainingSetCuratedThreadInput,
+  TrainingSetCuratedThreadResult,
+  TrainingStartJobInput,
+  TrainingStopServedArtifactInput,
+} from "./training.ts";
+import {
   OrchestrationV2SearchThreadError,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -45,7 +98,7 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
-import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { SecretSourceCheckResult } from "./settingsSecretValue.ts";
 import { SecretReference } from "./secretReference.ts";
 import {
@@ -594,6 +647,12 @@ export const WS_METHODS = {
   serverGetNpmRelease: "server.getNpmRelease",
   serverRefreshProviders: "server.refreshProviders",
   serverGetProviderRuntimeModeLimits: "server.getProviderRuntimeModeLimits",
+  serverRefreshInferenceServers: "server.refreshInferenceServers",
+  serverDiscoverInferenceServers: "server.discoverInferenceServers",
+  serverCheckInferenceModelImages: "server.checkInferenceModelImages",
+  serverGetInferenceUsage: "server.getInferenceUsage",
+  serverGetThreadInferenceRequest: "server.getThreadInferenceRequest",
+  serverGetThreadInferenceStop: "server.getThreadInferenceStop",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
   serverUpdateServerWithProgress: "server.updateServerWithProgress",
@@ -653,6 +712,30 @@ export const WS_METHODS = {
   workflowsGetDefinition: "workflows.getDefinition",
   workflowsSaveDefinition: "workflows.saveDefinition",
   workflowsDeleteDefinition: "workflows.deleteDefinition",
+
+  trainingListCuratedThreads: "training.listCuratedThreads",
+  trainingSetCuratedThread: "training.setCuratedThread",
+  trainingGetCapabilities: "training.getCapabilities",
+  trainingListDatasets: "training.listDatasets",
+  trainingGetDataset: "training.getDataset",
+  trainingPreviewDataset: "training.previewDataset",
+  trainingCreateDataset: "training.createDataset",
+  trainingConvertDpoDatasetToSft: "training.convertDpoDatasetToSft",
+  trainingDeleteDataset: "training.deleteDataset",
+  trainingListJobs: "training.listJobs",
+  trainingGetJob: "training.getJob",
+  trainingGetJobLogs: "training.getJobLogs",
+  trainingSubscribe: "training.subscribe",
+  trainingStartJob: "training.startJob",
+  trainingCancelJob: "training.cancelJob",
+  trainingFuseArtifact: "training.fuseArtifact",
+  trainingServeArtifact: "training.serveArtifact",
+  trainingStopServedArtifact: "training.stopServedArtifact",
+  trainingRegisterArtifactInInference: "training.registerArtifactInInference",
+  trainingRunEval: "training.runEval",
+  trainingGetEval: "training.getEval",
+  trainingListArtifacts: "training.listArtifacts",
+  trainingListEvals: "training.listEvals",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
   scheduledTasksUpsert: "scheduledTasks.upsert",
@@ -774,6 +857,42 @@ const WsServerGetConfigRpc = Rpc.make(WS_METHODS.serverGetConfig, {
   payload: Schema.Struct({}),
   success: ServerConfig,
   error: Schema.Union([KeybindingsConfigError, ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsServerGetInferenceUsageRpc = Rpc.make(WS_METHODS.serverGetInferenceUsage, {
+  payload: Schema.Struct({ window: InferenceUsageWindow }),
+  success: InferenceUsageSummary,
+  error: Schema.Union([EnvironmentAuthorizationError]),
+});
+
+const WsServerGetThreadInferenceRequestRpc = Rpc.make(WS_METHODS.serverGetThreadInferenceRequest, {
+  payload: Schema.Struct({ threadId: ThreadId }),
+  success: Schema.Struct({ last: Schema.NullOr(InferenceThreadLastRequest) }),
+  error: Schema.Union([EnvironmentAuthorizationError]),
+});
+
+const WsServerGetThreadInferenceStopRpc = Rpc.make(WS_METHODS.serverGetThreadInferenceStop, {
+  payload: Schema.Struct({ threadId: ThreadId }),
+  success: Schema.Struct({ stop: Schema.NullOr(InferenceThreadStop) }),
+  error: Schema.Union([EnvironmentAuthorizationError]),
+});
+
+const WsServerRefreshInferenceServersRpc = Rpc.make(WS_METHODS.serverRefreshInferenceServers, {
+  payload: Schema.Struct({ id: Schema.optional(InferenceServerId) }),
+  success: Schema.Struct({ inferenceServers: Schema.Array(InferenceServerSnapshot) }),
+  error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+
+const WsServerCheckInferenceModelImagesRpc = Rpc.make(WS_METHODS.serverCheckInferenceModelImages, {
+  payload: InferenceImageCheckInput,
+  success: InferenceImageCheckResult,
+  error: Schema.Union([EnvironmentAuthorizationError]),
+});
+
+const WsServerDiscoverInferenceServersRpc = Rpc.make(WS_METHODS.serverDiscoverInferenceServers, {
+  payload: InferenceDiscoveryInput,
+  success: InferenceDiscoveryResult,
+  error: Schema.Union([EnvironmentAuthorizationError]),
 });
 
 export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
@@ -2403,6 +2522,148 @@ const WsWorkflowsDeleteDefinitionRpc = Rpc.make(WS_METHODS.workflowsDeleteDefini
   error: EnvironmentAuthorizationError,
 });
 
+const WsTrainingListCuratedThreadsRpc = Rpc.make(WS_METHODS.trainingListCuratedThreads, {
+  payload: TrainingListCuratedThreadsInput,
+  success: TrainingListCuratedThreadsResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingSetCuratedThreadRpc = Rpc.make(WS_METHODS.trainingSetCuratedThread, {
+  payload: TrainingSetCuratedThreadInput,
+  success: TrainingSetCuratedThreadResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingGetCapabilitiesRpc = Rpc.make(WS_METHODS.trainingGetCapabilities, {
+  payload: Schema.Struct({}),
+  success: TrainingCapabilitiesResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingListDatasetsRpc = Rpc.make(WS_METHODS.trainingListDatasets, {
+  payload: Schema.Struct({}),
+  success: TrainingListDatasetsResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingGetDatasetRpc = Rpc.make(WS_METHODS.trainingGetDataset, {
+  payload: TrainingGetDatasetInput,
+  success: TrainingGetDatasetResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingPreviewDatasetRpc = Rpc.make(WS_METHODS.trainingPreviewDataset, {
+  payload: TrainingPreviewDatasetInput,
+  success: TrainingDatasetPreview,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingCreateDatasetRpc = Rpc.make(WS_METHODS.trainingCreateDataset, {
+  payload: TrainingCreateDatasetInput,
+  success: TrainingDatasetSummary,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingConvertDpoDatasetToSftRpc = Rpc.make(WS_METHODS.trainingConvertDpoDatasetToSft, {
+  payload: TrainingConvertDpoDatasetToSftInput,
+  success: TrainingDatasetSummary,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingDeleteDatasetRpc = Rpc.make(WS_METHODS.trainingDeleteDataset, {
+  payload: TrainingDeleteDatasetInput,
+  success: TrainingDeleteDatasetResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingListJobsRpc = Rpc.make(WS_METHODS.trainingListJobs, {
+  payload: Schema.Struct({}),
+  success: TrainingListJobsResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingGetJobRpc = Rpc.make(WS_METHODS.trainingGetJob, {
+  payload: TrainingGetJobInput,
+  success: TrainingGetJobResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingGetJobLogsRpc = Rpc.make(WS_METHODS.trainingGetJobLogs, {
+  payload: TrainingGetJobLogsInput,
+  success: TrainingGetJobLogsResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingSubscribeRpc = Rpc.make(WS_METHODS.trainingSubscribe, {
+  payload: Schema.Struct({}),
+  success: TrainingJobStreamEvent,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+const WsTrainingStartJobRpc = Rpc.make(WS_METHODS.trainingStartJob, {
+  payload: TrainingStartJobInput,
+  success: TrainingJobSnapshot,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingCancelJobRpc = Rpc.make(WS_METHODS.trainingCancelJob, {
+  payload: TrainingCancelJobInput,
+  success: TrainingJobSnapshot,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingFuseArtifactRpc = Rpc.make(WS_METHODS.trainingFuseArtifact, {
+  payload: TrainingFuseArtifactInput,
+  success: TrainingArtifact,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingServeArtifactRpc = Rpc.make(WS_METHODS.trainingServeArtifact, {
+  payload: TrainingServeArtifactInput,
+  success: TrainingServeArtifactResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingStopServedArtifactRpc = Rpc.make(WS_METHODS.trainingStopServedArtifact, {
+  payload: TrainingStopServedArtifactInput,
+  success: TrainingArtifact,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingRegisterArtifactInInferenceRpc = Rpc.make(
+  WS_METHODS.trainingRegisterArtifactInInference,
+  {
+    payload: TrainingRegisterArtifactInInferenceInput,
+    success: TrainingRegisterArtifactInInferenceResult,
+    error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsTrainingRunEvalRpc = Rpc.make(WS_METHODS.trainingRunEval, {
+  payload: TrainingRunEvalInput,
+  success: TrainingEvalComparison,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingGetEvalRpc = Rpc.make(WS_METHODS.trainingGetEval, {
+  payload: TrainingGetEvalInput,
+  success: TrainingGetEvalResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingListArtifactsRpc = Rpc.make(WS_METHODS.trainingListArtifacts, {
+  payload: Schema.Struct({}),
+  success: TrainingListArtifactsResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsTrainingListEvalsRpc = Rpc.make(WS_METHODS.trainingListEvals, {
+  payload: TrainingListEvalsInput,
+  success: TrainingListEvalsResult,
+  error: Schema.Union([TrainingOperationError, EnvironmentAuthorizationError]),
+});
+
 const WsScheduledTasksSubscribeRpc = Rpc.make(WS_METHODS.scheduledTasksSubscribe, {
   payload: ScheduledTaskListInput,
   success: ScheduledTaskListResult,
@@ -2515,6 +2776,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
+  WsServerRefreshInferenceServersRpc,
+  WsServerDiscoverInferenceServersRpc,
+  WsServerCheckInferenceModelImagesRpc,
+  WsServerGetInferenceUsageRpc,
+  WsServerGetThreadInferenceRequestRpc,
+  WsServerGetThreadInferenceStopRpc,
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,
   WsProviderAuthStartRpc,
@@ -2589,6 +2856,29 @@ export const WsRpcGroup = RpcGroup.make(
   WsWorkflowsGetDefinitionRpc,
   WsWorkflowsSaveDefinitionRpc,
   WsWorkflowsDeleteDefinitionRpc,
+  WsTrainingListCuratedThreadsRpc,
+  WsTrainingSetCuratedThreadRpc,
+  WsTrainingGetCapabilitiesRpc,
+  WsTrainingListDatasetsRpc,
+  WsTrainingGetDatasetRpc,
+  WsTrainingPreviewDatasetRpc,
+  WsTrainingCreateDatasetRpc,
+  WsTrainingConvertDpoDatasetToSftRpc,
+  WsTrainingDeleteDatasetRpc,
+  WsTrainingListJobsRpc,
+  WsTrainingGetJobRpc,
+  WsTrainingGetJobLogsRpc,
+  WsTrainingSubscribeRpc,
+  WsTrainingStartJobRpc,
+  WsTrainingCancelJobRpc,
+  WsTrainingFuseArtifactRpc,
+  WsTrainingServeArtifactRpc,
+  WsTrainingStopServedArtifactRpc,
+  WsTrainingRegisterArtifactInInferenceRpc,
+  WsTrainingRunEvalRpc,
+  WsTrainingGetEvalRpc,
+  WsTrainingListArtifactsRpc,
+  WsTrainingListEvalsRpc,
   WsScheduledTasksSubscribeRpc,
   WsScheduledTasksUpsertRpc,
   WsScheduledTasksSetEnabledRpc,

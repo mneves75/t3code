@@ -191,7 +191,13 @@ it.effect.each([
     const instanceId = ProviderInstanceId.make("pi");
     const adapter = yield* makePiAdapterV2({
       instanceId,
-      settings: { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      settings: {
+        enabled: true,
+        binaryPath: "pi",
+        launchArgs: "",
+        toolProfile: "auto",
+        customModels: [],
+      },
       environment: {},
     }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
     const threadId = ThreadId.make("pi-rollback");

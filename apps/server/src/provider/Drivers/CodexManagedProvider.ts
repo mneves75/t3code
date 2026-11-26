@@ -15,6 +15,7 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { chatGptModels } from "../CodexChatGptModels.ts";
 import { makeCodexManagedRuntime } from "../CodexManagedRuntime.ts";
 import { ProviderDriverError } from "../Errors.ts";
+import { makeCodexGatewaySource, withCodexGatewayStatus } from "../codexGateway.ts";
 import { createCodexAdapterV2 } from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import {
   checkCodexProviderStatus,
@@ -70,6 +71,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
       }),
     ),
   );
+  const gateway = yield* makeCodexGatewaySource(instanceId);
   const check = Effect.gen(function* () {
     const base = yield* pending;
     if (!enabled) return base;
@@ -221,7 +223,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     streamSettings: host.settings.changes,
     haveSettingsChanged: () => false,
     initialSnapshot: () => pending,
-    checkProvider: check,
+    checkProvider: Effect.zipWith(check, gateway.resolution, withCodexGatewayStatus),
   }).pipe(
     Effect.mapError(
       (cause) =>
@@ -247,6 +249,10 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     models,
     resolveRuntime: runtime.resolve,
+    codexVersion: runtime.installation.resolve().pipe(
+      Effect.map((executable) => executable.version),
+      Effect.orElseSucceed(() => undefined),
+    ),
   }).pipe(
     Effect.mapError(
       (cause) =>
@@ -263,6 +269,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     undefined,
     models,
     resolveRuntime,
+    gateway,
   );
   const protect = <A>(operation: string, effect: Effect.Effect<A, TextGenerationError>) =>
     runtime.auth.controller.withAccess!(effect).pipe(

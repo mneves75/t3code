@@ -1,6 +1,12 @@
 // No T3 imports inside the string; resolve Pi and typebox from the user's Pi install.
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
+import { LEAN_MCP_TOOL_NAMES } from "@t3tools/provider-core/server/mcpToolProfile";
+import {
+  T3_CODE_LEAN_ORCHESTRATION_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
+import { PI_T3_CACHE_COMPACTION_SNIPPET } from "./cacheCompactionExtensionSource.ts";
+import { PI_T3_GATEWAY_PROVIDER_SNIPPET } from "./gatewayExtensionSource.ts";
 
 export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 
@@ -8,6 +14,7 @@ export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
+export const T3_PI_TOOL_PROFILE_ENV = "T3_PI_TOOL_PROFILE";
 export const PI_T3_SERVICE_TIER_COMMAND = "t3-service-tier";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
@@ -24,7 +31,10 @@ const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
+const TOOL_PROFILE_ENV = ${JSON.stringify(T3_PI_TOOL_PROFILE_ENV)};
+const LEAN_TOOLS = new Set(${JSON.stringify(LEAN_MCP_TOOL_NAMES)});
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
+const LEAN_ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_LEAN_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PULL_REQUEST_LINKING_INSTRUCTIONS = ${JSON.stringify(PULL_REQUEST_LINKING_INSTRUCTIONS)};
 const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_T3_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
@@ -252,7 +262,15 @@ function createMcpClient(endpoint: string, token: string) {
   };
 }
 
+// ---- T3 gateway provider registration (see gatewayExtensionSource.ts) ----
+${PI_T3_GATEWAY_PROVIDER_SNIPPET}
+// ---- end T3 gateway provider registration ----
+
+${PI_T3_CACHE_COMPACTION_SNIPPET}
+
 export default async function t3McpExtension(pi: ExtensionAPI) {
+  registerT3GatewayProvider(pi);
+  registerT3CacheCompaction(pi);
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
   // replacement reruns this factory without project_trust, and T3 drops notices outside a turn,
   // so check each session's first turn. An explicit --no-approve is deliberate and stays quiet.
@@ -472,7 +490,9 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     const attempt = (async () => {
       const signal = AbortSignal.timeout(10_000);
       await client.connect(signal);
-      catalog = await client.listTools(signal);
+      const tools = await client.listTools(signal);
+      // Lean leaves the other tools out entirely, so their schemas never reach the model.
+      catalog = env(TOOL_PROFILE_ENV) === "lean" ? tools.filter((tool) => LEAN_TOOLS.has(tool.name)) : tools;
       registerTools();
     })();
     started = attempt;
@@ -552,7 +572,9 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Keep guidance in the system prompt so leading slash commands still expand.
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
-    const instructions = ORCHESTRATION_INSTRUCTIONS + "\\n\\n" + PULL_REQUEST_LINKING_INSTRUCTIONS;
+    const baseInstructions =
+      env(TOOL_PROFILE_ENV) === "lean" ? LEAN_ORCHESTRATION_INSTRUCTIONS : ORCHESTRATION_INSTRUCTIONS;
+    const instructions = baseInstructions + "\\n\\n" + PULL_REQUEST_LINKING_INSTRUCTIONS;
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.

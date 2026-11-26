@@ -9,6 +9,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AntigravitySettings,
+  InferenceServerId,
   EnvironmentId,
   type ClaudeSettings,
   type CodexSettings,
@@ -19,6 +20,7 @@ import {
   SecretProviderId,
   SettingsSecretValue,
   type SecretReference,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import { OpenCodeSettings } from "@t3tools/provider-opencode/settings";
@@ -36,6 +38,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
@@ -1178,4 +1181,72 @@ describe("ProviderInstanceRegistry secret environment", () => {
       expect(yield* registry.listUnavailable).toEqual([]);
     });
   });
+});
+
+describe("ProviderInstanceRegistry inference mark", () => {
+  const driverKind = ProviderDriverKind.make("fake");
+  const instanceId = ProviderInstanceId.make("fake_local");
+  const driverSnapshot = { instanceId, driver: driverKind } as ServerProvider;
+  const driver: AnyProviderDriver = {
+    driverKind,
+    metadata: { displayName: "Fake" },
+    configSchema: Schema.Unknown,
+    defaultConfig: () => ({}),
+    create: (input) =>
+      Effect.succeed({
+        instanceId: input.instanceId,
+        enabled: input.enabled,
+        snapshot: {
+          getSnapshot: Effect.succeed(driverSnapshot),
+          refresh: Effect.succeed(driverSnapshot),
+          streamChanges: Stream.make(driverSnapshot),
+        },
+      } as ProviderInstance),
+  };
+
+  it.effect("stamps the instance's declared inference onto every snapshot it emits", () =>
+    Effect.gen(function* () {
+      const { registry, mutator } = yield* makeProviderInstanceRegistry({
+        drivers: [driver],
+        configMap: { [instanceId]: { driver: driverKind, inference: "local" } },
+      });
+      const local = yield* registry.getInstance(instanceId);
+      expect((yield* local!.snapshot.getSnapshot).inference).toBe("local");
+      expect((yield* local!.snapshot.refresh).inference).toBe("local");
+      const streamed = yield* Stream.runCollect(local!.snapshot.streamChanges);
+      expect(Array.from(streamed).map((snapshot) => snapshot.inference)).toEqual(["local"]);
+
+      const rtx = InferenceServerId.make("rtx");
+      yield* mutator.reconcile({ [instanceId]: { driver: driverKind, inferenceServerId: rtx } });
+      const linked = yield* (yield* registry.getInstance(instanceId))!.snapshot.getSnapshot;
+      expect(linked.inferenceServerId).toBe(rtx);
+      expect("inference" in linked).toBe(false);
+
+      yield* mutator.reconcile({ [instanceId]: { driver: driverKind } });
+      const unmarked = yield* (yield* registry.getInstance(instanceId))!.snapshot.getSnapshot;
+      expect("inference" in unmarked).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mock(SecretResolver.SecretResolver)({}))),
+  );
+
+  it.effect("tells the driver its inference server only while hydration marks the link local", () =>
+    Effect.gen(function* () {
+      const created: Array<string | undefined> = [];
+      const recording: AnyProviderDriver = {
+        ...driver,
+        create: (input) => {
+          created.push(input.inferenceServerId);
+          return driver.create(input);
+        },
+      };
+      const rtx = InferenceServerId.make("rtx");
+      const { mutator } = yield* makeProviderInstanceRegistry({
+        drivers: [recording],
+        configMap: { [instanceId]: { driver: driverKind, inferenceServerId: rtx } },
+      });
+      yield* mutator.reconcile({
+        [instanceId]: { driver: driverKind, inferenceServerId: rtx, inference: "local" },
+      });
+      expect(created).toEqual([undefined, rtx]);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mock(SecretResolver.SecretResolver)({}))),
+  );
 });

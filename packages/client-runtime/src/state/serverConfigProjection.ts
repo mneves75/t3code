@@ -145,6 +145,16 @@ export function applyServerConfigProjection(
           config: {
             ...projection.config,
             providers: reuseUnchanged(previous, withHeldProviderCatalogs(previous, providers)),
+            // Servers without inference servers omit the field; keep what the snapshot said.
+            ...(event.type === "providerStatusDeltas" ||
+            event.payload.inferenceServers === undefined
+              ? {}
+              : {
+                  inferenceServers: reuseUnchanged(
+                    projection.config.inferenceServers,
+                    event.payload.inferenceServers,
+                  ),
+                }),
           },
           latestEvent: event,
           source: "live",

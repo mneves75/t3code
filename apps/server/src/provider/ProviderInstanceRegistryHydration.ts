@@ -3,6 +3,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   providerInstanceConfigEnabledFlag,
+  isLocalProviderInstance,
   resolveProviderInstanceEnabled,
   type ProviderInstanceConfig,
   type ProviderInstanceConfigMap,
@@ -11,6 +12,8 @@ import {
 import * as NodeUtil from "node:util";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { resolveCommandPath } from "@t3tools/shared/shell";
+import { noNameServerAnswers } from "@t3tools/provider-noname/server";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -83,6 +86,17 @@ export const deriveProviderInstanceConfigMap = (
     }
   }
 
+  // The registry stamps the envelope's mark, so a link's locality is resolved into it here.
+  for (const [rawInstanceId, entry] of Object.entries(merged)) {
+    if (entry.inferenceServerId === undefined) continue;
+    const { inference: _mark, ...unmarked } = entry;
+    merged[rawInstanceId] = isLocalProviderInstance(entry, settings.inferenceServers)
+      ? { ...unmarked, inference: "local" }
+      : entry.inference === "local"
+        ? unmarked
+        : entry;
+  }
+
   return merged as ProviderInstanceConfigMap;
 };
 
@@ -125,6 +139,51 @@ export const seedDevReplayInstance = Effect.fn(
     instanceId: DEV_REPLAY_INSTANCE_ID,
     instance,
   });
+});
+
+export interface LocalAgentDetector {
+  readonly driver: ProviderDriverKind;
+  readonly found: Effect.Effect<boolean, never, FileSystem.FileSystem | Path.Path>;
+}
+
+const commandOnPath = (command: string) =>
+  resolveCommandPath(command).pipe(
+    Effect.map((resolved) => resolved !== null),
+    Effect.orElseSucceed(() => false),
+  );
+
+/** Agents that run local models, and how to tell one is on this machine. */
+const LOCAL_AGENT_DETECTORS: ReadonlyArray<LocalAgentDetector> = [
+  { driver: ProviderDriverKind.make("pi"), found: commandOnPath("pi") },
+  { driver: ProviderDriverKind.make("opencode"), found: commandOnPath("opencode") },
+  { driver: ProviderDriverKind.make("noname"), found: noNameServerAnswers() },
+];
+
+/**
+ * Local agents start off like other optional drivers, so settings-only fallbacks never pick one
+ * that is missing. One found on this machine is switched on, unless its instance was configured
+ * here before: turning it off is a configuration and is kept.
+ */
+export const seedLocalAgentInstances = Effect.fn(
+  "ProviderInstanceRegistryHydration.seedLocalAgentInstances",
+)(function* (detectors: ReadonlyArray<LocalAgentDetector> = LOCAL_AGENT_DETECTORS) {
+  const serverSettings = yield* Settings.ServerSettingsService;
+  const configured = (yield* serverSettings.getSettings).providerInstances;
+  const candidates = detectors.filter(
+    ({ driver }) =>
+      !(defaultInstanceIdForDriver(driver) in configured) &&
+      ManagedProviders.disallowedDriverReason(serverSettings.managedPolicy, driver) === undefined,
+  );
+  const found = yield* Effect.filter(candidates, (detector) => detector.found, {
+    concurrency: "unbounded",
+  });
+  for (const { driver } of found) {
+    yield* serverSettings.updateProviderInstance({
+      operation: "upsert",
+      instanceId: defaultInstanceIdForDriver(driver),
+      instance: { driver, enabled: true },
+    });
+  }
 });
 
 // A label is display-only, so only kind and config can change what a vault returns.
@@ -181,6 +240,9 @@ export const layer: Layer.Layer<
     const serverSettings = yield* Settings.ServerSettingsService;
     yield* seedDevReplayInstance().pipe(
       Effect.catchCause((cause) => Effect.logWarning("Dev replay agent unavailable", cause)),
+    );
+    yield* seedLocalAgentInstances().pipe(
+      Effect.catchCause((cause) => Effect.logWarning("Local agent discovery failed", cause)),
     );
     // Subscribe before the seed read so saves during registry construction are queued.
     const settingsChanges = yield* serverSettings.subscribeChanges;

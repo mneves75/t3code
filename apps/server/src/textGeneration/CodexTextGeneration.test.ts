@@ -786,7 +786,9 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
             getInstance: (id) =>
               Effect.succeed(instances.find((instance) => instance.instanceId === id)),
           }),
+          // Cross-provider fallback is the "Any provider" policy; the default keeps writing local.
           ServerSettings.layerTest({
+            textGenerationFallback: "any",
             providerInstances: {
               [fallback]: {
                 driver: ProviderDriverKind.make("claudeAgent"),
@@ -897,7 +899,8 @@ it.effect(
                 getInstance: (id) =>
                   Effect.succeed(instances.find((candidate) => candidate.instanceId === id)),
               }),
-              ServerSettings.layerTest({}),
+              // Cross-provider fallback is the "Any provider" policy; the default keeps writing local.
+              ServerSettings.layerTest({ textGenerationFallback: "any" }),
               Layer.mock(TextGenerators.TextGenerators)({
                 runner: (id) =>
                   Effect.succeed(

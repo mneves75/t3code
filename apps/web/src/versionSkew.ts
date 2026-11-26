@@ -59,14 +59,16 @@ export function resolveVersionMismatch(
 
   const clientCore = versionCore(normalizedClientVersion);
   const serverCore = versionCore(normalizedServerVersion);
-  const compareNightlyBuilds =
-    parseSemver(normalizedClientVersion)?.prerelease[0] === "nightly" &&
-    parseSemver(normalizedServerVersion)?.prerelease[0] === "nightly";
+  const clientPrerelease = parseSemver(normalizedClientVersion)?.prerelease[0];
+  const serverPrerelease = parseSemver(normalizedServerVersion)?.prerelease[0];
+  const comparePrereleaseBuilds =
+    (clientPrerelease === "nightly" && serverPrerelease === "nightly") ||
+    (clientPrerelease === "mvn" && serverPrerelease === "mvn");
   const serverIsBehind =
     parseSemver(clientCore) && parseSemver(serverCore)
       ? compareSemverVersions(
-          compareNightlyBuilds ? normalizedServerVersion : serverCore,
-          compareNightlyBuilds ? normalizedClientVersion : clientCore,
+          comparePrereleaseBuilds ? normalizedServerVersion : serverCore,
+          comparePrereleaseBuilds ? normalizedClientVersion : clientCore,
         ) < 0
       : normalizedServerVersion !== normalizedClientVersion;
   if (!serverIsBehind) {
@@ -77,7 +79,7 @@ export function resolveVersionMismatch(
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
     hint: resolve(
-      msg("Version mismatch. Try syncing the client and server to the same T3 Code version."),
+      msg("Version mismatch. Try syncing the client and server to the same mn3code version."),
     ),
   };
 }

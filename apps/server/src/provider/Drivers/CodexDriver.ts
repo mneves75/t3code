@@ -33,6 +33,7 @@ import {
   withCodexAppServerClient,
 } from "../CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../codexLaunchArgs.ts";
+import { makeCodexGatewaySource, withCodexGatewayStatus } from "../codexGateway.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
 import * as ModelCatalog from "@t3tools/provider-core/server/ModelCatalog";
 import { applyCodexModelCatalog } from "../codexModelCatalog.ts";
@@ -167,6 +168,7 @@ export const CodexDriver: ProviderDriver<
     environment,
     enabled,
     config,
+    inferenceServerId,
   }) {
     if (config.setupMode === "managed")
       return yield* makeManagedCodexProvider({
@@ -176,6 +178,7 @@ export const CodexDriver: ProviderDriver<
         environment,
         enabled,
         config,
+        inferenceServerId,
       });
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const resetCreditCoordinator = yield* ResetCreditCoordinator.ResetCreditCoordinator;
@@ -250,6 +253,7 @@ export const CodexDriver: ProviderDriver<
         environment,
         enabled,
         config: homeConfig,
+        inferenceServerId,
       },
       {
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
@@ -257,6 +261,9 @@ export const CodexDriver: ProviderDriver<
           Effect.map((value) => value.models),
         ),
         compatibility: installation.compatibility,
+        codexVersion: Effect.suspend(() => snapshot.getSnapshot).pipe(
+          Effect.map((provider) => provider.version ?? undefined),
+        ),
       },
     ).pipe(
       Effect.mapError(
@@ -272,14 +279,20 @@ export const CodexDriver: ProviderDriver<
 
     // Kick the TTL-gated manifest refresh in the background and classify with the in-memory
     // manifest, so a slow or hung fetch never delays the provider check.
+    const gateway = yield* makeCodexGatewaySource(instanceId);
     const checkProvider = modelCatalog.refreshInBackground.pipe(
       Effect.andThen(
-        Effect.zipWith(
-          checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
-          currentCatalog,
-          (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
-          { concurrent: true },
+        Effect.all(
+          [
+            checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
+            currentCatalog,
+            gateway.resolution,
+          ],
+          { concurrency: "unbounded" },
         ),
+      ),
+      Effect.map(([draft, catalog, resolution]) =>
+        stampIdentity(withCodexGatewayStatus(applyCodexModelCatalog(draft, catalog), resolution)),
       ),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -324,6 +337,8 @@ export const CodexDriver: ProviderDriver<
       effectiveConfig,
       processEnv,
       snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
+      undefined,
+      gateway,
     );
     const probeSkills = yield* makeCodexSkillsProbe().pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

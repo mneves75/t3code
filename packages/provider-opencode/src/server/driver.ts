@@ -66,6 +66,7 @@ import {
   type ProbedOpenCode,
 } from "./versionProbe.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
+import { makeOpenCodeGatewaySource, openCodeGatewayStatusNote } from "./gateway.ts";
 import * as OpenCode2Client from "./v2/OpenCode2Client.ts";
 import * as OpenCode2Server from "./v2/OpenCode2Server.ts";
 import { replaceOutdatedService } from "./v2/OpenCode2Service.ts";
@@ -386,12 +387,15 @@ export const OpenCodeDriver: ProviderDriver<
           }),
       ),
     );
+    const gateway = yield* makeOpenCodeGatewaySource(instanceId);
     const openCode2Server = yield* OpenCode2Server.make({
       binaryPath: effectiveConfig.binaryPath,
       serverUrl: effectiveConfig.serverUrl,
       serverPassword: effectiveConfig.serverPassword,
       directory: host.paths.cwd,
       environment: processEnv,
+      prepareEnvironment: gateway.forProcess,
+      environmentKey: gateway.processKey,
     }).pipe(
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       Effect.provideService(
@@ -550,6 +554,8 @@ export const OpenCodeDriver: ProviderDriver<
       directory: host.paths.cwd,
       ...(effectiveConfig.serverPassword ? { serverPassword: effectiveConfig.serverPassword } : {}),
       environment: processEnv,
+      prepareEnvironment: gateway.forProcess,
+      environmentKey: gateway.processKey,
     });
     const textGeneration = selectOpenCodeRuntimeTextGeneration(
       resolveRuntime,
@@ -625,14 +631,24 @@ export const OpenCodeDriver: ProviderDriver<
           Effect.annotateSpans({ providerInstanceId: instanceId }),
         ),
         usageLimits: checkUsageLimits,
+        gateway: gateway.resolution,
       },
       { concurrency: "unbounded" },
     ).pipe(
-      Effect.map(({ provider, usageLimits, installedVersion }) => ({
-        ...provider,
-        usageLimits,
-        ...(installedVersion === undefined ? {} : { installedVersion }),
-      })),
+      Effect.map(({ provider, usageLimits, gateway, installedVersion }) => {
+        const note = openCodeGatewayStatusNote(
+          gateway,
+          effectiveConfig.serverUrl.trim().length > 0,
+        );
+        return {
+          ...provider,
+          usageLimits,
+          ...(installedVersion === undefined ? {} : { installedVersion }),
+          ...(note === undefined || !provider.enabled
+            ? {}
+            : { message: provider.message ? `${provider.message} ${note}` : note }),
+        };
+      }),
       Effect.map(stampIdentity),
       Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
       Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),

@@ -339,6 +339,18 @@
       "types": "./src/state/projects.ts",
       "default": "./src/state/projects.ts"
     },
+    "./state/inference": {
+      "types": "./src/state/inference.ts",
+      "default": "./src/state/inference.ts"
+    },
+    "./state/inference-presentation": {
+      "types": "./src/state/inferencePresentation.ts",
+      "default": "./src/state/inferencePresentation.ts"
+    },
+    "./state/inference-activity": {
+      "types": "./src/state/inferenceActivity.ts",
+      "default": "./src/state/inferenceActivity.ts"
+    },
     "./state/provider-instance-display": {
       "types": "./src/state/providerInstanceDisplay.ts",
       "default": "./src/state/providerInstanceDisplay.ts"
@@ -691,6 +703,7 @@
     "@t3tools/provider-grok": "workspace:*",
     "@t3tools/provider-kiro": "workspace:*",
     "@t3tools/provider-muse": "workspace:*",
+    "@t3tools/provider-noname": "workspace:*",
     "@t3tools/provider-opencode": "workspace:*",
     "@t3tools/provider-pi": "workspace:*",
     "@t3tools/secret-provider-definitions": "workspace:*",

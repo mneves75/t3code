@@ -21,6 +21,7 @@ import { fxClient } from "@t3tools/provider-fx/client";
 import { grokClient } from "@t3tools/provider-grok/client";
 import { kiroClient } from "@t3tools/provider-kiro/client";
 import { museClient } from "@t3tools/provider-muse/client";
+import { noNameClient } from "@t3tools/provider-noname/client";
 import { openCodeClient } from "@t3tools/provider-opencode/client";
 import { piClient } from "@t3tools/provider-pi/client";
 import type { ProviderClientDefinition } from "@t3tools/provider-core/client";
@@ -48,6 +49,7 @@ const PACKAGED_CLIENTS: ReadonlyArray<ProviderClientDefinition> = [
   fxClient,
   kiroClient,
   museClient,
+  noNameClient,
   openCodeClient,
   piClient,
   acpRegistryClient,
@@ -176,13 +178,14 @@ export const providerHostEnvironment = (
       enumerable: true,
       configurable: true,
       get: () => environment.PATH ?? environment.Path ?? environment.path,
-      set: (value) =>
+      set: (value) => {
         Object.defineProperty(next, "PATH", {
           value,
           enumerable: true,
           writable: true,
           configurable: true,
-        }),
+        });
+      },
     });
   }
   return next;

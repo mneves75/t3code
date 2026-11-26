@@ -342,6 +342,87 @@ describe("ssh tunnel scripts", () => {
     );
   });
 
+  it("reads archive checksums and remote platforms", () => {
+    const hash = "a".repeat(64);
+    const sums = `${"b".repeat(64)}  t3-1.0.0-linux-x64.tar.gz\n${hash} *t3-1.0.0-linux-arm64.tar.gz\n`;
+    assert.strictEqual(SshTunnel.archiveChecksum(sums, "t3-1.0.0-linux-arm64.tar.gz"), hash);
+    assert.isNull(SshTunnel.archiveChecksum(sums, "t3-1.0.0-darwin-arm64.tar.gz"));
+    assert.strictEqual(SshTunnel.remoteArchivePlatformKey("Linux aarch64\n"), "linux-arm64");
+    assert.strictEqual(SshTunnel.remoteArchivePlatformKey("Darwin arm64"), "darwin-arm64");
+    assert.strictEqual(SshTunnel.remoteArchivePlatformKey("Linux x86_64"), "linux-x64");
+    assert.isNull(SshTunnel.remoteArchivePlatformKey("FreeBSD amd64"));
+  });
+
+  it.effect("rejects invalid archiveVersion before invoking SSH upload (SEC-08)", () =>
+    Effect.gen(function* () {
+      let spawnCount = 0;
+      const spawner = ChildProcessSpawner.make(() => {
+        spawnCount += 1;
+        return Effect.succeed(makeSuccessfulProcess(""));
+      });
+      const layer = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+      const err = yield* SshTunnel.launchOrReuseRemoteServer(
+        { alias: "devbox", hostname: "devbox.example.com", username: "marcus", port: 22 },
+        undefined,
+        { archiveVersion: "1.0.0; id", localArchiveDir: "/tmp/nonexistent-archives" },
+      ).pipe(Effect.flip, Effect.provide(layer));
+      assert.equal(spawnCount, 0);
+      assert.include(err.message, "1.0.0; id");
+    }),
+  );
+
+  it.effect("installs an uploaded archive without downloading", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-runner-" });
+      const version = "1.2.3-mvn.1";
+      const uname = yield* spawner.string(ChildProcess.make("uname", ["-sm"]));
+      const archiveName = `t3-${version}-${SshTunnel.remoteArchivePlatformKey(uname)}.tar.gz`;
+      const stage = path.join(home, "stage", "t3-root");
+      yield* fs.makeDirectory(stage, { recursive: true });
+      yield* fs.writeFileString(path.join(stage, "t3"), '#!/bin/sh\necho "fork $*"\n');
+      yield* fs.chmod(path.join(stage, "t3"), 0o755);
+      const uploads = path.join(home, ".t3", "runtime", "uploads");
+      yield* fs.makeDirectory(uploads, { recursive: true });
+      const archivePath = path.join(uploads, archiveName);
+      yield* spawner.string(
+        ChildProcess.make("tar", ["-czf", archivePath, "-C", path.join(home, "stage"), "t3-root"]),
+      );
+      const sums = yield* spawner.string(
+        ChildProcess.make("sh", [
+          "-c",
+          'if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi',
+          "sh",
+          archivePath,
+        ]),
+      );
+      yield* fs.writeFileString(`${archivePath}.sha256`, `${sums.split(" ")[0]}\n`);
+      const script = SshTunnel.buildRemoteT3RunnerScript({
+        archiveVersion: version,
+        releaseBaseUrl: "http://127.0.0.1:9/unreachable",
+      });
+      const stdout = yield* spawner.string(
+        ChildProcess.make("sh", ["-c", script, "t3", "--version"], {
+          env: { HOME: home },
+          extendEnv: true,
+        }),
+      );
+      assert.strictEqual(stdout, "fork --version\n");
+      const installed = path.join(home, ".t3", "runtime", "versions", version);
+      assert.strictEqual(
+        yield* fs.readFileString(path.join(installed, ".install-complete")),
+        `${version}\n`,
+      );
+      assert.isFalse(yield* fs.exists(archivePath));
+      assert.isFalse(yield* fs.exists(`${archivePath}.sha256`));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
   it.each([
     { host: "Darwin x86_64", system: "Darwin", machine: "x86_64", downloads: false },
     { host: "Darwin arm64", system: "Darwin", machine: "arm64", downloads: true },

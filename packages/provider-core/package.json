@@ -15,6 +15,10 @@
       "types": "./src/server/adapterDriver.ts",
       "import": "./src/server/adapterDriver.ts"
     },
+    "./server/inferenceGateway": {
+      "types": "./src/server/inferenceGateway.ts",
+      "import": "./src/server/inferenceGateway.ts"
+    },
     "./server/attachmentPrompt": {
       "types": "./src/server/attachmentPrompt.ts",
       "import": "./src/server/attachmentPrompt.ts"
@@ -82,6 +86,10 @@
     "./server/mcpToolPresentation": {
       "types": "./src/server/mcpToolPresentation.ts",
       "import": "./src/server/mcpToolPresentation.ts"
+    },
+    "./server/mcpToolProfile": {
+      "types": "./src/server/mcpToolProfile.ts",
+      "import": "./src/server/mcpToolProfile.ts"
     },
     "./server/ModelCatalog": {
       "types": "./src/server/ModelCatalog.ts",

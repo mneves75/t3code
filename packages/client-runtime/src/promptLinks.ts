@@ -10,6 +10,7 @@ import {
   type ThreadPullRequestLink,
 } from "@t3tools/contracts";
 import { resolveSelectableModel, type SelectableModelOption } from "@t3tools/shared/model";
+import { localDefaultCandidates } from "@t3tools/shared/serverSettings";
 import type { AsyncResult } from "effect/reactivity";
 import type { PromptLinkPullRequest, PromptLinkRepository } from "@t3tools/shared/promptLinks";
 import {
@@ -94,9 +95,21 @@ const PROVIDER_ALIASES: Record<string, string> = { claude: "claudeagent" };
  */
 export function resolvePromptLinkModelSelection(
   providers: ReadonlyArray<
-    Pick<ServerProvider, "instanceId" | "driver" | "enabled" | "availability" | "status"> & {
+    Pick<
+      ServerProvider,
+      | "instanceId"
+      | "driver"
+      | "enabled"
+      | "availability"
+      | "status"
+      | "inference"
+      | "inferenceServerId"
+    > & {
       readonly models: ReadonlyArray<
-        SelectableModelOption & { readonly isDefault?: boolean | undefined }
+        SelectableModelOption & {
+          readonly isDefault?: boolean | undefined;
+          readonly isLegacy?: boolean | undefined;
+        }
       >;
     }
   >,
@@ -117,9 +130,9 @@ export function resolvePromptLinkModelSelection(
     request.model === null
       ? null
       : resolveSelectableModel(instance.driver, request.model, instance.models);
+  const defaults = localDefaultCandidates(instance, instance.models);
   const model =
-    requested ??
-    (instance.models.find((candidate) => candidate.isDefault) ?? instance.models[0])?.slug;
+    requested ?? (defaults.find((candidate) => candidate.isDefault) ?? defaults[0])?.slug;
   if (model === undefined) return null;
   return {
     selection: { instanceId: instance.instanceId, model },

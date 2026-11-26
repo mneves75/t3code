@@ -1,3 +1,7 @@
+import {
+  type LocalUsageModels,
+  localUsageModelCost,
+} from "@t3tools/client-runtime/state/provider-instance-display";
 import { T, useGT, useLocale, Var } from "gt-react";
 import { formatPercent, formatTokens, formatUsd } from "@t3tools/shared/usageFormat";
 import { isModelCostUnknown, type ModelTotals } from "@t3tools/shared/usageMerge";
@@ -41,8 +45,10 @@ export function UsageModelDialog({
   chartWindow,
   onSetPrice,
   onClose,
+  localModels,
 }: {
   readonly model: ModelTotals;
+  readonly localModels: LocalUsageModels;
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly metric: UsageChartMetric;
   readonly chartWindow: UsageChartWindow;
@@ -57,11 +63,23 @@ export function UsageModelDialog({
   );
   const providers = [model.provider];
   const presentation = PROVIDER_PRESENTATION[model.provider];
-  const costUnknown = isModelCostUnknown(model);
+  const localCost = localUsageModelCost(model, localModels);
+  // Local runs are not cloud spend: their totals and charts show tokens.
+  const costUnknown = localCost !== null || isModelCostUnknown(model);
   const hitRate = cacheHitRate(model);
-  const perMillion = costPerMillionTokens(model);
+  const perMillion = localCost === null ? costPerMillionTokens(model) : null;
   const stats = [
-    { label: gt("Cost"), value: costUnknown ? gt("Unpriced") : formatUsd(model.costUsd, locale) },
+    localCost === "estimate"
+      ? {
+          label: gt("Estimated equivalent API spend"),
+          value: formatUsd(model.estimatedCostUsd, locale),
+        }
+      : localCost === "local"
+        ? { label: gt("Cost"), value: gt("Local") }
+        : {
+            label: gt("Cost"),
+            value: costUnknown ? gt("Unpriced") : formatUsd(model.costUsd, locale),
+          },
     { label: gt("Tokens"), value: formatTokens(model.totalTokens) },
     perMillion === null
       ? null

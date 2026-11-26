@@ -1425,6 +1425,11 @@ export function createServerEnvironmentAtoms<R, E>(
       Atom.withLabel(`environment-data:server:providers:${environmentId}`),
     ),
   );
+  const inferenceServersValueAtom = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get) => get(configValueAtom(environmentId))?.inferenceServers ?? null).pipe(
+      Atom.withLabel(`environment-data:server:inference-servers:${environmentId}`),
+    ),
+  );
   const welcomeStateFamily = Atom.family((environmentId: EnvironmentId) =>
     runtime
       .atom(serverWelcomeStateChanges(environmentId), { initialValue: null })
@@ -1550,6 +1555,7 @@ export function createServerEnvironmentAtoms<R, E>(
     hiddenThreadTagsAtom,
     usageModelFilterAtom,
     providersValueAtom,
+    inferenceServersValueAtom,
     providerAuthState: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:provider:auth-state",
       tag: WS_METHODS.providerAuthSubscribe,
@@ -1849,6 +1855,56 @@ export function createServerEnvironmentAtoms<R, E>(
             input.refreshModels ?? false,
             input.modelCatalogOnly ?? false,
           ]),
+      },
+    }),
+    refreshInferenceServers: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:refresh-inference-servers",
+      tag: WS_METHODS.serverRefreshInferenceServers,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.id ?? null]),
+      },
+    }),
+    discoverInferenceServers: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:discover-inference-servers",
+      tag: WS_METHODS.serverDiscoverInferenceServers,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.host ?? null, input.baseUrl ?? null]),
+      },
+    }),
+    getInferenceUsage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:inference-usage",
+      tag: WS_METHODS.serverGetInferenceUsage,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.window]),
+      },
+    }),
+    checkInferenceModelImages: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:check-inference-model-images",
+      tag: WS_METHODS.serverCheckInferenceModelImages,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.serverId, input.model]),
+      },
+    }),
+    getThreadInferenceStop: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:thread-inference-stop",
+      tag: WS_METHODS.serverGetThreadInferenceStop,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
+    getThreadInferenceRequest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:thread-inference-request",
+      tag: WS_METHODS.serverGetThreadInferenceRequest,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
       },
     }),
     updateProvider: createEnvironmentRpcCommand(runtime, {

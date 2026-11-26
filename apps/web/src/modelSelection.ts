@@ -18,7 +18,7 @@ import {
 } from "@t3tools/shared/model";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { type ClientSettings, UnifiedSettings } from "@t3tools/contracts/settings";
-import { resolveModelPreferences } from "@t3tools/shared/serverSettings";
+import { localDefaultCandidates, resolveModelPreferences } from "@t3tools/shared/serverSettings";
 import * as Arr from "effect/Array";
 import * as Equal from "effect/Equal";
 import * as Result from "effect/Result";
@@ -293,7 +293,8 @@ export function resolveAppModelSelectionForInstance(
       return unavailableSelection;
     }
   }
-  return options.find((option) => option.isDefault)?.slug ?? options[0]?.slug ?? null;
+  const candidates = localDefaultCandidates(entry.snapshot, options);
+  return candidates.find((option) => option.isDefault)?.slug ?? candidates[0]?.slug ?? null;
 }
 
 // New drafts carry the stored selection; capabilities resolve its raw options later.

@@ -55,8 +55,10 @@ import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as InferenceServerRegistry from "../inference/InferenceServerRegistry.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
 import {
@@ -611,6 +613,35 @@ export const layerWithOptions = (
       const isMcpCredentialReserved = (threadId: ThreadId, mcpCredentialId: string) =>
         (mcpCredentialReservations.get(mcpReservationKey(threadId, mcpCredentialId)) ?? 0) > 0;
       const mcpPrepareLock = yield* KeyedLock.make<ThreadId>();
+      /** The enabled inference server this instance is linked to; its sessions get a gateway credential. */
+      const linkedInferenceServer = (
+        providerInstanceId: ProviderInstanceId,
+      ): Effect.Effect<McpSessionRegistry.PinnedInferenceServer | undefined> =>
+        Option.isNone(serverSettings)
+          ? Effect.undefined
+          : serverSettings.value.getSettings.pipe(
+              Effect.map((settings) => {
+                const id = settings.providerInstances[providerInstanceId]?.inferenceServerId;
+                const config = id === undefined ? undefined : settings.inferenceServers[id];
+                return id !== undefined && config?.enabled === true ? { id, config } : undefined;
+              }),
+              Effect.orElseSucceed(() => undefined),
+            );
+      /** A thread keeps its credential only while that still routes where its link does now. */
+      const routesToLink = Effect.fn("ProviderSessionManager.routesToLink")(function* (
+        existing: McpProviderSessionConfig,
+        link: McpSessionRegistry.PinnedInferenceServer | undefined,
+      ) {
+        const held = existing.inferenceGateway;
+        if (held === undefined || link === undefined) {
+          return held === undefined && link === undefined;
+        }
+        const caller = yield* mcpSessionRegistry.resolveInference(held.token);
+        return (
+          caller?.serverId === link.id &&
+          InferenceServerRegistry.routesAlike(caller.pinned, link.config)
+        );
+      });
       /** Serialize prepares per thread so concurrent rotations cannot revoke each other's credentials. */
       const prepareMcpSession = (
         threadId: ThreadId,
@@ -643,7 +674,10 @@ export const layerWithOptions = (
                   Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
                   Effect.orElseSucceed(() => false),
                 );
+                const inferenceServer = yield* linkedInferenceServer(providerInstanceId);
                 const existing = yield* mcpSessions.read(threadId);
+                const keepsRoute =
+                  existing !== undefined && (yield* routesToLink(existing, inferenceServer));
                 if (existing !== undefined) {
                   // Reserve before async validation so release cannot revoke between validation and reservation.
                   reserveMcpCredential(threadId, existing.providerSessionId);
@@ -668,7 +702,8 @@ export const layerWithOptions = (
                     (Option.isNone(backgroundWait) ||
                       resolved.capabilities.has("background-wait") === backgroundWait.value) &&
                     // A credential issued while the lineage read failed is replaced once it works.
-                    (resolved.thread.subagent === true) === subagent
+                    (resolved.thread.subagent === true) === subagent &&
+                    keepsRoute
                   ) {
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
@@ -681,6 +716,7 @@ export const layerWithOptions = (
                   browserToolsAvailable,
                   capabilities,
                   subagent,
+                  ...(inferenceServer === undefined ? {} : { inferenceServer }),
                 });
                 yield* mcpSessions.set({
                   ...credential.config,

@@ -70,6 +70,32 @@ interface RegistryState {
 const entryEqual = (a: ProviderInstanceConfig, b: ProviderInstanceConfig): boolean =>
   Equal.equals(a, b);
 
+// The envelope owns these marks, so they are stamped here once instead of in every driver.
+const withDeclaredInference = (
+  instance: ProviderInstance,
+  { inference, inferenceServerId }: ProviderInstanceConfig,
+): ProviderInstance => {
+  if (inference === undefined && inferenceServerId === undefined) return instance;
+  const stamp = <S extends ServerProvider>(snapshot: S): S => ({
+    ...snapshot,
+    ...(inference === undefined ? {} : { inference }),
+    ...(inferenceServerId === undefined ? {} : { inferenceServerId }),
+  });
+  const { snapshot, snapshotForCwd } = instance;
+  return {
+    ...instance,
+    snapshot: {
+      ...snapshot,
+      getSnapshot: Effect.map(snapshot.getSnapshot, stamp),
+      refresh: Effect.map(snapshot.refresh, stamp),
+      streamChanges: Stream.map(snapshot.streamChanges, stamp),
+    },
+    ...(snapshotForCwd
+      ? { snapshotForCwd: (cwd: string) => snapshotForCwd(cwd).pipe(Effect.map(stamp)) }
+      : {}),
+  };
+};
+
 const withoutPresentation = ({
   displayName: _displayName,
   accentColor: _accentColor,
@@ -380,6 +406,10 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
       accentColor: entry.accentColor,
       environment: secrets.environment,
       enabled,
+      // Hydration marks a linked instance local only while its server is enabled.
+      ...(entry.inferenceServerId !== undefined && entry.inference === "local"
+        ? { inferenceServerId: entry.inferenceServerId }
+        : {}),
       config:
         secrets.config.length === 0
           ? typedConfig
@@ -406,7 +436,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   }
 
   const { instance, setPresentation } = withLivePresentation(
-    createResult.success,
+    withDeclaredInference(createResult.success, entry),
     entry,
     driver.metadata.snapshotOmitsDisplayName ? undefined : driver.metadata.displayName,
   );

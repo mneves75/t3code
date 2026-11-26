@@ -252,6 +252,75 @@ describe("runMigrations", () => {
       assert.deepStrictEqual(yield* runMigrations(), []);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
+
+  it.effect("creates inference_requests and all training tables with their indexes", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations();
+
+      const tables = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'table'
+      `;
+      const tableNames = tables.map((row) => row.name);
+      for (const expected of [
+        "inference_requests",
+        "training_datasets",
+        "training_curated_threads",
+        "training_jobs",
+        "training_artifacts",
+        "training_eval_runs",
+      ]) {
+        assert.include(tableNames, expected);
+      }
+
+      const inferenceCols = yield* sql<{ readonly name: string }>`
+        PRAGMA table_info(inference_requests)
+      `;
+      assert.deepStrictEqual(
+        inferenceCols.map((col) => col.name),
+        [
+          "request_id",
+          "server_id",
+          "model",
+          "thread_id",
+          "run_id",
+          "purpose",
+          "status",
+          "received_at",
+          "queue_wait_ms",
+          "ttft_ms",
+          "decode_ms",
+          "duration_ms",
+          "prompt_tokens",
+          "cached_prompt_tokens",
+          "completion_tokens",
+          "parent_run_id",
+          "fallback_from",
+          "static_prefix_hash",
+          "failure_cause",
+          "upstream_http_status",
+          "reasoning_tokens",
+        ],
+      );
+
+      const indexes = yield* sql<{ readonly name: string }>`
+        SELECT name FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL
+      `;
+      const indexNames = indexes.map((row) => row.name);
+      for (const expected of [
+        "idx_inference_requests_received",
+        "idx_inference_requests_thread",
+        "training_datasets_created_idx",
+        "training_curated_threads_thread_idx",
+        "training_jobs_status_created_idx",
+        "training_jobs_dataset_idx",
+        "training_artifacts_created_idx",
+        "training_eval_runs_artifact_idx",
+      ]) {
+        assert.include(indexNames, expected);
+      }
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
 });
 
 // The npm launcher reads the highest migration id from these file names.

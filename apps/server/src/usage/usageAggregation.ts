@@ -10,7 +10,14 @@ import type {
 } from "@t3tools/contracts";
 
 import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/usage";
-import { cacheSavingsUsd, lookupRate, priceUsage, type RateTable } from "./usagePricing.ts";
+import { isLocalUsageModel } from "@t3tools/shared/usageMerge";
+import {
+  cacheSavingsUsd,
+  lookupRate,
+  priceLocalUsage,
+  priceUsage,
+  type RateTable,
+} from "./usagePricing.ts";
 
 // en-CA gives ISO-ordered parts in the requested zone; Date getters are host-local.
 function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
@@ -51,6 +58,7 @@ const HOUR_MS = 60 * 60 * 1000;
 interface MutableBucket {
   totals: { -readonly [K in keyof UsageTokenTotals]: number };
   costUsd: number;
+  estimatedCostUsd: number;
   cacheSavingsUsd: number;
   categoryCostUsd: UsageCategoryCost | null;
   fastCostUsd: number;
@@ -70,6 +78,8 @@ export interface AggregateOptions {
   readonly rates: RateTable;
   readonly priceOverrides?: RateTable;
   readonly modelAliases?: ReadonlyMap<string, string>;
+  /** Model keys from collectLocalUsageModels. */
+  readonly localModels?: ReadonlySet<string>;
   readonly rateModel?: (provider: UsageRecord["provider"], model: string) => string | undefined;
   readonly modelFilter?: UsageModelFilter;
   readonly resolution?: UsageResolution;
@@ -222,8 +232,12 @@ function smallestGrokCopy(held: UsageRecord, copy: UsageRecord): UsageRecord {
   };
 }
 
+type AggregatedUsageRecord = UsageRecord & { readonly modelAliasMapped?: boolean };
+
 interface Contribution {
-  record: UsageRecord;
+  record: AggregatedUsageRecord;
+  /** Localness comes from the original model, before aliases rename it. */
+  readonly local: boolean;
   /** Null when the first copy fell outside the window. */
   readonly bucket: MutableBucket | null;
 }
@@ -264,6 +278,9 @@ export class UsageAggregator {
 
   add(input: UsageRecord, sourcePath?: string): boolean {
     if (!keepsUsageRecord(this.#options.modelFilter, input)) return false;
+    const local =
+      this.#options.localModels !== undefined &&
+      isLocalUsageModel(input.model, this.#options.localModels);
     const record = this.#mapModel(input);
     if (record.dedupeKey !== null) {
       const held = this.#seen.get(record.dedupeKey);
@@ -280,13 +297,13 @@ export class UsageAggregator {
     }
 
     const bucket = this.#placeInWindow(record, sourcePath ?? "");
-    if (record.dedupeKey !== null) this.#seen.set(record.dedupeKey, { record, bucket });
+    if (record.dedupeKey !== null) this.#seen.set(record.dedupeKey, { record, bucket, local });
     if (bucket === null) {
       this.#outOfWindow += 1;
       return false;
     }
     // Keyed usage is counted in finish(), once all its copies are merged.
-    if (record.dedupeKey === null) this.#accumulate(bucket, record);
+    if (record.dedupeKey === null) this.#accumulate(bucket, record, local);
     if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
     return true;
   }
@@ -315,8 +332,15 @@ export class UsageAggregator {
     return this.#bucketFor(day, hourIndex, record.provider, record.model, source);
   }
 
-  #accumulate(bucket: MutableBucket, record: UsageRecord): void {
-    const priced = priceUsage(this.#options.rates, record, this.#options.priceOverrides);
+  #accumulate(bucket: MutableBucket, record: AggregatedUsageRecord, local: boolean): void {
+    const priced = local
+      ? priceLocalUsage(
+          this.#options.rates,
+          record,
+          this.#options.priceOverrides,
+          record.rateModel !== undefined || record.modelAliasMapped === true,
+        )
+      : priceUsage(this.#options.rates, record, this.#options.priceOverrides);
 
     const totals = bucket.totals;
     totals.uncachedInputTokens += record.totals.uncachedInputTokens;
@@ -325,6 +349,7 @@ export class UsageAggregator {
     totals.outputTokens += record.totals.outputTokens;
     totals.reasoningTokens += record.totals.reasoningTokens;
     bucket.costUsd += priced.costUsd;
+    bucket.estimatedCostUsd += priced.estimatedCostUsd ?? 0;
     if (priced.categoryCostUsd !== null) {
       const sum = bucket.categoryCostUsd;
       const add = priced.categoryCostUsd;
@@ -341,11 +366,13 @@ export class UsageAggregator {
     if (record.speed === "fast") bucket.fastCostUsd += priced.costUsd;
     if (record.speed === "ultrafast") bucket.ultrafastCostUsd += priced.costUsd;
     bucket.speedPremiumUsd += priced.speedPremiumUsd;
-    bucket.cacheSavingsUsd += cacheSavingsUsd(
-      this.#options.rates,
-      record,
-      this.#options.priceOverrides,
-    );
+    if (!local) {
+      bucket.cacheSavingsUsd += cacheSavingsUsd(
+        this.#options.rates,
+        record,
+        this.#options.priceOverrides,
+      );
+    }
     bucket.records += 1;
     if (priced.costSource === "unpriced") {
       bucket.unpricedRecords += 1;
@@ -359,7 +386,7 @@ export class UsageAggregator {
   }
 
   // Aliases use the target's rate. Only an unpriced target goes through the provider's own rate naming.
-  #mapModel(record: UsageRecord): UsageRecord {
+  #mapModel(record: UsageRecord): AggregatedUsageRecord {
     const model = this.#options.modelAliases?.get(record.model);
     if (model === undefined) return record;
     const { rateModel: _rateModel, ...rest } = record;
@@ -367,7 +394,9 @@ export class UsageAggregator {
       lookupRate(this.#options.rates, model) === null
         ? this.#options.rateModel?.(record.provider, model)
         : undefined;
-    return rateModel === undefined ? { ...rest, model } : { ...rest, model, rateModel };
+    return rateModel === undefined
+      ? { ...rest, model, modelAliasMapped: true }
+      : { ...rest, model, rateModel, modelAliasMapped: true };
   }
 
   // Time-ordered records usually reuse the previous bucket; avoid rebuilding its key.
@@ -398,6 +427,7 @@ export class UsageAggregator {
       bucket = {
         totals: { ...EMPTY_TOTALS },
         costUsd: 0,
+        estimatedCostUsd: 0,
         cacheSavingsUsd: 0,
         categoryCostUsd: null,
         fastCostUsd: 0,
@@ -416,8 +446,8 @@ export class UsageAggregator {
   }
 
   finish(): AggregateResult {
-    for (const { record, bucket } of this.#seen.values()) {
-      if (bucket !== null) this.#accumulate(bucket, record);
+    for (const { record, bucket, local } of this.#seen.values()) {
+      if (bucket !== null) this.#accumulate(bucket, record, local);
     }
     this.#seen.clear();
     const buckets: UsageBucket[] = [];
@@ -428,6 +458,7 @@ export class UsageAggregator {
       const fastCostUsd = roundUsd(bucket.fastCostUsd);
       const ultrafastCostUsd = roundUsd(bucket.ultrafastCostUsd);
       const speedPremiumUsd = roundUsd(bucket.speedPremiumUsd);
+      const estimatedCostUsd = roundUsd(bucket.estimatedCostUsd);
       buckets.push({
         day: day as UsageDay,
         ...(hourStart === "" ? {} : { hourStart }),
@@ -450,6 +481,7 @@ export class UsageAggregator {
         ...(fastCostUsd === 0 ? {} : { fastCostUsd }),
         ...(ultrafastCostUsd === 0 ? {} : { ultrafastCostUsd }),
         ...(speedPremiumUsd === 0 ? {} : { speedPremiumUsd }),
+        ...(estimatedCostUsd === 0 ? {} : { estimatedCostUsd }),
         costSource: resolveCostSource(bucket),
         records: bucket.records,
         unpricedRecords: bucket.unpricedRecords,

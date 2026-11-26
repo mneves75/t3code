@@ -7,6 +7,7 @@ import {
   ProviderInstanceEnvironment,
   ProviderInstanceId,
 } from "./providerInstance.ts";
+import { InferenceServerId } from "./inference.ts";
 import {
   ClientSettingsSchema,
   ClientSettingsPatch,
@@ -17,6 +18,7 @@ import {
   idleCompactionPatch,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   requiredScopesForProjectMutation,
+  requiredScopesForServerSettingsPatch,
   resolveIdleCompaction,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -574,5 +576,50 @@ describe("server model preferences", () => {
     const input = { favorites: [], providerModelPreferences: {} };
     expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
     expect(decodeServerSettingsPatch(input)).toEqual(input);
+  });
+});
+
+describe("local inference, darkStyle, noname, and training settings", () => {
+  it("defaults darkStyle to gray and accepts oled", () => {
+    expect(decodeClientSettings({}).darkStyle).toBe("gray");
+    expect(decodeClientSettings({ darkStyle: "oled" }).darkStyle).toBe("oled");
+    expect(decodeClientSettingsPatch({ darkStyle: "oled" })).toEqual({ darkStyle: "oled" });
+  });
+
+  it("defaults local-first text generation, training settings, and noname disabled", () => {
+    const defaults = decodeServerSettings({});
+    expect(defaults.textGenerationFallback).toBe("local");
+    expect(defaults.textGenerationModelSelectionExplicit).toBe(false);
+    expect(defaults.inferenceServers).toEqual({});
+    expect(defaults.training).toEqual({ defaultPauseLocalInference: true });
+    expect(
+      resolveProviderInstanceEnabled({ driver: ProviderDriverKind.make("noname"), config: {} }),
+    ).toBe(false);
+  });
+
+  it("assigns scopes for inferenceServers and training patches", () => {
+    const mlx = InferenceServerId.make("mlx");
+    expect(
+      requiredScopesForServerSettingsPatch({
+        inferenceServers: {
+          [mlx]: { baseUrl: "http://127.0.0.1:8080/v1", apiKey: "", enabled: true },
+        },
+      }),
+    ).toEqual(["providers:manage"]);
+    expect(
+      requiredScopesForServerSettingsPatch({
+        training: { storageDir: "/Volumes/MARCUS_S7/training" },
+      }),
+    ).toEqual(["settings:write", "terminal:operate"]);
+    expect(
+      requiredScopesForServerSettingsPatch({
+        training: { mlxBinDir: "/opt/mlx/bin" },
+      }),
+    ).toEqual(["settings:write", "terminal:operate"]);
+    expect(
+      requiredScopesForServerSettingsPatch({
+        training: { defaultPauseLocalInference: false },
+      }),
+    ).toEqual(["settings:write"]);
   });
 });

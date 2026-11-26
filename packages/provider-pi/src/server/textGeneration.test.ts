@@ -89,7 +89,7 @@ it.effect("runs Pi offline, since the process is stopped as soon as it answers",
       return pi.spawner.spawn(command);
     });
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 
@@ -109,11 +109,69 @@ it.effect("runs Pi offline, since the process is stopped as soon as it answers",
   }),
 );
 
+it.effect("borrows a background gateway credential for the run and loads only its extension", () =>
+  Effect.gen(function* () {
+    const pi = yield* makeFakePi(JSON.stringify({ subject: "Update README", body: "" }));
+    const launches: Array<{ args: ReadonlyArray<string>; env: unknown }> = [];
+    const spawner = ChildProcessSpawner.make((command) => {
+      if (ChildProcess.isStandardCommand(command)) {
+        launches.push({ args: command.args.map(String), env: command.options.env });
+      }
+      return pi.spawner.spawn(command);
+    });
+    let released = false;
+    const textGeneration = yield* makePiTextGeneration(
+      {
+        enabled: true,
+        binaryPath: "pi",
+        launchArgs: "-e /user/extension.ts",
+        toolProfile: "auto",
+        customModels: [],
+      },
+      {},
+      undefined,
+      {
+        forSession: () => Effect.undefined,
+        forBackground: Effect.acquireRelease(
+          Effect.succeed({
+            server: { serverId: "rtx", displayName: "rtx", models: [{ id: "GLM" }] },
+            credential: { serverId: "rtx", baseUrl: "http://t3/inference/rtx/v1", token: "bg" },
+            extensionPath: "/cache/pi-t3-gateway-extension.ts",
+          }),
+          () =>
+            Effect.sync(() => {
+              released = true;
+            }),
+        ),
+      },
+    ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+
+    yield* textGeneration.generateCommitMessage({
+      cwd: process.cwd(),
+      branch: "main",
+      stagedSummary: "M README.md",
+      stagedPatch: "diff --git a/README.md b/README.md",
+      modelSelection: createModelSelection(ProviderInstanceId.make("pi"), "t3-rtx/GLM"),
+    });
+
+    const launch = launches[0]!;
+    assert.deepEqual(launch.args.slice(-4), [
+      "--no-extensions",
+      "--no-tools",
+      "--extension",
+      "/cache/pi-t3-gateway-extension.ts",
+    ]);
+    assert.notInclude(launch.args, "/user/extension.ts");
+    assert.include(launch.env as Record<string, string>, { T3_GATEWAY_TOKEN: "bg" });
+    assert.isTrue(released);
+  }),
+);
+
 it.effect("names the model and the disabled extensions when Pi cannot load it", () =>
   Effect.gen(function* () {
     const pi = yield* makeFakePi("", "Model not found: demo/demo-model");
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, pi.spawner));
 
@@ -145,7 +203,7 @@ it.effect("selects the provider and id Pi reported when the provider contains a 
       [{ provider, id: "qwen3" }],
     );
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, pi.spawner));
 
@@ -178,7 +236,7 @@ const generateCommitMessage = (turnEvents: ReadonlyArray<Record<string, unknown>
   Effect.gen(function* () {
     const pi = yield* makeFakePi(reply, undefined, turnEvents);
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, pi.spawner));
     return yield* textGeneration.generateCommitMessage({
@@ -279,7 +337,7 @@ it.effect.each([
         version,
       );
       const textGeneration = yield* makePiTextGeneration(
-        { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+        { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
         {},
         (_driver, detected) =>
           Effect.succeed(
@@ -341,7 +399,7 @@ it.effect("generates at Pi's default level when Pi rejects the saved thinking le
       'Thinking level "max" is not supported by demo/demo-model',
     );
     const textGeneration = yield* makePiTextGeneration(
-      { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
+      { enabled: true, binaryPath: "pi", launchArgs: "", toolProfile: "auto", customModels: [] },
       {},
     ).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, pi.spawner));
 

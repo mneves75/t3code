@@ -83,6 +83,22 @@ describe("T3 device instructions", () => {
     assert.equal(providerRun(true), "Check the login screen.");
   });
 
+  it("never advertises omitted preview or device tools in lean prompt injection", () => {
+    const prompt = t3OrchestrationPrompt({
+      prompt: "Build the page.",
+      hasT3Mcp: true,
+      hasDeviceTools: false,
+      leanTools: true,
+      orchestrationDelivered: false,
+      deviceInstructionsDelivered: false,
+    });
+    assert.notInclude(prompt, "### Visuals and preview");
+    assert.notInclude(prompt, "## T3 Code browser");
+    assert.notInclude(prompt, "## T3 Code devices");
+    assert.include(prompt, "`t3_thread_launch`");
+    assert.include(prompt, "Build the page.");
+  });
+
   it("reach ACP agents again when device access changes mid-thread", () => {
     const state = { interactionMode: "default", hasT3Mcp: true, hasDeviceTools: false } as const;
     const withDevices = t3AcpPromptWithInstructions({

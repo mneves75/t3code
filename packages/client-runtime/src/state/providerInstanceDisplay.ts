@@ -1,9 +1,18 @@
 import {
   defaultInstanceIdForDriver,
+  type EnvironmentId,
+  type InferenceServerSnapshot,
+  type InferenceServerStatus,
   PROVIDER_DISPLAY_NAMES,
   type ProviderDriverKind,
   type ServerProvider,
 } from "@t3tools/contracts";
+import {
+  collectLocalUsageModels,
+  isLocalUsageModel,
+  type ModelTotals,
+} from "@t3tools/shared/usageMerge";
+import { Atom } from "effect/reactivity";
 
 function humanizeSlug(slug: string): string {
   return slug
@@ -92,4 +101,75 @@ export function shouldShowInstanceBadge(
     if (++sharedProviderCount > 1) return true;
   }
   return false;
+}
+
+export const INFERENCE_SERVER_STATUS_LABELS: Readonly<Record<InferenceServerStatus, string>> = {
+  checking: "Checking",
+  ready: "Ready",
+  unreachable: "Unreachable",
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- existing server-status English label; no behavior change in this cleanup
+  error: "Error",
+};
+
+/**
+ * Where an instance's models run: "Pi · rtx · Ready" for one linked to a known inference server,
+ * "Pi · Local" for one marked local by hand.
+ */
+export function providerInstanceInferenceLabel(
+  displayName: string,
+  snapshot: Pick<ServerProvider, "inference" | "inferenceServerId">,
+  inferenceServers: ReadonlyArray<InferenceServerSnapshot> | null | undefined,
+): string {
+  const server =
+    snapshot.inferenceServerId === undefined
+      ? undefined
+      : inferenceServers?.find((candidate) => candidate.id === snapshot.inferenceServerId);
+  if (server) {
+    const status = server.enabled ? INFERENCE_SERVER_STATUS_LABELS[server.status] : "Disabled";
+    const place = ` · ${server.displayName}`;
+    const name = displayName.endsWith(place) ? displayName : `${displayName}${place}`;
+    return `${name} · ${status}`;
+  }
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- existing local-provider English label; no behavior change in this cleanup
+  return snapshot.inference === "local" ? `${displayName} · Local` : displayName;
+}
+
+/** Model keys that run on the user's own servers, from collectLocalUsageModels. */
+export type LocalUsageModels = ReadonlySet<string>;
+
+/**
+ * How Usage shows a model's cost: "estimate" when the server priced local runs from a price the
+ * user set (what the same tokens would cost from an API), "local" for other local models, null
+ * for any other model.
+ */
+export function localUsageModelCost(
+  model: Pick<ModelTotals, "model" | "estimatedCostUsd">,
+  localModels: LocalUsageModels,
+): "local" | "estimate" | null {
+  if (model.estimatedCostUsd > 0) return "estimate";
+  return isLocalUsageModel(model.model, localModels) ? "local" : null;
+}
+
+/** Local models across the environments (ids as a JSON array), for the Usage page of each client. */
+export function makeLocalUsageModelsAtom(server: {
+  readonly providersValueAtom: (
+    id: EnvironmentId,
+  ) => Atom.Atom<ReadonlyArray<ServerProvider> | null>;
+  readonly inferenceServersValueAtom: (
+    id: EnvironmentId,
+  ) => Atom.Atom<ReadonlyArray<InferenceServerSnapshot> | null>;
+}) {
+  return Atom.family((idsJson: string) =>
+    Atom.make((get): LocalUsageModels => {
+      const local = new Set<string>();
+      for (const id of JSON.parse(idsJson) as EnvironmentId[]) {
+        collectLocalUsageModels(
+          get(server.providersValueAtom(id)) ?? [],
+          get(server.inferenceServersValueAtom(id)) ?? [],
+          local,
+        );
+      }
+      return local;
+    }).pipe(Atom.withLabel(`local-usage-models:${idsJson}`)),
+  );
 }

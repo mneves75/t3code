@@ -18,8 +18,9 @@
       "vitest": { "entry": [".github/**/*.test.cjs"] },
     },
     "evals": {
-      // The grader loads these answers by path, as the server loads a definitions file.
-      "entry": ["workflow-authoring/fixtures/*.ts"],
+      // The grader loads these answers by path, as the server loads a definitions file;
+      // capture-local spawns mcp-stub.ts by path.
+      "entry": ["workflow-authoring/fixtures/*.ts", "mcp-tool-use/mcp-stub.ts"],
     },
     "scripts": {
       // Knip loads its preprocessor through a CLI option; native verification and

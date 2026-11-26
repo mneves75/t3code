@@ -34,6 +34,7 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
@@ -441,7 +442,10 @@ function decodeSettingsFile(
       : undefined;
   const settings: ServerSettings =
     Exit.isSuccess(decoded) && failure === undefined
-      ? decoded.value
+      ? withStoredTextGenerationIntent(
+          decoded.value,
+          Exit.isSuccess(parsed) ? parsed.value : undefined,
+        )
       : // The file may hold choices we can no longer read, so opt-in behaviour stays off.
         {
           ...managed.defaults,
@@ -590,9 +594,22 @@ function fallbackTextGenerationProvider(
       resolveProviderInstanceEnabled(
         settings.providerInstances[instanceId] ?? { driver, config: {} },
       ),
-    { defaultModelSelection: settings.defaultModelSelection },
+    {
+      defaultModelSelection: settings.defaultModelSelection,
+      policy: settings.textGenerationFallback,
+      inferenceServers: settings.inferenceServers,
+    },
   );
   return fallback === null ? settings : { ...settings, textGenerationModelSelection: fallback };
+}
+
+// Files written before the flag existed only stored a selection the user changed from the default.
+function withStoredTextGenerationIntent(settings: ServerSettings, stored: unknown): ServerSettings {
+  const record = Predicate.isObject(stored) ? stored : {};
+  return Object.hasOwn(record, "textGenerationModelSelection") &&
+    !Object.hasOwn(record, "textGenerationModelSelectionExplicit")
+    ? { ...settings, textGenerationModelSelectionExplicit: true }
+    : settings;
 }
 
 const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([

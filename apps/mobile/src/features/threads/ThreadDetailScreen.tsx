@@ -11,7 +11,9 @@ import {
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
+import { formatThreadInferenceWait } from "@t3tools/client-runtime/state/inference-activity";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import { inferenceAtoms } from "../../state/inference";
 import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
 import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
@@ -583,6 +585,12 @@ function ThreadDetailBody(
     useAtomValue(orchestrationEnvironment.forceStopThread.permissionAtom(props.environmentId)) &&
     props.serverConfig?.environment.capabilities.threadForceStop === true;
   const [forceStoppingKey, setForceStoppingKey] = useState<string | null>(null);
+  const inferenceWait = useAtomValue(
+    inferenceAtoms.threadInferenceWaitAtom({
+      environmentId: props.environmentId,
+      threadId: props.selectedThread.id,
+    }),
+  );
   // The run that ignored Stop, so a confirmation left open cannot hit a newer run.
   const forceStop = async (runId: RunId | undefined) => {
     const threadKey = selectedThreadKey;
@@ -885,6 +893,13 @@ function ThreadDetailBody(
           openLinkedThread({ environmentId: childInput.environmentId, threadId: childInput.id });
         },
       };
+    }
+    if (
+      props.activeWorkStartedAt !== null &&
+      contentPresentationKind === "ready" &&
+      inferenceWait !== null
+    ) {
+      return { kind: "inference-wait", label: formatThreadInferenceWait(inferenceWait) };
     }
     if (props.selectedThread.goal !== null && contentPresentationKind === "ready") {
       const goal = presentProviderGoal(props.selectedThread.goal, false, messages);
@@ -1678,7 +1693,8 @@ function ThreadDetailBody(
                     colorScheme={isDarkMode ? "dark" : "light"}
                     status={floatingStatus}
                     extensionStatus={
-                      floatingStatus !== null && floatingStatus.kind === "goal"
+                      floatingStatus !== null &&
+                      (floatingStatus.kind === "inference-wait" || floatingStatus.kind === "goal")
                         ? extensionStatus
                         : null
                     }

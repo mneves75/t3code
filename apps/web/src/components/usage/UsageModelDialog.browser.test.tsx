@@ -12,6 +12,7 @@ describe("UsageModelDialog", () => {
           model: "claude-sonnet-4-5",
           provider: "claude",
           costUsd: 2,
+          estimatedCostUsd: 0,
           totalTokens: 1_000_000,
           tokens: {
             uncachedInputTokens: 100_000,
@@ -27,6 +28,7 @@ describe("UsageModelDialog", () => {
           tokenShare: 1,
         }}
         environments={[]}
+        localModels={new Set()}
         metric="cost"
         chartWindow={{
           days: [],

@@ -64,6 +64,17 @@ vi.mock("../state/entities", () => ({
 }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => "primary" }));
 vi.mock("../state/threads", () => ({ threadEnvironment: { updateMetadata: "metadata" } }));
+vi.mock("../state/training", () => ({
+  trainingEnvironment: {
+    setCuratedThread: { permissionAtom: () => "training-permission" },
+    curatedThreadIdsAtom: () => "curated-thread-ids",
+  },
+}));
+vi.mock("../rpc/atomRegistry", () => ({
+  appAtomRegistry: {
+    get: (atom: string) => (atom === "curated-thread-ids" ? new Set<string>() : false),
+  },
+}));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: () => async () => {
     recordEffect("metadata");

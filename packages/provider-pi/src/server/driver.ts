@@ -12,6 +12,7 @@ import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderL
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { piUsageReader } from "./usage.ts";
 import { makePiTextGeneration } from "./textGeneration.ts";
+import { makePiGatewaySource } from "./gateway.ts";
 import { PiAdapterV2Driver, type PiAdapterV2DriverEnv } from "./adapter.ts";
 import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
 import {
@@ -90,6 +91,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
     environment,
     enabled,
     config,
+    inferenceServerId,
   }) {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -130,6 +132,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       environment,
       enabled,
       config,
+      inferenceServerId,
     }).pipe(
       Effect.mapError(
         (cause) =>
@@ -141,10 +144,12 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
           }),
       ),
     );
+    const gatewaySource = yield* makePiGatewaySource(instanceId, host.paths.providerStatusCacheDir);
     const textGeneration = yield* makePiTextGeneration(
       effectiveConfig,
       processEnv,
       host.compatibility,
+      gatewaySource,
     );
 
     const checkProvider = fileSystem
@@ -152,7 +157,13 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       .pipe(
         Effect.ignore,
         Effect.andThen(
-          checkPiProviderStatus(effectiveConfig, processEnv, probeCwd, host.compatibility),
+          checkPiProviderStatus(
+            effectiveConfig,
+            processEnv,
+            probeCwd,
+            host.compatibility,
+            gatewaySource,
+          ),
         ),
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

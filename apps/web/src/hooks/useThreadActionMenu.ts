@@ -31,8 +31,11 @@ import { copyThreadReference } from "../lib/copyThreadReference";
 import { m } from "../i18n/messages";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { threadEnvironment } from "../state/threads";
+import { trainingEnvironment } from "../state/training";
+import { useAtomCommand } from "../state/use-atom-command";
 import { threadTriagePermitted, useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope } from "../state/session";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   readEnvironmentServerConfigLoaded,
   readEnvironmentSupportsAutoSettleOptOut,
@@ -98,6 +101,9 @@ export function useThreadActionMenu(input: {
   const regenerateThreadTitle = useOrchestrationCommand(threadEnvironment.regenerateTitle, {
     reportFailure: false,
   });
+  const setCuratedThread = useAtomCommand(trainingEnvironment.setCuratedThread, {
+    reportFailure: false,
+  });
   const handleNewThread = useNewThreadHandler();
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -152,6 +158,12 @@ export function useThreadActionMenu(input: {
       snoozePresets,
       canShareWithGuest,
       canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+      canCurateForTraining: appAtomRegistry.get(
+        trainingEnvironment.setCuratedThread.permissionAtom(threadRef.environmentId),
+      ),
+      isInTrainingDataset: appAtomRegistry
+        .get(trainingEnvironment.curatedThreadIdsAtom(threadRef.environmentId))
+        .has(threadRef.threadId),
     });
     const run = async (action: ThreadActionMenuId) => {
       const api = readLocalApi();
@@ -273,6 +285,31 @@ export function useThreadActionMenu(input: {
         case "share-guest":
           openGuestShareDialog(threadRef);
           return;
+        case "add-to-training-dataset":
+        case "remove-from-training-dataset": {
+          const curated = action === "add-to-training-dataset";
+          const result = await setCuratedThread({
+            environmentId: threadRef.environmentId,
+            input: { threadId: threadRef.threadId, curated },
+          });
+          if (result._tag === "Success") {
+            toastManager.add({
+              type: "success",
+              title: curated
+                ? m(msg("Added to training dataset"))
+                : m(msg("Removed from training dataset")),
+              description: thread.title,
+            });
+          } else if (!isAtomCommandInterrupted(result)) {
+            failureToast(
+              curated
+                ? m(msg("Failed to add thread to training dataset"))
+                : m(msg("Failed to remove thread from training dataset")),
+              squashAtomCommandFailure(result),
+            );
+          }
+          return;
+        }
         case "turn-into-project": {
           const result = await turnThreadIntoProject(threadRef);
           if (result._tag === "Success") {

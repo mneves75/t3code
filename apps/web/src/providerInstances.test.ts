@@ -1,5 +1,6 @@
 import {
   DEFAULT_MODEL_BY_PROVIDER,
+  InferenceServerId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -466,6 +467,50 @@ describe("getDefaultProviderInstanceModel", () => {
 
     expect(getDefaultProviderInstanceModel(providers, ProviderInstanceId.make("claudeAgent"))).toBe(
       "claude-opus-4-8",
+    );
+  });
+
+  // "default" defers to Pi's own configured model, which need not be the linked server's.
+  it("gives a local instance a model its server serves, not the harness default", () => {
+    const pi = (instanceId: string, inference?: "local") => ({
+      ...provider({
+        provider: ProviderDriverKind.make("pi"),
+        instanceId,
+        models: [model("default"), model("t3-mlx/qwen-0.5b"), model("t3-mlx/qwen3-4b")],
+      }),
+      ...(inference ? { inference } : {}),
+    });
+    const providers = [pi("pi-mlx", "local"), pi("pi")];
+
+    expect(getDefaultProviderInstanceModel(providers, ProviderInstanceId.make("pi-mlx"))).toBe(
+      "t3-mlx/qwen-0.5b",
+    );
+    expect(getDefaultProviderInstanceModel(providers, ProviderInstanceId.make("pi"))).toBe(
+      "default",
+    );
+  });
+
+  it("gives a linked instance its server's model, not the harness's cloud default", () => {
+    const mlx = InferenceServerId.make("mlx-studio");
+    const linked = (instanceId: string, driver: string, models: ServerProvider["models"]) => ({
+      ...provider({ provider: ProviderDriverKind.make(driver), instanceId, models }),
+      inference: "local" as const,
+      inferenceServerId: mlx,
+    });
+    const providers = [
+      linked("opencode-mlx", "opencode", [
+        model("opencode/beam-free", false, true),
+        model("t3-mlx-studio/qwen3-4b"),
+      ]),
+      linked("codex-mlx", "codex", [model("default", false, true), model("qwen3-4b")]),
+    ];
+
+    expect(
+      getDefaultProviderInstanceModel(providers, ProviderInstanceId.make("opencode-mlx")),
+    ).toBe("t3-mlx-studio/qwen3-4b");
+    // Codex reaches its linked server under the server's bare model ids.
+    expect(getDefaultProviderInstanceModel(providers, ProviderInstanceId.make("codex-mlx"))).toBe(
+      "qwen3-4b",
     );
   });
 });

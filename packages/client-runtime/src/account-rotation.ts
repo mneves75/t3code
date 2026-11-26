@@ -13,15 +13,26 @@ import {
   type ServerSettings,
 } from "@t3tools/contracts";
 import type { ResolvedProjectSettings } from "@t3tools/shared/projectSettings";
-import {
-  antigravityWindowLimitsModel,
-  type resolveNewThreadModelSelection,
-} from "@t3tools/shared/usageLimits";
+import type { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
 
 import type { EnvironmentThreadShell } from "./state/models.ts";
 
 const CLAUDE_SCOPED_WINDOW_PREFIX = "seven_day_";
 const CURSOR_AUTO_MODEL_PATTERN = /^(auto|default|grok|composer)/;
+
+function antigravityQuotaFamily(id: string) {
+  if (!id.startsWith("gemini")) return "shared";
+  return id.includes("argon") ? "argon" : id.includes("carbon") ? "carbon" : "gemini";
+}
+
+function antigravityWindowLimitsModel(
+  window: Pick<ServerProviderUsageWindow, "id">,
+  model: string | null,
+): boolean {
+  const base = model?.slice(model.lastIndexOf("/") + 1);
+  if (base === undefined || !/^(gemini|claude|gpt)/.test(base)) return true;
+  return antigravityQuotaFamily(window.id) === antigravityQuotaFamily(base);
+}
 
 const scopeToken = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "_");
 

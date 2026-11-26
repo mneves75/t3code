@@ -1,8 +1,8 @@
 import { enableCliCompileCache } from "./cliCompileCache.ts";
 
 // Packaged builds load this graph with require(esm): top-level await anywhere in it breaks them.
-// ACP agents spawn `acp-mcp-bridge` per session and `acp-mcp-call` per tool call, so those fast
-// paths dispatch before the full CLI module graph (seconds of evaluation) loads.
+// ACP agents spawn `acp-mcp-bridge` per session and `acp-mcp-call` per tool call, and NoName
+// threads spawn `noname-acp`, so those fast paths dispatch before the full CLI module graph (seconds of evaluation) loads.
 export async function runCliCommand() {
   const command = process.argv[2];
   // Install the socket guard before importing code that can open outbound connections.
@@ -25,6 +25,9 @@ export async function runCliCommand() {
   } else if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
     const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
     await runAcpMcpCliFastPath(command, process.argv.slice(3));
+  } else if (command === "noname-acp") {
+    const { runNoNameAcpBridgeCli } = await import("@t3tools/provider-noname/bridge");
+    runNoNameAcpBridgeCli();
   } else if (command === "__speech-worker") {
     const mode = process.argv[3];
     if (mode !== "discover" && mode !== "model") throw new Error("Unknown speech worker mode.");

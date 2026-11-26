@@ -107,6 +107,7 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { isMacPlatform } from "~/lib/utils";
 import { readLocalApi } from "../localApi";
 import { configuredHostedAppUrl } from "../hostedPairing";
+import { shortProjectNames } from "./sidebar/projectShortNames";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { SidebarFolderDrop } from "./sidebar/SidebarFolderDrop";
 import {
@@ -135,6 +136,7 @@ import { useOrderWhileOpen } from "../hooks/useOrderWhileOpen";
 import { useProjectPin } from "../hooks/useProjectGroupUpdate";
 import { useSidebarProjectGroups } from "../hooks/useSidebarProjectGroups";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
+import { openAddProjectDialog } from "./AddProjectDialog";
 import { registerSettleAndAdvance } from "../settleAndAdvance";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
@@ -159,8 +161,10 @@ import { environmentPresentations } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
+import { trainingEnvironment } from "../state/training";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/olderSettledShelf";
 import { useThreadSearch } from "../state/queries";
+import { useAtomCommand } from "../state/use-atom-command";
 import { threadTriagePermitted, useOrchestrationCommand } from "../state/use-orchestration-command";
 import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -343,7 +347,7 @@ const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Ma
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
 const EMPTY_DRAFT_IDS: readonly DraftId[] = [];
 
-const SETTLED_TAIL_INITIAL_COUNT = 10;
+const SETTLED_TAIL_INITIAL_COUNT = 5;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
@@ -845,6 +849,17 @@ function useSidebarLookups() {
       ),
     ),
   );
+  const shortNames = shortProjectNames(projectGroups.map((group) => group.displayName));
+  const projectShortNameByKey = new Map(
+    projectGroups.flatMap((group) => {
+      const short = shortNames.get(group.displayName);
+      return short === undefined
+        ? []
+        : group.memberProjects.map(
+            (project) => [`${project.environmentId}:${project.id}`, short] as const,
+          );
+    }),
+  );
   const projectGroupByScopeKey = new Map(
     projectGroups.map((project) => [project.projectKey, project] as const),
   );
@@ -864,6 +879,7 @@ function useSidebarLookups() {
     providerEntriesByEnvironment,
     projectByKey,
     projectDisplayNameByKey,
+    projectShortNameByKey,
     projectGroupByScopeKey,
     projectScopeItems,
   };
@@ -937,6 +953,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     providerEntriesByEnvironment,
     projectByKey,
     projectDisplayNameByKey,
+    projectShortNameByKey,
     projectGroupByScopeKey,
     projectScopeItems: lookupProjectScopeItems,
   } = useSidebarLookups();
@@ -968,6 +985,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     reportFailure: false,
   });
   const regenerateThreadTitle = useOrchestrationCommand(threadEnvironment.regenerateTitle, {
+    reportFailure: false,
+  });
+  const setCuratedThread = useAtomCommand(trainingEnvironment.setCuratedThread, {
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
@@ -1087,7 +1107,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   } | null>(null);
   const snoozingThreadKeysRef = useRef(new Set<string>());
   const removeFromSelection = useThreadSelectionStore((s) => s.removeFromSelection);
-  const openAddProjectCommandPalette = () => openCommandPalette({ open: "add-project" });
   const routeThreadRef = resolveActiveThreadRouteRef(
     routeTarget,
     routeDraftThread,
@@ -1388,6 +1407,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     keepEmptyFolders: (group) =>
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
+  // One agent behind every card says nothing per row; it shows once threads use different ones.
+  const cardProviderInstances = new Set(
+    [...pinnedKeys, ...activeKeys, ...visibleWorkingThreads.map(threadShellKey)].flatMap((key) => {
+      const thread = threadByKey.get(key);
+      return thread === undefined
+        ? []
+        : [thread.runtime?.providerInstanceId ?? thread.modelSelection.instanceId];
+    }),
+  );
+  const showCardProviderIcons = cardProviderInstances.size > 1;
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -2745,6 +2774,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+              canCurateForTraining: appAtomRegistry.get(
+                trainingEnvironment.setCuratedThread.permissionAtom(threadRef.environmentId),
+              ),
+              isInTrainingDataset: appAtomRegistry
+                .get(trainingEnvironment.curatedThreadIdsAtom(threadRef.environmentId))
+                .has(threadRef.threadId),
               canRename: !fromSearch,
               supports: {
                 settlement: configLoaded,
@@ -2831,6 +2866,35 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           case "unpin":
             attemptUnpin(threadRef);
             return;
+          case "add-to-training-dataset":
+          case "remove-from-training-dataset": {
+            const curated = clicked.value === "add-to-training-dataset";
+            const result = await setCuratedThread({
+              environmentId: threadRef.environmentId,
+              input: { threadId: threadRef.threadId, curated },
+            });
+            if (result._tag === "Success") {
+              toastManager.add({
+                type: "success",
+                title: curated
+                  ? gt("Added to training dataset")
+                  : gt("Removed from training dataset"),
+                description: thread.title,
+              });
+            } else if (!isAtomCommandInterrupted(result)) {
+              const error = squashAtomCommandFailure(result);
+              toastManager.add(
+                stackedThreadToast({
+                  type: "error",
+                  title: curated
+                    ? gt("Failed to add thread to training dataset")
+                    : gt("Failed to remove thread from training dataset"),
+                  description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+                }),
+              );
+            }
+            return;
+          }
           case "turn-into-project": {
             const result = await turnThreadIntoProject(threadRef);
             if (result._tag === "Success") {
@@ -3117,7 +3181,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     if (!item) return;
                     if (item.value === ADD_PROJECT_SCOPE_ITEM_VALUE) {
                       dispatchProjectScopeMenu({ type: "open-changed", open: false });
-                      openAddProjectCommandPalette();
+                      openAddProjectDialog();
                     } else if (item.value === "all") {
                       setProjectScopeKeys([]);
                     } else if (
@@ -3315,6 +3379,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   </ComboboxPopup>
                 </Combobox>
               }
+              onNewProject={openAddProjectDialog}
               onNewThread={handleNewThreadClick}
               newThreadDisabled={projects.length === 0}
               newThreadShortcutLabel={newThreadShortcutLabel}
@@ -3436,7 +3501,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   </span>
                   <button
                     type="button"
-                    onClick={openAddProjectCommandPalette}
+                    onClick={openAddProjectDialog}
                     className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
@@ -3581,6 +3646,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               `${thread.environmentId}:${thread.projectId}`,
                             ) ?? null
                           }
+                          projectShortName={
+                            projectShortNameByKey.get(
+                              `${thread.environmentId}:${thread.projectId}`,
+                            ) ?? null
+                          }
+                          showProviderIcon={showCardProviderIcons}
                           providerEntryByInstanceId={
                             providerEntriesByEnvironment.get(thread.environmentId) ??
                             EMPTY_PROVIDER_ENTRIES
@@ -3734,6 +3805,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               )}
                               label={gt("Settled", { $context: "sidebar section" })}
                               count={settledCount}
+                              description={
+                                settledShelfExpanded && settledCount > 0
+                                  ? gt("Settled by you or when idle.")
+                                  : undefined
+                              }
                               dragging={from !== null}
                               isDropTarget={dragTargetSection === "settled"}
                               toggle={{

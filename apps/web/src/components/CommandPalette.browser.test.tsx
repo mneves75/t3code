@@ -1,5 +1,12 @@
 import { threadKey } from "@t3tools/client-runtime/state/entities";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  RunId,
+  ThreadId,
+  type AuthEnvironmentScope,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -44,12 +51,47 @@ vi.mock("../hooks/useHandleNewThread", async (original) => {
     }),
   };
 });
-vi.mock("../state/entities", async (original) => ({
-  ...(await original<typeof import("../state/entities")>()),
-  useProjects: () => entities.projects,
-  useVisibleThreadShells: () => entities.threads,
-  useDelegatedUnderParent: () => entities.delegatedUnderParent,
-}));
+vi.mock("../state/entities", async (original) => {
+  const actual = await original<typeof import("../state/entities")>();
+  return {
+    ...actual,
+    useProjects: () => entities.projects,
+    useVisibleThreadShells: () => entities.threads,
+    useDelegatedUnderParent: () => entities.delegatedUnderParent,
+    readThreadShell: (ref: ScopedThreadRef) =>
+      entities.activeThread?.environmentId === ref.environmentId &&
+      entities.activeThread.id === ref.threadId
+        ? entities.activeThread
+        : actual.readThreadShell(ref),
+  };
+});
+// A connected session would carry the operate grant that thread actions and curation check.
+vi.mock("../state/session", async (original) => {
+  const actual = await original<typeof import("../state/session")>();
+  const { AuthOrchestrationOperateScope } = await import("@t3tools/contracts");
+  return {
+    ...actual,
+    readEnvironmentScope: (environmentId: EnvironmentId, scope: AuthEnvironmentScope) =>
+      scope === AuthOrchestrationOperateScope || actual.readEnvironmentScope(environmentId, scope),
+  };
+});
+vi.mock("../state/training", async (original) => {
+  const actual = await original<typeof import("../state/training")>();
+  const { Atom } = await import("effect/reactivity");
+  const allowed = Atom.make(true);
+  const noneCurated = Atom.make<ReadonlySet<ThreadId>>(new Set<ThreadId>());
+  return {
+    ...actual,
+    trainingEnvironment: {
+      ...actual.trainingEnvironment,
+      setCuratedThread: {
+        ...actual.trainingEnvironment.setCuratedThread,
+        permissionAtom: () => allowed,
+      },
+      curatedThreadIdsAtom: () => noneCurated,
+    },
+  };
+});
 
 function setup(state: Partial<typeof entities> = {}) {
   // Earlier browser test files share this origin's localStorage; a remembered project
@@ -288,6 +330,33 @@ describe("CommandPalette open intents", () => {
         projectId: open.id,
       }),
     );
+  });
+
+  it("offers one training dataset row, with its icon, for a curatable thread with a completed run", async () => {
+    setup({
+      activeThread: makeThreadFixture({
+        environmentId: EnvironmentId.make("local"),
+        title: "Curate me",
+        latestRun: {
+          runId: RunId.make("run-1"),
+          status: "completed",
+          requestedAt: "2026-03-09T10:00:00.000Z",
+          startedAt: "2026-03-09T10:00:00.000Z",
+          completedAt: "2026-03-09T10:05:00.000Z",
+          assistantMessageId: null,
+        },
+      }),
+    });
+    await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
+
+    openCommandPalette({ query: "training dataset" });
+    const row = page.getByRole("option", { name: /Add to training dataset/ });
+    await expect.element(row).toBeVisible();
+
+    expect(
+      page.getByRole("option", { name: /^(Add|Remove)\b.* training dataset/ }).elements(),
+    ).toHaveLength(1);
+    expect(row.element().querySelector("svg.lucide-sliders-horizontal")).not.toBeNull();
   });
 
   it("numbers filtered New thread in... rows from 1 and jumps to them", async () => {

@@ -3,7 +3,7 @@ import { splitsSurrogatePair } from "@t3tools/shared/assistantCitations";
 import { T, useGT, Var } from "gt-react";
 import { PlusIcon, SearchIcon } from "lucide-react";
 
-import { openCommandPalette } from "../../commandPaletteBus";
+import { openAddProjectDialog } from "../AddProjectDialog";
 import { Button } from "../ui/button";
 import { PullRequestListGhost } from "./PullRequestGhosts";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
@@ -86,7 +86,7 @@ export function PullRequestListEmptyState({
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Button size="sm" onClick={() => openCommandPalette({ open: "add-project" })}>
+          <Button size="sm" onClick={openAddProjectDialog}>
             <PlusIcon className="size-3.5" />
             <T>Add project</T>
           </Button>

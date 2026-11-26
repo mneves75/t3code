@@ -38,6 +38,8 @@ export interface RunSshCommandOptions extends SshAuthOptions {
   readonly preHostArgs?: ReadonlyArray<string>;
   readonly remoteCommandArgs?: ReadonlyArray<string>;
   readonly stdin?: string;
+  /** Streams this local file as stdin instead of `stdin`, for uploads too large to hold. */
+  readonly stdinFile?: string;
   readonly timeoutMs?: number;
   /** Keep the end of long failed-command stdout, where the final cause usually is. */
   readonly keepErrorOutputTail?: boolean;
@@ -234,8 +236,9 @@ export function sshTargetLogFields(target: DesktopSshEnvironmentTarget) {
   };
 }
 
-function stdinStream(input: string | undefined) {
-  return input === undefined ? Stream.empty : Stream.make(encoder.encode(input));
+function stdinStream(fs: FileSystem.FileSystem, input: RunSshCommandOptions) {
+  if (input.stdinFile !== undefined) return fs.stream(input.stdinFile);
+  return input.stdin === undefined ? Stream.empty : Stream.make(encoder.encode(input.stdin));
 }
 
 const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(function* (
@@ -279,11 +282,12 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
     ...(input.remoteCommandArgs ?? []),
   ];
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+  const fs = yield* FileSystem.FileSystem;
   const sshCommand = yield* resolveSshCommand;
   yield* Effect.logDebug("ssh.command.start", {
     ...sshTargetLogFields(target),
     command: [sshCommand, ...args],
-    hasStdin: input.stdin !== undefined,
+    hasStdin: input.stdin !== undefined || input.stdinFile !== undefined,
     timeoutMs: input.timeoutMs ?? DEFAULT_SSH_COMMAND_TIMEOUT_MS,
   });
   const child = yield* spawner
@@ -293,7 +297,7 @@ const runSshCommandInScope = Effect.fn("ssh/command.runSshCommand.inScope")(func
         extendEnv: true,
         forceKillAfter: "1 second",
         stdin: {
-          stream: stdinStream(input.stdin),
+          stream: stdinStream(fs, input),
           endOnDone: true,
         },
       }),

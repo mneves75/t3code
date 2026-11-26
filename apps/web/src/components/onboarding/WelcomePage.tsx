@@ -99,6 +99,7 @@ import { useThreadRunningTerminalIds } from "../../state/terminalSessions";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { getProviderSummary } from "../settings/providerStatus";
 import { AddProviderInstanceDialog } from "../settings/AddProviderInstanceDialog";
+import { UseLocalModelDialog } from "../settings/UseLocalModelDialog";
 import { useDesktopCliCommand } from "../settings/CliCommandSettingsRow";
 import { CodexSetupSection } from "../settings/CodexSetupSection";
 import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
@@ -280,7 +281,7 @@ export function WelcomePage({
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
           <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              <T>Welcome to T3 Code</T>
+              <T>Welcome to mn3code</T>
             </h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
               <T>
@@ -467,6 +468,10 @@ function AgentsSection({
   const [addingProvider, setAddingProvider] = useState(false);
   const [codexSetupId, setCodexSetupId] = useState<ProviderInstanceId | null>(null);
   const [cliTerminalFor, setCliTerminalFor] = useState<ProviderInstanceId | null>(null);
+  const canDiscoverLocalModels = useAtomValue(
+    serverEnvironment.discoverInferenceServers.permissionAtom(environmentId),
+  );
+  const [localSetupOpen, setLocalSetupOpen] = useState(false);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the environment to refresh its provider list when the environment changes
   useEffect(() => {
@@ -656,6 +661,23 @@ function AgentsSection({
 
   return (
     <WelcomeSection title={gt("Agents")}>
+      {canDiscoverLocalModels ? (
+        <div className="flex min-h-9 items-center gap-3">
+          <span className="min-w-0 flex-1 text-sm text-muted-foreground">
+            <T>Run models on your own hardware. Cloud agents remain available.</T>
+          </span>
+          <Button size="xs" variant="outline" onClick={() => setLocalSetupOpen(true)}>
+            <T>Use a local model</T>
+          </Button>
+        </div>
+      ) : null}
+      {localSetupOpen ? (
+        <UseLocalModelDialog
+          environmentId={environmentId}
+          machineLabel={label}
+          onClose={() => setLocalSetupOpen(false)}
+        />
+      ) : null}
       {found.map((provider) => (
         <AgentRow
           key={provider.instanceId}

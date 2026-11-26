@@ -572,7 +572,13 @@ const makeAdapter = Effect.fnUntraced(function* (
       displayName: undefined,
       enabled: true,
       environment: [],
-      config: { enabled: true, binaryPath: "pi", launchArgs, customModels: [] },
+      config: {
+        enabled: true,
+        binaryPath: "pi",
+        launchArgs,
+        toolProfile: "auto",
+        customModels: [],
+      },
     }).pipe(
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.provideService(HostProcess.Environment, {}),
@@ -584,7 +590,13 @@ const makeAdapter = Effect.fnUntraced(function* (
   }
   return yield* makePiAdapterV2({
     instanceId: PI_INSTANCE_ID,
-    settings: { enabled: true, binaryPath: "pi", launchArgs, customModels: [] },
+    settings: {
+      enabled: true,
+      binaryPath: "pi",
+      launchArgs,
+      toolProfile: "auto",
+      customModels: [],
+    },
     environment: {},
   }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 });
@@ -1104,6 +1116,38 @@ describe("PiAdapterV2", () => {
     Effect.gen(function* () {
       const { runtime } = yield* openRuntime(yield* makeFakePi);
       assert.isTrue(runtime.backgroundTasksEndWithProcess);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+  // Pi learns a linked server's models only at launch, so a model it started serving since then
+  // reaches Pi only through a fresh process.
+  it.effect("restarts a linked session to change its model", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const settings = {
+        enabled: true,
+        binaryPath: "pi",
+        launchArgs: "",
+        toolProfile: "auto",
+        customModels: [],
+      } as const;
+      const plan = Effect.fnUntraced(function* (linked: boolean, targetModel: string) {
+        const adapter = yield* makePiAdapterV2({
+          instanceId: PI_INSTANCE_ID,
+          settings,
+          environment: {},
+          linkedToInferenceServer: linked,
+        }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, fake.spawner));
+        const current = { instanceId: PI_INSTANCE_ID, model: "t3-lab/gemma" };
+        return yield* adapter.planSelectionTransition({
+          current,
+          target: { ...current, model: targetModel },
+          sessionCapabilities: yield* adapter.getCapabilities(),
+        });
+      });
+      assert.deepEqual(yield* plan(true, "t3-lab/gemma-q4"), { type: "restart_session" });
+      assert.deepEqual(yield* plan(true, "t3-lab/gemma"), { type: "apply_on_next_turn" });
+      assert.deepEqual(yield* plan(false, "openai/gpt-6"), { type: "apply_on_next_turn" });
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 

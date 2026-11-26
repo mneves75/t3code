@@ -24,6 +24,7 @@ import {
 } from "@t3tools/shared/model";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
 import { resolveProvidersForCwd } from "@t3tools/client-runtime/providerSkills";
+import { localDefaultCandidates } from "@t3tools/shared/serverSettings";
 
 /** The contracts `disallowedProviderMessage` English, as translatable sentences. */
 function disallowedProviderText(organization: string | undefined, label: string): string {
@@ -52,6 +53,8 @@ export type ModelOption = {
     readonly showBadge: boolean;
   };
   readonly isDefault: boolean;
+  /** New work may default to it; a local instance's harness aliases and cloud models may not. */
+  readonly canStartByDefault?: true;
   readonly isLegacy: boolean;
   readonly isUnavailable?: boolean;
   readonly isHidden?: boolean;
@@ -299,13 +302,15 @@ export function resolveNewTaskModelSelection(input: {
   readonly stickySelection: ModelSelection | null;
   readonly modelOptions: ReadonlyArray<ModelOption>;
 }): ModelSelection | null {
+  const explicit = input.draftSelection ?? input.projectDefaultSelection ?? input.stickySelection;
+  if (explicit) return explicit;
+  const available = input.modelOptions.filter((option) => !option.isUnavailable);
+  const preferred = available.find((option) => option.isDefault) ?? available[0];
+  const candidates = available.filter(
+    (option) => option.providerKey === preferred?.providerKey && option.canStartByDefault,
+  );
   return (
-    input.draftSelection ??
-    input.projectDefaultSelection ??
-    input.stickySelection ??
-    input.modelOptions.find((option) => option.isDefault && !option.isUnavailable)?.selection ??
-    input.modelOptions.find((option) => !option.isUnavailable)?.selection ??
-    null
+    (candidates.find((option) => option.isDefault) ?? candidates[0] ?? preferred)?.selection ?? null
   );
 }
 
@@ -414,6 +419,7 @@ export function buildModelOptions(
     );
     if (order.size > 0)
       models.sort((a, b) => (order.get(a.slug) ?? Infinity) - (order.get(b.slug) ?? Infinity));
+    const defaultCandidates = new Set(localDefaultCandidates(provider, models));
     for (const model of models) {
       const key = `${provider.instanceId}:${model.slug}`;
       const shortName = resolveModelShortName(model, provider.driver);
@@ -433,6 +439,7 @@ export function buildModelOptions(
         isHidden: !model.isCustom && hiddenModels.has(model.slug),
         canHide: !model.isCustom,
         isDefault: model.isDefault === true,
+        ...(defaultCandidates.has(model) ? { canStartByDefault: true } : {}),
         isLegacy: model.isLegacy === true,
         ...(updateRequired ? { providerUpdateRequired: updateRequired } : {}),
         ...(provider.subProviders?.length ? { providerSubProviders: provider.subProviders } : {}),

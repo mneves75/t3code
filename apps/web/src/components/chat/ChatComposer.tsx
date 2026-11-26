@@ -1,5 +1,7 @@
 import { copySnapshot } from "./copySnapshot";
 import { VoiceInputSetup } from "./VoiceInputSetup";
+import { useInferenceOutageBannerItem } from "./useInferenceOutageBannerItem";
+import { useInferenceStopBannerItem } from "./useInferenceStopBannerItem";
 import { useComposerTypingGuard } from "./useComposerTypingGuard";
 import { insertAttachmentReferencesForDraft } from "./composerAttachmentReferences";
 import type { ComposerAttachmentInsertion } from "../composerAttachmentInsertion";
@@ -2905,43 +2907,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         },
       ]
     : [];
-  const bannerItems: readonly ComposerBannerStackItem[] =
-    runtimeModeCeilingDenial === undefined || activePendingProgress
-      ? [...props.bannerItems, ...replyBannerItems]
-      : [
-          ...props.bannerItems,
-          ...replyBannerItems,
-          {
-            id: "managed-runtime-mode",
-            variant: "warning",
-            icon: <BuildingIcon />,
-            title: runtimeModeCeilingDenial,
-            ...(runtimeModeCeilingFallback === undefined
-              ? {}
-              : {
-                  actions: (
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      onClick={() => handleRuntimeModeChange(runtimeModeCeilingFallback)}
-                    >
-                      <T>
-                        Switch to{" "}
-                        <Var>{m(runtimeModeConfig[runtimeModeCeilingFallback].label)}</Var>
-                      </T>
-                    </Button>
-                  ),
-                }),
-          },
-        ];
-  const shelfItems = hasBlockingComposerTopDrawer
-    ? bannerItems.filter(
-        (item) =>
-          item.id === HELD_COMPOSER_SEND_BANNER_ID ||
-          (item.group === "environment" &&
-            (item.variant === "error" || item.variant === "warning")),
-      )
-    : bannerItems;
 
   const insertComposerText = (
     text: string,
@@ -3061,6 +3026,66 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return inserted;
   };
   const insertComposerTextAtEndStable = useStableCallback(insertComposerTextAtEnd);
+
+  const inferenceOutageItem = useInferenceOutageBannerItem(
+    environmentId,
+    selectedProviderStatus,
+    selectedModel,
+    composerImages.length > 0,
+    () => setIsComposerModelPickerOpen(true),
+  );
+  const inferenceStopItem = useInferenceStopBannerItem(
+    environmentId,
+    activeThread?.id,
+    activeThread?.latestRun,
+    () => {
+      insertComposerTextAtEndStable("Continue");
+      focusComposer();
+    },
+    () => setIsComposerModelPickerOpen(true),
+  );
+  const baseBannerItems = [
+    ...props.bannerItems,
+    ...replyBannerItems,
+    ...(inferenceOutageItem === null ? [] : [inferenceOutageItem]),
+    ...(inferenceStopItem === null ? [] : [inferenceStopItem]),
+  ];
+  const bannerItems: readonly ComposerBannerStackItem[] =
+    runtimeModeCeilingDenial === undefined || activePendingProgress
+      ? baseBannerItems
+      : [
+          ...baseBannerItems,
+          {
+            id: "managed-runtime-mode",
+            variant: "warning",
+            icon: <BuildingIcon />,
+            title: runtimeModeCeilingDenial,
+            ...(runtimeModeCeilingFallback === undefined
+              ? {}
+              : {
+                  actions: (
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => handleRuntimeModeChange(runtimeModeCeilingFallback)}
+                    >
+                      <T>
+                        Switch to{" "}
+                        <Var>{m(runtimeModeConfig[runtimeModeCeilingFallback].label)}</Var>
+                      </T>
+                    </Button>
+                  ),
+                }),
+          },
+        ];
+  const shelfItems = hasBlockingComposerTopDrawer
+    ? bannerItems.filter(
+        (item) =>
+          item.id === HELD_COMPOSER_SEND_BANNER_ID ||
+          (item.group === "environment" &&
+            (item.variant === "error" || item.variant === "warning")),
+      )
+    : bannerItems;
 
   const insertComposerFolders = async (
     folders: File[],

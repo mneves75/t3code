@@ -139,6 +139,17 @@ import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegi
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderUsageLimitsIngestion from "./provider/ProviderUsageLimitsIngestion.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
+import * as InferenceAdmission from "./inference/InferenceAdmission.ts";
+import * as InferenceGateway from "./inference/InferenceGateway.ts";
+import * as InferenceRouting from "./inference/InferenceRouting.ts";
+import * as InferenceGatewayAccess from "./inference/InferenceGatewayAccess.ts";
+import * as InferenceDiscovery from "./inference/InferenceDiscovery.ts";
+import * as InferenceImageChecks from "./inference/InferenceImageChecks.ts";
+import * as InferenceImageVerdicts from "./inference/InferenceImageVerdicts.ts";
+import * as InferenceStops from "./inference/InferenceStops.ts";
+import * as InferenceServerRegistry from "./inference/InferenceServerRegistry.ts";
+import * as InferenceRequests from "./persistence/InferenceRequests.ts";
+import { TrainingLayer } from "./training/index.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "./project/T3ProjectFileLoader.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -734,6 +745,18 @@ const layerServerRestart = Layer.effect(
   }),
 );
 
+// Below provider hydration and TrainingLayer: Pi/OpenCode/Codex and training share the same
+// gateway access, registry, and admission instance via layer memoization.
+const layerInferenceBase = InferenceAdmission.layer.pipe(
+  Layer.provideMerge(
+    InferenceGatewayAccess.layer.pipe(
+      Layer.provideMerge(InferenceServerRegistry.layer),
+      Layer.provideMerge(InferenceImageVerdicts.layer),
+    ),
+  ),
+  Layer.provideMerge(InferenceDiscovery.layer),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   AgentAwarenessRelay.layer,
   ProviderHostPathWatcher.layer.pipe(Layer.provide(layerDesktopTelemetryReceiver)),
@@ -784,46 +807,60 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderInstallation.layer,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
-).pipe(
-  Layer.provideMerge(layerOrchestrationApplication),
-  // One hub, which the feeders above and the workflow store inside the runtime publish to.
-  Layer.provideMerge(MilestoneHub.layer),
-  Layer.provideMerge(Layer.merge(layerTaskFolders, LayoutCommandApprovalWrites.layer)),
-  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
-  Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
-  Layer.provideMerge(SecretCheck.layer),
-  Layer.provideMerge(SecretResolver.layer),
-  // Above the settings it writes when a theme is applied.
-  Layer.provideMerge(EnvironmentTheme.layer),
-  Layer.provideMerge(layerServerSettings),
-  Layer.provideMerge(layerSourceControlProviderRegistry),
-  Layer.provideMerge(layerGit),
-  Layer.provideMerge(layerVcs),
-  Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
-  Layer.provideMerge(layerPersistence),
-  Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
-  Layer.provideMerge(ProviderRegistry.layer),
-  Layer.provideMerge(
-    ProviderInstanceRegistryHydration.layer.pipe(
-      Layer.provide(SqlitePersistence.layerConfig),
-      Layer.provide(layerNativeTelemetry),
-    ),
-  ),
-  // One gate for the server, below hydration so the Claude adapter sees it: layers memoize by
-  // reference, so the runtime layer shares it.
-  Layer.provideMerge(ProviderInstallationGate.layer),
-  // Provider hydration builds the Claude runner, which reports agents to the same scanner the
-  // terminal and preview layers share.
-  Layer.provideMerge(layerPortScanner),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      AntigravityInstallation.AntigravityInstallation.layer.pipe(
-        Layer.provide(layerServerSettings),
+)
+  .pipe(
+    Layer.provideMerge(layerOrchestrationApplication),
+    // One hub, which the feeders above and the workflow store inside the runtime publish to.
+    Layer.provideMerge(MilestoneHub.layer),
+    Layer.provideMerge(Layer.merge(layerTaskFolders, LayoutCommandApprovalWrites.layer)),
+    Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
+    Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
+    Layer.provideMerge(SecretCheck.layer),
+    Layer.provideMerge(SecretResolver.layer),
+    // Above the settings it writes when a theme is applied.
+    Layer.provideMerge(EnvironmentTheme.layer),
+    Layer.provideMerge(layerServerSettings),
+    Layer.provideMerge(layerSourceControlProviderRegistry),
+    Layer.provideMerge(layerGit),
+    Layer.provideMerge(layerVcs),
+    Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice)),
+    Layer.provideMerge(layerPersistence),
+  )
+  .pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        Keybindings.layer,
+        UsageLimitSources.layer,
+        InferenceRequests.layer,
+        InferenceStops.layer,
+        InferenceImageChecks.layer,
+        InferenceGatewayAccess.layerRefreshLinkedInstances,
+        TrainingLayer,
       ),
-      CodexInstallation.CodexInstallation.layer,
     ),
-  ),
-);
+    Layer.provideMerge(ProviderRegistry.layer),
+    Layer.provideMerge(
+      ProviderInstanceRegistryHydration.layer.pipe(
+        Layer.provide(SqlitePersistence.layerConfig),
+        Layer.provide(layerNativeTelemetry),
+      ),
+    ),
+    Layer.provideMerge(layerInferenceBase),
+    // One gate for the server, below hydration so the Claude adapter sees it: layers memoize by
+    // reference, so the runtime layer shares it.
+    Layer.provideMerge(ProviderInstallationGate.layer),
+    // Provider hydration builds the Claude runner, which reports agents to the same scanner the
+    // terminal and preview layers share.
+    Layer.provideMerge(layerPortScanner),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        AntigravityInstallation.AntigravityInstallation.layer.pipe(
+          Layer.provide(layerServerSettings),
+        ),
+        CodexInstallation.CodexInstallation.layer,
+      ),
+    ),
+  );
 
 const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerPtyAdapter),
@@ -932,6 +969,10 @@ const layerMakeRoutes = Layer.mergeAll(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
     Layer.provide(McpOAuth.layerMcpClientAuthenticator),
     Layer.provide(ProjectionStoreV2.layer),
+  ),
+  InferenceGateway.routeLayer.pipe(
+    Layer.provide(InferenceGateway.layer),
+    Layer.provide(Layer.mergeAll(InferenceAdmission.layer, InferenceRouting.layer)),
   ),
   // Follows delegated tasks running in linked environments, including after a restart.
   Layer.effectDiscard(

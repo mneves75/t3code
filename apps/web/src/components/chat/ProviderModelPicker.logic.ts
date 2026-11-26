@@ -16,3 +16,10 @@ export function retainedModelWhileProviderLocked(
   if (entry.driverKind === "opencode" || entry.driverKind === "antigravity") return undefined;
   return entry.models.find((candidate) => candidate.slug === model) ?? { slug: model, name: model };
 }
+
+/** A managed model's name ends with its server's name, as "qwen3 (MLX)"; that ending, or null. */
+export function serverSuffixOf(modelName: string, serverName: string | undefined): string | null {
+  if (!serverName) return null;
+  const suffix = ` (${serverName})`;
+  return modelName.length > suffix.length && modelName.endsWith(suffix) ? suffix : null;
+}

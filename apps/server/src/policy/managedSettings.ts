@@ -110,16 +110,24 @@ const jsonEqual = (left: unknown, right: unknown): boolean => {
   );
 };
 
+/** Training host paths that decide what binaries execute or where host data writes go under a runtime ceiling. */
+const RUNTIME_CEILING_LOCKED_PATHS: ReadonlyArray<string> = [
+  "training.mlxBinDir",
+  "training.storageDir",
+];
+
 /**
  * Whether `value` agrees with a lock on every key it holds. Patches and project overrides carry
  * only some of a locked object's keys, such as `{ enabled }` for a provider instance.
  */
 const matchesLock = (value: unknown, lock: unknown): boolean =>
-  isRecord(value) && isRecord(lock)
-    ? Object.entries(value).every(
-        ([key, child]) => child === undefined || matchesLock(child, lock[key]),
-      )
-    : jsonEqual(value, lock);
+  lock === undefined
+    ? value === undefined || value === null || value === ""
+    : isRecord(value) && isRecord(lock)
+      ? Object.entries(value).every(
+          ([key, child]) => child === undefined || matchesLock(child, lock[key]),
+        )
+      : jsonEqual(value, lock);
 
 /** Whether `value` holds a key `existing` does not, at any depth. */
 const addsKeys = (existing: unknown, value: unknown): boolean =>
@@ -411,24 +419,36 @@ export function makeManagedSettings(
     (tree, entry) => setPath(tree, entry.segments, entry.value),
     {},
   );
-  const lockEntries: ReadonlyArray<Lock> = locks.map((entry) => ({
+  const explicitLockEntries: ReadonlyArray<Lock> = locks.map((entry) => ({
     ...entry,
     decodedValue: getPath(decoded.value, entry.segments),
   }));
-  const lockedPaths = locks.map((entry) => entry.path);
+  const ceilingLocks: ReadonlyArray<Lock> =
+    maxRuntimeMode === undefined
+      ? []
+      : RUNTIME_CEILING_LOCKED_PATHS.filter(
+          (path) => !locks.some((entry) => entry.path === path || entry.path === "training"),
+        ).map((path) => ({
+          path,
+          segments: path.split("."),
+          value: undefined,
+          decodedValue: undefined,
+        }));
+  const lockEntries: ReadonlyArray<Lock> = [...explicitLockEntries, ...ceilingLocks];
+  const lockedPaths = lockEntries.map((entry) => entry.path);
   const idleCompactionLocked = lockedPaths.includes("idleCompaction");
   const lockCache = new WeakMap<ServerSettings, ServerSettings>();
 
   const applyLocks = (current: ServerSettings): ServerSettings => {
-    if (locks.length === 0 && maxRuntimeMode === undefined) return current;
+    if (lockEntries.length === 0 && maxRuntimeMode === undefined) return current;
     const cached = lockCache.get(current);
     if (cached !== undefined) return cached;
     const locked =
-      locks.length === 0
+      lockEntries.length === 0
         ? current
         : // Validated against the built-in defaults above, so a failure here is a bug, not bad input.
           decodeSettings(
-            locks.reduce<unknown>(
+            lockEntries.reduce<unknown>(
               (tree, entry) =>
                 lockTargets(tree, entry).reduce<unknown>(
                   (next, target) => setPath(next, target, entry.value),
@@ -445,7 +465,7 @@ export function makeManagedSettings(
   };
 
   const vetWrite: ManagedSettings["vetWrite"] = (current, next, patch) => {
-    if (locks.length === 0) return { _tag: "Allowed", settings: next };
+    if (lockEntries.length === 0) return { _tag: "Allowed", settings: next };
     const before = encodeSettings(current);
     const after = encodeSettings(next);
     const changed = lockEntries.find(
@@ -467,7 +487,7 @@ export function makeManagedSettings(
         }),
     );
     if (changed !== undefined) return { _tag: "Locked", path: changed.path };
-    const kept = locks.reduce<unknown>(
+    const kept = lockEntries.reduce<unknown>(
       (tree, entry) =>
         lockTargets(tree, entry).reduce<unknown>((result, target) => {
           // A parent the write adds holds the locked value already; removing only the locked key

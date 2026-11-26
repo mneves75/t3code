@@ -17,6 +17,7 @@ import {
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
 } from "@t3tools/client-runtime/state/provider-instance-display";
+import { localDefaultCandidates } from "@t3tools/shared/serverSettings";
 
 export { normalizeProviderAccentColor, shouldShowInstanceBadge };
 
@@ -186,7 +187,7 @@ function applyProviderInstanceBranding(
   };
 }
 
-/** Picker order: each driver's default instance first, then its custom instances. */
+/** Picker order: local instances first, then each driver's default instance before its custom ones. */
 export function providerInstanceEntriesFor(
   providers: ReadonlyArray<ServerProvider>,
   settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
@@ -202,8 +203,10 @@ export function providerInstanceEntriesFor(
 function sortProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): ReadonlyArray<ProviderInstanceEntry> {
+  const local = entries.filter((entry) => entry.snapshot.inference === "local");
   const byKind = new Map<ProviderDriverKind, ProviderInstanceEntry[]>();
   for (const entry of entries) {
+    if (entry.snapshot.inference === "local") continue;
     const bucket = byKind.get(entry.driverKind);
     if (bucket) {
       bucket.push(entry);
@@ -211,7 +214,7 @@ function sortProviderInstanceEntries(
       byKind.set(entry.driverKind, [entry]);
     }
   }
-  const sorted: ProviderInstanceEntry[] = [];
+  const sorted: ProviderInstanceEntry[] = [...local];
   for (const bucket of byKind.values()) {
     const defaults = bucket.filter((entry) => entry.isDefault);
     const customs = bucket.filter((entry) => !entry.isDefault);
@@ -233,10 +236,11 @@ export function getDefaultProviderInstanceModel(
 ): string | undefined {
   const entry = getProviderInstanceEntry(providers, instanceId);
   if (!entry) return undefined;
+  const models = localDefaultCandidates(entry.snapshot, entry.models);
   return (
-    entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
-    entry.models.find((model) => !model.isCustom)?.slug ??
-    entry.models[0]?.slug ??
+    models.find((model) => model.isDefault && !model.isCustom)?.slug ??
+    models.find((model) => !model.isCustom)?.slug ??
+    models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[entry.driverKind]
   );
 }

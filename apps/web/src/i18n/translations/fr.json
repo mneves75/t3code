@@ -1,7 +1,4 @@
 {
-  "6c6e16b9488f8b91": "Faites défiler pour tout lire.",
-  "035aab5e99159bd8": "{count, plural, one {… {hidden} caractère au milieu n’est pas affiché.} other {… {hidden} caractères au milieu ne sont pas affichés.}} Le texte se termine par :",
-  "011b1ef726fa9928": "Faites défiler chaque partie pour la lire en entier.",
   "4bcfa3b976a421cf": "Discussion annexe",
   "23be753133ae6950": "Fil",
   "0001ae5846061bb6": "Fil sur {machine}",
@@ -32,6 +29,7 @@
   "986b0873f913a840": "La politique de {organization} n’autorise pas les tâches webhook.",
   "eebc538e25b09fe2": "La politique de {organization} n’autorise pas l’import des cookies du navigateur.",
   "7642a133db05f164": "La stratégie de {organization} n’autorise pas l’ouverture des serveurs locaux de cette machine sur d’autres appareils.",
+  "e0856d6a402ad821": "La politique de {organization} n’autorise pas les commandes de disposition des worktrees des projets.",
   "39f6771b49f9b3b6": "Utiliser la valeur par défaut",
   "45bb0e90e1c42046": "À votre retour",
   "d8fa0a55446bbb0d": "Avant l’expiration du cache (bêta)",
@@ -78,6 +76,7 @@
   "cd03eb1b84271c02": "Agent",
   "bfe1a60f3f9c60fb": "Tour {turn} · {what}",
   "dfdaa6255a416140": "Résumé de {turns, plural, one {{turns} tour récent} other {{turns} tours récents}}, {textTurns, plural, =0 {sans texte des messages} one {avec le texte des messages du dernier tour} other {avec le texte des messages des {textTurns} derniers tours}}{truncated, select, yes {, raccourci pour tenir dans la limite} other {}}",
+  "260c6b45f52d2f27": "Ajoute le texte de vos messages et des réponses de l'agent dans {textTurns, plural, one {le dernier tour} other {les {textTurns} derniers tours}}.",
   "afac52a5cc2dc801": "Impossible d'envoyer votre réponse. Réessayez.",
   "79d776428f4d0650": "Le fichier n’a pas pu être chargé. Reconnectez-vous et réessayez.",
   "3ea34cbb1ca5ba9b": "Aperçu annulé.",
@@ -411,6 +410,7 @@
   "834ca879c14c167b": "En cours",
   "582d6df7dfab86fb": "En pause",
   "ea6583ce92507ee3": "En veille",
+  "7150557773b3818b": "En file d’attente",
   "7ea8cb8af281ce93": "En attente",
   "1347868f2523140e": "Terminée",
   "57d76c4614054271": "Arrêtée",
@@ -422,6 +422,7 @@
   "d3890f4eb1508781": "Exécute ses propres étapes",
   "3e7ced10c9482af0": "{step} est en cours",
   "237e1bcb1cf1bdec": "En veille à {step}",
+  "efbeb3993ee2c3f5": "En attente de {pool}",
   "3f7b17ac5a20c8d2": "Exécute {run}",
   "0306f5f324b8aaa5": "{count} exécutions en cours",
   "e8fd779b84a202a2": "En attente",
@@ -693,6 +694,7 @@
   "56b4ff3993c93eca": "{host} a envoyé une configuration de serveur incompatible.",
   "368c4d4f99c66bfb": "Mettez à jour le client et le serveur vers des versions compatibles.",
   "e5fd422e445391fc": "Échec de l’envoi. Touchez pour réessayer.",
+  "13b14784f8707ddd": "0 octet",
   "b2bc6bd92ea24e5c": "{size} Mo",
   "88f84178edbb7f57": "{size} Ko",
   "5a78fd0a1d8e9945": "{count} Mo",
@@ -757,6 +759,13 @@
   "f0ab079175905bbb": "Commiter, pousser et créer {shortLabel}",
   "8360d689ebc7f829": "Pousser et créer {shortLabel} depuis la branche par défaut ?",
   "daa408bb99d21d18": "{kind, select, pr {Cette action va pousser les commits locaux et créer une PR sur « {branch} ». Vous pouvez continuer sur cette branche ou créer une branche de fonctionnalité et y lancer la même action.} mr {Cette action va pousser les commits locaux et créer une MR sur « {branch} ». Vous pouvez continuer sur cette branche ou créer une branche de fonctionnalité et y lancer la même action.} generic {Cette action va pousser les commits locaux et créer une demande de modification sur « {branch} ». Vous pouvez continuer sur cette branche ou créer une branche de fonctionnalité et y lancer la même action.} other {Cette action va pousser les commits locaux et créer {changeRequest} sur « {branch} ». Vous pouvez continuer sur cette branche ou créer une branche de fonctionnalité et y lancer la même action.}}",
+  "dde0ca2f9676db21": "Paused while fine-tuning is running ({serverName})",
+  "7e2bda501d689489": "Waiting for {serverName} · next",
+  "835dd6c4eb7be43e": "Waiting for {serverName} · {ahead} ahead",
+  "193a3561de6cc7eb": "It did not answer its last check.",
+  "2bd8bc98b614470a": "No prompt cache: every request reads its whole prompt",
+  "cd0f38ecbd7739d4": "Checked {ago}",
+  "b620195e2c196bd7": "Last request: {measures}",
   "8471c4c5a50ffde3": "Les tickets de cet hôte ne peuvent pas encore être consultés.",
   "2f4a47129f89fe22": "Non connecté. Ajoutez une clé d’API personnelle pour lister ses tickets.",
   "024baab60525a419": "L’identifiant enregistré a été refusé.",
@@ -1353,9 +1362,9 @@
   "a9b663922945a4fa": "Cette connexion ne peut pas ouvrir d’éditeur sur cet environnement.",
   "868596d482a1a2bd": "Ouvrir",
   "f58caaa68c09fbeb": "Ouvrir avec",
+  "75b6d7c3bc9c72da": "Impossible d’ouvrir dans {editor}",
   "415d9fed5542d278": "Impossible d’ouvrir le fichier",
   "1d1bbe5b700afe63": "Impossible d’afficher le fichier",
-  "75b6d7c3bc9c72da": "Impossible d’ouvrir dans {editor}",
   "31dc19d033af2774": "Impossible d’ouvrir le lien.",
   "029d8d0201aed231": "Impossible d’ouvrir les Réglages Système.",
   "9af3083226778d3c": "Open VSX a renvoyé des détails de thème mal formés.",
@@ -1531,10 +1540,12 @@
   "64e17b9414ed5dd4": "Expire dans {duration}",
   "85632ff85a7d923d": "Le fichier n’est pas disponible sur cet ordinateur.",
   "3d2036743bbda4c9": "Impossible de faire glisser le fichier",
-  "111a308f2cba6e4b": "Versions incompatibles. Essayez d’aligner le client et le serveur sur la même version de T3 Code.",
+  "a004e76e1a50f5ea": "Version mismatch. Try syncing the client and server to the same mn3code version.",
   "4eb599c7f36c99ba": "Ce fichier de thème n’est pas un JSON valide.",
   "29a5ff50ce55c4f9": "Thème VS Code",
   "10348092dfed8b11": "Ce thème VS Code n’a pas de couleur « editor.background » ; impossible d’en dériver une palette.",
+  "206811f6f441bfc7": "Ce projet prépare ses worktrees avec sa propre commande, que personne n’a approuvée telle qu’elle est écrite actuellement. Cette connexion ne peut pas l’approuver : approuvez-la depuis un client qui peut utiliser le terminal.",
+  "b8087c9a70c26da9": "Impossible d’approuver la commande de disposition des worktrees.",
   "6dff8d487001c6cf": "Adaptatif",
   "f5f61c338cc5aeb5": "Barre d’outils des appareils du navigateur",
   "3b4eb5b5ec5e60cb": "Préréglage d’appareil du navigateur",
@@ -1636,6 +1647,49 @@
   "a74f94bf4c3c6bfe": "Déconnecté ici, mais T3 Connect le liste toujours. Supprimez-le dans Compte.",
   "4ca203c6fe28afa6": "Connectez-vous à T3 Connect avant d’activer cette option.",
   "895d824b027d128e": "Cette connexion nécessite l’autorisation de configurer le relais pour configurer T3 Connect.",
+  "6627f5d804bac724": "This computer",
+  "df528ee8132af276": "SSH · {target} · not connected yet",
+  "8fa51c7942e9f6cf": "the new machine",
+  "445511757fcd365a": "Connexion…",
+  "421f27f0de1560c4": "Folder on {label}",
+  "569696e287894def": "This connection cannot browse folders.",
+  "548f9db69b69ff04": "Ajout…",
+  "d2ccdb8cd3297212": "Ajouter un projet",
+  "a39374bac1678fc2": "No folders inside.",
+  "4ff72c2acc7f6656": "Chargement…",
+  "d7987a2d9c920c5c": [
+    "Connecting to ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "…"
+  ],
+  "ffafa77b89f239dd": [
+    "The first time, this installs T3 Code on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". It can take a minute."
+  ],
+  "9db16884c1c9d324": "Retour",
+  "01059eb93804de5a": "Ajouter un projet",
+  "913723d280afa021": "Where is the project?",
+  "9b7ddab4be025c05": "Reading SSH hosts…",
+  "a7d679ebc6286235": "SSH hosts come from ~/.ssh/config. Picking one connects it.",
+  "04add1ea3b4a901a": "Clone or create new…",
+  "7e56c13a8609a4bb": [
+    "Add project on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "894168ff05b80df3": "Pick a folder. A missing folder is created.",
   "e4f274ef6c9c9a6c": "Choisissez un dossier sur l’autre machine.",
   "5aa50c97d1573919": "Impossible de lancer le clonage.",
   "1a31b5a1f4fe467f": "Cette machine",
@@ -1869,7 +1923,7 @@
   "963d099509eabcd6": "La session de l’agent va redémarrer",
   "71ed7c0da0b93c77": "Votre prochain message redémarre l’agent. Cette conversation est conservée.",
   "e4b61c891fed297e": "Aller au fichier",
-  "d2ccdb8cd3297212": "Ajouter un projet",
+  "2e353baebd669317": "Clone repository",
   "594bcbef04093f72": "Ouvrir un dossier WSL",
   "04fd71efaa2c3b92": "Ouvrir les pull requests",
   "57e875b79b98ab82": "Ouvrir les tickets",
@@ -1878,23 +1932,21 @@
   "a0cc19e60dd99851": "Ouvrir l’utilisation",
   "46694969044eee98": "Activer la zone de travail suivante",
   "0a1011328ba42eef": "Activer la zone de travail précédente",
+  "d02a0d93bc3f4630": "Use a local model",
+  "855967e9714bd84c": "Open Training settings",
+  "511ac0d19ec8cf86": "Start local fine-tuning job",
   "90896a7348c4e7ce": "Ouvrir les paramètres",
   "1d17dc60c59e0524": "Désépingler le projet",
   "5cfaaa20c460c328": "Épingler le projet",
   "24adf508b4c5d6b5": "Paramètres du projet",
-  "60e47b3da5901619": "Paramètres · {section}",
-  "0c659f9a193255dd": "Échec de l’ajout du projet",
-  "4b3fc098d5a08a66": "Les chemins de style Windows ne sont pris en charge que sous Windows.",
-  "2c2637dc1e236fb4": "Les chemins relatifs nécessitent un projet actif.",
-  "87f84b811a6aa0d1": "Échec du désarchivage du projet",
-  "e823121dffeff02d": "Échec de l’ouverture du projet",
-  "d235610ec49f6c81": "Impossible d’ajouter le projet",
-  "110790fd779efb2e": "Cette connexion ne peut pas ajouter de projets.",
   "f807845a21f3ed62": "Nom du dépôt incomplet",
   "7ff1a34a54fd254b": "Échec de la recherche du dépôt",
   "165e4907c2f1c99e": "Clonage indisponible",
   "8549371b7a372811": "Cette connexion a besoin d’une autorisation d’écriture sur la gestion de versions et d’ajout de projets.",
   "248bc04cf6af4c45": "Échec du clonage",
+  "4b3fc098d5a08a66": "Les chemins de style Windows ne sont pris en charge que sous Windows.",
+  "2c2637dc1e236fb4": "Les chemins relatifs nécessitent un projet actif.",
+  "e823121dffeff02d": "Échec de l’ouverture du projet",
   "85306df093b4c1e1": "Choisissez où cloner",
   "c6dcd4c1fe2dd224": "Ajouter un projet existant",
   "9d656a9e7b4c146c": "Ouvrir un dossier ou cloner un dépôt",
@@ -1916,6 +1968,7 @@
   "d48486319ee7841b": "Impossible d’ajouter le projet WSL",
   "c2de1f8ef4e99281": "Démarrez le backend WSL correspondant, puis choisissez à nouveau le dossier.",
   "823df676ca5a355b": "Choisissez un dossier dans l’environnement où le dépôt est cloné.",
+  "110790fd779efb2e": "Cette connexion ne peut pas ajouter de projets.",
   "d6bdb703a75da170": "Création",
   "bbecac783d914b1d": "Créer",
   "3b6d6a1134e3398c": "Créer ({shortcut})",
@@ -1954,7 +2007,6 @@
   "42df29db7df79d71": "Dans {root} sur {environment}",
   "640914bc91985c4c": "Dépôt",
   "50582c6b45965a9f": "Naviguer",
-  "9db16884c1c9d324": "Retour",
   "480646ceb98c7163": "Fermer",
   "32fc9124998ebc18": "Local",
   "1c4158d741eec5da": "{label} (local)",
@@ -1973,9 +2025,11 @@
   "f844c41fac2d339c": "Actuel",
   "69154433587763c0": "Aucune action correspondante.",
   "90c3a382ecefa0ce": "Aucune commande, aucun projet ni aucun fil correspondant.",
+  "60e47b3da5901619": "Paramètres · {section}",
   "a03e4c1348ad9ba8": "Système",
   "8bf65a425f50d140": "Clair",
   "d604bc5cf3386f00": "Sombre",
+  "282712bb470e929a": "OLED",
   "4758dde317babc14": "Impossible d’enregistrer le choix du thème",
   "448735c0084132f5": "Réessayez.",
   "e1ef4197dc810bab": "Pour le mode clair",
@@ -1989,13 +2043,16 @@
   "7af7f00b85cc2930": "Confirmer l’action",
   "8b418a02b73f49b8": "Cette action nécessite votre confirmation.",
   "e74139c17fab1fa1": "Confirmer",
+  "4a18481bea4b4ad5": "Nouvel appareil connecté à {environmentLabel}",
+  "4144ab6aa487528a": "{device} s’est connecté via {product}. Ce n’était pas vous ? Vérifiez-le.",
+  "a10cfdb27152c757": "{count, plural, one {{count} appareil s’est connecté} other {{count} appareils se sont connectés}} via {product}. Ce n’était pas vous ? Vérifiez-les.",
+  "4672f332c89dbcd9": "Examiner",
   "775a3e99e2638341": "Un appareil veut se connecter à {environmentLabel}",
   "a8befcb9f1c61f60": "{device}. N’approuvez que s’il affiche le code {code}.",
   "ac48cc297029db41": "Approuver",
   "c12ca3fea745def0": "Impossible d’approuver l’appareil",
   "af63f05ed2f5eeb3": "Refuser",
   "b735bab216b27041": "Impossible de refuser l’appareil",
-  "4672f332c89dbcd9": "Examiner",
   "913fc23f62321556": "Choisissez une date et une heure valides dans le futur.",
   "9485a52216cfc0d5": "Saisissez une durée positive.",
   "9bc551235d78e133": "Type de planification",
@@ -2089,6 +2146,8 @@
   "b2c35cd235de63e0": "Chargement des modifications...",
   "bcbd16c97c6c1215": "Aucune modification nette dans cette sélection.",
   "7e9cb3ca9f5470ae": "Aucun patch disponible pour cette sélection.",
+  "ccd5fc4db08374d7": "{count, plural, one {{count} fichier de test masqué} other {{count} fichiers de test masqués}}",
+  "a92edf8d81354772": "Afficher les fichiers de test",
   "e797245c587e7e29": "Redimensionner les fichiers modifiés",
   "99c76aa12c632a36": "Fichiers : {section}",
   "3e9ddb26c2c59bcc": "Modifications",
@@ -2306,7 +2365,6 @@
   "9a7d2f935254da1f": "Ajoutez un projet pour démarrer votre premier fil.",
   "2f09f0b45255d8ce": "Ajoutez un projet, ou commencez sans.",
   "c5b11890aa7f406f": "Sur quoi travaille-t-on ?",
-  "01059eb93804de5a": "Ajouter un projet",
   "dd2ac2de2ccbf08b": "Démarrer sans projet",
   "d95275127354650e": "Les autorisations de {label} ont changé",
   "c87e4484112112e3": "Cette connexion utilise encore les anciennes autorisations ; certaines actions peuvent donc ne plus être disponibles. Appairez-la à nouveau avec un nouveau lien qui a les autorisations nécessaires.",
@@ -2555,6 +2613,10 @@
   "a1e95451f9afe978": "Cela efface définitivement l’historique de conversation de ces fils.",
   "2528011846908083": "Échec de la suppression des fils",
   "55d6dea5414babc3": "Impossible de créer le fil",
+  "cde536fabe98ffa2": "Added to training dataset",
+  "83b21f27f1f4e987": "Removed from training dataset",
+  "1e89e39a5bdcc7de": "Failed to add thread to training dataset",
+  "1807d82e89e4a4af": "Failed to remove thread from training dataset",
   "ad170edd1d29d3f0": "Projet créé",
   "722b23aee8640b09": "Impossible de transformer le fil en projet",
   "c9fdafde8e1fd711": "Échec de la mise à jour de la clôture automatique",
@@ -2582,6 +2644,7 @@
   "9578dc3e84f82081": "En cours",
   "a202dad5b0a0aa56": "Reportés",
   "b9b34ce02a3a5f8b": "Clos",
+  "1a35f4f3dc80031e": "Settled by you or when idle.",
   "dfcce8b35ce4fb90": "Chargement",
   "fcaffe60c85338e2": "Impossible de charger les fils plus anciens. Réessayer",
   "43acfc82011a8fc2": "{count, plural, one {Afficher {count} de plus} other {Afficher {count} de plus}}",
@@ -2666,6 +2729,24 @@
   "3260b22f72f7effb": "{tooltipLead} : {title}",
   "feac8e54b30c5a03": "Processus du terminal en cours",
   "fc2c9a91f498ad6b": "{count, plural, one {{count} processus de terminal en cours. Ouvrir le terminal} other {{count} processus de terminal en cours. Ouvrir le terminal}}",
+  "06d3fe3e6b255d15": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " de plus"
+  ],
+  "f1b18820c0ab93ac": [
+    "+",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " de plus dans Éléments associés"
+  ],
   "56f37ff8ca568059": "pile",
   "6831e9a46cbd8939": "chaîne",
   "9aa9e74a3b7eee91": "Ajouter à la discussion",
@@ -2709,6 +2790,24 @@
   "a707abf0a4a73ffa": "Fermer le terminal ({shortcut})",
   "9206ecf328948f90": "Fermer le terminal",
   "9b1326a11cfe3308": "Pas encore de session de terminal pour ce fil.",
+  "49eda70cfd56e621": "S’exécute au démarrage d’un fil dans un worktree et à la restauration de son dossier",
+  "188ccaa1199f5611": "S’exécute à la suppression du worktree d’un fil",
+  "7e8476e7306acabe": "Autoriser ce projet à exécuter ses commandes de worktree ?",
+  "8e11914556fd8b13": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " prépare les fils en worktree avec ses propres commandes issues de ",
+    {
+      "t": "code",
+      "i": 2,
+      "c": "t3.json"
+    },
+    ". Elles s’exécutent sur la machine de cet environnement avec vos autorisations, hors de tout bac à sable d’agent. La question vous sera reposée chaque fois que leur texte changera."
+  ],
+  "46807acd02a4ff72": "Approuver et continuer",
   "2ac142f34e5dabc2": "Dépôts dans le nouveau worktree : {selection}",
   "c514773a8031f00b": "Filtrer les dépôts",
   "e32b730f6d27753f": "Choisissez les dépôts sur lesquels ce fil travaille",
@@ -2748,9 +2847,9 @@
   "db7b3a938c45e56c": "Mise à jour {version} prête à être téléchargée",
   "9a951140b69ba740": "Téléchargement de la mise à jour ({percent} %)",
   "7fdece033260e9fb": "Téléchargement de la mise à jour",
+  "52e1d4a487c0cf4b": "Échec de l’installation de {version}. Cliquez pour réessayer.",
   "09ef51903e99e876": "Mise à jour téléchargée. Cliquez pour redémarrer et l’installer.",
   "d62631cab06d2b80": "Mise à jour {version} téléchargée. Cliquez pour redémarrer et l’installer.",
-  "52e1d4a487c0cf4b": "Échec de l’installation de {version}. Cliquez pour réessayer.",
   "78a04e0e625c0990": "Échec de la mise à jour",
   "c24de5eb69373a55": "Cette version {build} ignore les versions {track}. Vérifiez le canal de mise à jour dans les Réglages pour terminer le changement.",
   "b02ae45a6109c93b": "À jour",
@@ -2833,6 +2932,8 @@
   "6dd1f458bcd6a2ea": "Régénération…",
   "de30fdae5b3fea98": "Régénérer le titre",
   "dffd2e20f7ff5aa1": "Marquer comme non lu",
+  "d0735af5f418985a": "Remove from training dataset",
+  "d00f61e5c57d36e9": "Add to training dataset",
   "3364346f40934e88": "Afficher tous les projets",
   "666f3ac177c116b6": "Filtrer par {project}",
   "1385e2d8bd696370": "Transformer en projet",
@@ -2909,6 +3010,9 @@
   "992fa6e20cf2d8dc": "{shortcut} pour annuler",
   "33b29a0f59128a96": "Annuler",
   "18f6f0c65340bd1e": "{summary}, {label}",
+  "0c659f9a193255dd": "Échec de l’ajout du projet",
+  "87f84b811a6aa0d1": "Échec du désarchivage du projet",
+  "d235610ec49f6c81": "Impossible d’ajouter le projet",
   "2e9b1cd36715700b": "L’API Presse-papiers n’est pas disponible pour copier {target}.",
   "74e12a771b744460": "Échec de la copie de {target} dans le presse-papiers.",
   "a4c9ac81ae85d341": "L’API Presse-papiers n’est pas disponible pour copier le texte.",
@@ -3038,6 +3142,8 @@
   "4f14e3fc3a216f44": "Cela arrête le processus en cours et efface son historique.",
   "16ce8443044b45fd": "Fermer {count, plural, one {{count} terminal} other {{count} terminaux}} ?",
   "a9697e470d40706a": "Cela arrête leurs processus en cours et efface leurs historiques : {labels}.",
+  "f3c70064a22a0c76": "{terminalLabel} ligne {lineStart}",
+  "8ba6febaabeb6f14": "{terminalLabel} lignes {lineStart}–{lineEnd}",
   "ef4bae5c5f3684f4": "Contenu enregistré avant",
   "5e4a0e56a0788d86": "Contenu enregistré après",
   "6d5a8b471a561b9d": "Explorateur de fichiers",
@@ -3082,7 +3188,7 @@
   ],
   "247e01cc01583645": "L’aperçu est réservé à l’app desktop",
   "075aa3cad9e5bf40": "Ouvrez T3 Code dans l’app desktop pour utiliser l’aperçu intégré.",
-  "25b9aae7f44e4030": "{mode, select, system {Apparence : système} light {Apparence : clair} other {Apparence : sombre}}",
+  "5f0648b00fdd3bc0": "Appearance: {appearance}",
   "17f073df6022e405": "Micro {number}",
   "3868d914611023ac": "La transcription vocale n’est pas prête.",
   "796d021a0c3eed9d": "Échec du traitement du micro.",
@@ -3299,6 +3405,9 @@
   "f2a955905704b91d": "{hours} h {minutes} min",
   "3609f564a63c8eca": "{minutes} min",
   "9251bb742f60720d": "{hours} h",
+  "035aab5e99159bd8": "{count, plural, one {… {hidden} caractère au milieu n’est pas affiché.} other {… {hidden} caractères au milieu ne sont pas affichés.}} Le texte se termine par :",
+  "011b1ef726fa9928": "Faites défiler chaque partie pour la lire en entier.",
+  "6c6e16b9488f8b91": "Faites défiler pour tout lire.",
   "a1e982c6047c0860": "Aller à la réponse citée : {label}",
   "c156140c3f5ebb75": "Aller à la réponse à laquelle ceci répond : {label}",
   "f8031a49c6e9fe25": "Voir le texte cité de l’assistant : {label}",
@@ -3337,9 +3446,6 @@
   "b90e87f4b7125237": "Détails",
   "16dc67f5429d8bae": "Travail en arrière-plan",
   "2188eee8f81b0f51": "Ouvrir le sous-agent",
-  "ec9e0be8ec693302": "Réduire tous les dossiers",
-  "b791dd86f7991cc0": "Développer tous les dossiers",
-  "55b936e3014e16c8": "Ouvrir le diff",
   "28bb7ce40dfd349a": "La sortie du terminal ne peut pas être ajoutée à la réponse à une question.",
   "801cb8edea94b8f6": "Répondez à la question ou ignorez-la d’abord, puis ajoutez-la à la discussion.",
   "aa5507f20d94d5a9": "Mettez à jour ce serveur pour envoyer des fichiers avec les réponses aux questions",
@@ -3571,12 +3677,12 @@
   "35e0b8f7418b4a86": "Cliquez pour mettre en file d’attente, {modifier}-clic pour réorienter",
   "eed080cf5eb25bfd": "Résumer {tokens} tokens d’historique, puis envoyer",
   "e4116d7f64a6f593": "Compacter {tokens} tokens d’historique avant l’envoi",
-  "d6143c122719b099": "Garder",
-  "7335dc479a68818e": "Compacter",
   "b2411ad43ce3b143": "Le prochain envoi garde les {tokens} tokens.",
   "ab6720311ff3140d": "Le prochain envoi compacte d’abord {tokens} tokens.",
   "1486a422ba77a084": "Cliquez pour compacter d’abord",
   "b971f881c5dc4fca": "Cliquez pour garder tout l’historique",
+  "d6143c122719b099": "Garder",
+  "7335dc479a68818e": "Compacter",
   "89426e9b039148d7": "Échec de la saisie vocale",
   "2220a0fbb5b6fa47": "Téléchargement du modèle {percent} %",
   "5c05b24be2880672": "Enregistrement",
@@ -3653,10 +3759,10 @@
   "4e0710d19dfc2e7e": "Envoyer ce rapport à l'équipe T3 ?",
   "87d0ae0723ba75d1": "Voici tout ce qui quitte votre machine. Rien n'est envoyé tant que vous ne cliquez pas sur Envoyer.",
   "bf19826f81484328": "Inclure la conversation",
-  "260c6b45f52d2f27": "Ajoute le texte de vos messages et des réponses de l'agent dans {textTurns, plural, one {le dernier tour} other {les {textTurns} derniers tours}}.",
   "ddb7e6f8ce99e657": "Seule une personne autorisée à exécuter des agents sur cette machine peut l'envoyer ou le refuser.",
   "03c1eb603c112f47": "Ne pas envoyer",
   "653405e4ed498d9f": "Envoyer",
+  "76cf478e5674fd12": "{count, plural, one {{count} correspondance} other {{count} correspondances}}",
   "262955d6eb632f9b": "L’API Presse-papiers n’est pas disponible pour copier le lien invité.",
   "f1a4f2b04cdbb4ef": "Impossible de copier le lien invité dans le presse-papiers.",
   "cf3490a604e44d31": "Impossible de créer un lien invité.",
@@ -3805,15 +3911,6 @@
     " a été fermée"
   ],
   "dff97202cbdaec5b": "Afficher l’app",
-  "705cf2b2ee4e0e42": [
-    "L’app ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " a quitté sa page et a été arrêtée"
-  ],
   "796b81c4875c4feb": [
     "L’app ",
     {
@@ -3828,6 +3925,15 @@
       "v": "v"
     },
     " plus récent sur cet environnement. Mettez à jour le serveur pour l’utiliser."
+  ],
+  "705cf2b2ee4e0e42": [
+    "L’app ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a quitté sa page et a été arrêtée"
   ],
   "5ef18e4d39b398bf": [
     "Impossible de charger l’app ",
@@ -3946,6 +4052,15 @@
   "aaae02e050a73bc2": "Pas encore de favori",
   "656e11e9444ed41e": "Recherche des modèles du projet...",
   "4a1b2d720142a885": "Aucun modèle trouvé",
+  "85f6df579d38e4d6": [
+    "No model runs on your own hardware yet.",
+    " ",
+    {
+      "t": "InlineButton",
+      "i": 1,
+      "c": "Use a local model"
+    }
+  ],
   "1b4fa45dbaca4b1d": "Paramètres des fournisseurs",
   "b16ecc66f9dc0600": "{label} : désactivé dans les paramètres.",
   "a2a2f2c9350c53c9": "{label} : indisponible. {message}",
@@ -3988,11 +4103,11 @@
   "8413f3e7f703f14e": "Afficher/masquer le panneau des détails du fil",
   "a728e041b203714a": "Afficher/masquer les détails du fil ({shortcut})",
   "5417d84fba7b6b84": "Afficher/masquer les détails du fil",
-  "586edda3a01b9305": "Afficher/masquer le tiroir du terminal",
   "d395686a462b77d2": "Afficher/masquer le tiroir du terminal ({shortcut})",
+  "586edda3a01b9305": "Afficher/masquer le tiroir du terminal",
   "c2fdb28a7ae3921b": "Le tiroir du terminal est indisponible",
-  "8acd97d5e80bddd3": "Afficher/masquer le panneau de droite",
   "fdc7805c136f3f7b": "Afficher/masquer le panneau de droite ({shortcut})",
+  "8acd97d5e80bddd3": "Afficher/masquer le panneau de droite",
   "d47ad54e98d33190": "Le panneau de droite est indisponible",
   "7e4b0afa9879fd43": "Rétablir la taille du panneau",
   "8381e38420ae57f3": "Agrandir le panneau",
@@ -4044,9 +4159,11 @@
   "fc3b6bf340ccc47b": "Chemin de l’espace de travail",
   "bda161176d64ec51": "Choisir un modèle",
   "b1ab3352e78f5241": "{model} (indisponible)",
+  "f26627b06232a466": "local",
   "2e3999c63ac1c29b": "Choisir des modèles",
   "ea8ddb5bf4b0088e": "{count, plural, one {{models}, {count} autre} other {{models}, {count} autres}}",
   "9ae42b0f35599fb6": "Le sélecteur de modèle est désactivé",
+  "0bc33aab746cb6af": "runs on {place}",
   "07d380ebce7c7cba": "Ouvrez la configuration du fournisseur pour installer {provider} sur cet environnement.",
   "f1ab192c62a6e680": "Ouvrez la configuration du fournisseur pour vous connecter avec Google.",
   "6457e38508a19b22": "Ouvrez la configuration du fournisseur pour vous connecter.",
@@ -4134,8 +4251,6 @@
   "ac7416afe98ba5f8": "Extrait du terminal, {label}",
   "bf04d61dc50685dc": "Ligne {lineStart}",
   "000e3bef072f07c8": "Lignes {lineStart}–{lineEnd}",
-  "f3c70064a22a0c76": "{terminalLabel} ligne {lineStart}",
-  "8ba6febaabeb6f14": "{terminalLabel} lignes {lineStart}–{lineEnd}",
   "b3336a0e9a6e3fba": "Sortie du terminal capturée",
   "8d24730972ce4fd3": "Extrait du terminal, {label}, expiré",
   "dd8f1439c88ef92b": "Le contexte du terminal a expiré. Retirez puis ajoutez à nouveau {label} pour l’inclure dans votre message.",
@@ -4291,6 +4406,8 @@
   "7c1d4c58aeb9e1b3": "Contexte : {used} % utilisé",
   "4214d97447ddd9e9": "Contexte : {usedTokens} tokens utilisés",
   "66be4fb43249bbd2": "{used} tokens sur {max}",
+  "abe2cf5a08501e43": "Last request",
+  "73dc4d1d58ddecb5": "Measured by T3's gateway",
   "ee3ae58c8b38a425": "{left} % restant",
   "ebb26f93fb83a71b": "{label} : {left} % restant",
   "1b16346722b65812": "{timeLeft} % de la fenêtre restant",
@@ -4467,11 +4584,11 @@
   "0647cef26e3b1fa5": "L’instantané est trop volumineux pour être copié.",
   "c036ab3d20c54b5b": "Vous",
   "6b2294cfd43aee15": "{name} (invité)",
-  "d1d1fed744318218": "Réorientation · en attente de lecture",
-  "75948010e112a8f4": "Réorientation",
   "1ccc41732907ca74": "En attente de lecture par l’agent. Il lit les réorientations entre deux étapes, une fois la commande en cours terminée.",
   "ae3f487ebde9db74": "Initialement en file d’attente, puis promu pour réorienter le tour actif",
   "4f2ec8c81b4efb22": "A réorienté le tour actif",
+  "d1d1fed744318218": "Réorientation · en attente de lecture",
+  "75948010e112a8f4": "Réorientation",
   "d201a2c11fc08817": "Modifier à partir d’ici",
   "5b30ae788fdc4fd0": "Envoi…",
   "b8e1cd0265566143": [
@@ -4578,6 +4695,7 @@
       "c": " »"
     }
   ],
+  "91aadfc843c600de": "Vérifier le compte Google",
   "a2aaca7ff8310186": "Ouvrir la discussion",
   "a3048aaa541b7744": "Activité",
   "4a3cbccb2beedeb0": "image",
@@ -4615,8 +4733,9 @@
   "75cdbffdefbbae3a": "Mode Ultrafast activé",
   "79c3a186139f8c86": "Mode Fast activé",
   "a772b49a38a3db40": "Qu’est-ce qui n’a pas marché ?",
-  "b29e1856c4aab31f": "Cette machine",
   "0cb5a221e9e13a4e": "L’agent lit ici les journaux et le code source de T3 Code, et demande avant d’appliquer un correctif ou de publier quoi que ce soit.",
+  "b29e1856c4aab31f": "Cette machine",
+  "275a97b4af3c6482": "Copier la commande, pour un terminal",
   "e7588632064e0364": "Copié",
   "996f7752fa033da6": [
     "ou exécutez",
@@ -4630,7 +4749,6 @@
       }
     }
   ],
-  "275a97b4af3c6482": "Copier la commande, pour un terminal",
   "2b07985d23563374": "Reprise {time}",
   "a4b4e5eb6d313af9": "Réinitialisé {time}",
   "c0c3aa756405c1df": "Réinitialisation {time}",
@@ -4655,7 +4773,6 @@
   "7f0f9b1ee42892db": "La sortie n’est plus disponible.",
   "e470bb79fa74a6ae": "Image de sortie de l’outil",
   "e8c80b6d40c0944c": "Résultat de recherche",
-  "76cf478e5674fd12": "{count, plural, one {{count} correspondance} other {{count} correspondances}}",
   "8d1906900b5c95c7": [
     "code de sortie ",
     {
@@ -4664,6 +4781,7 @@
       "v": "v"
     }
   ],
+  "55b936e3014e16c8": "Ouvrir le diff",
   "83c29850641c8935": "En file d’attente",
   "8402f099f88fd0e0": "En cours",
   "c5f5b73e92221a6a": "En attente",
@@ -4936,6 +5054,8 @@
   "70b12bc1e1a26abb": "Mettez de côté à nouveau une fois la compression terminée.",
   "f6b1ef37f7587664": "Joignez à nouveau les fichiers retirés ou supprimez-les avant de mettre de côté",
   "120167bbfb6d5939": "Attendez la fin de l’envoi des fichiers avant de mettre ce prompt de côté",
+  "410dded6e21c280d": "La réserve est pleine",
+  "1af8d12ac21cb183": "La réserve contient {max} prompts. Restaurez-en ou supprimez-en un pour faire de la place ; la zone de saisie a été laissée telle quelle.",
   "afdf475db3ca2af7": "Impossible de mettre ce prompt de côté",
   "3f5c37167aa5034f": "Le stockage du navigateur a refusé l’écriture ; la zone de saisie a donc été laissée telle quelle. Libérez des données de site et réessayez.",
   "41ba6c0b5c5e8b22": "Le prompt mis de côté ne survivra pas à un rechargement",
@@ -4947,12 +5067,37 @@
   "13cf3cd978eef92a": "Garder les pièces jointes sur cette machine",
   "a4ca7da61227002d": "Retirez les pièces jointes avant de choisir le routage automatique, puis joignez-les sur la machine sélectionnée.",
   "512d8afab852df1a": "Impossible de changer de machine",
+  "ee3ea4351c88e7d7": "Ce projet n’est plus disponible.",
   "32e421d1e2dfdaff": "Vérification des machines…",
   "0db14066bd4ce117": "Répartition automatique indisponible",
   "55b562c00e37321b": "Impossible de forcer l’arrêt de l’agent",
   "ede15a83eedec569": "Tour arrêté ; l’agent est encore en train de s’arrêter",
   "f360accf1ccac178": "Tour arrêté ; le processus de l’agent continue de tourner",
   "46f927ee332c1065": "{others, plural, =0 {Il est partagé avec d’autres fils en cours. Arrêtez-les pour le libérer.} one {Il est partagé avec {others} fil en cours. Arrêtez-le pour le libérer.} other {Il est partagé avec {others} fils en cours. Arrêtez-les pour le libérer.}}",
+  "e5db533a998fdd7b": "{model} reads text only",
+  "f54b0c15e0967f15": "Checking whether {model} reads images",
+  "0926a53d79da1bd2": "Not known whether {model} reads images",
+  "5da39fe267eb3d72": "It will not see the attached image. Choose a model that reads images.",
+  "563da22d54ac3090": "The image is sent anyway; if the model cannot read it, its server will say so.",
+  "554d521913267210": "{detail} The image is sent anyway; if the model cannot read it, its server will say so.",
+  "66fb637707e9a39f": "Checking images",
+  "ea32fec696e3b32a": "Check images",
+  "e62045853d5718d2": "{name} no longer serves {model}",
+  "2b7d4e613fc27d9a": "It serves {served} now. Choose one of them, or check again if the model is coming back.",
+  "c3f5425dc8df4dc0": "{name} is not answering",
+  "9d188877cdf40277": "{baseUrl}: {message} Its models are hidden until it answers again.",
+  "ae59dfeea7ab4437": "{baseUrl}: {message} Requests go to {fallback} until it answers again.",
+  "2bba8490579e4c32": "Choose model",
+  "9ec433045537acfc": "Vérifier à nouveau",
+  "2487bb78b4951f91": "Find server",
+  "3c9820246189dfa8": "Stopped a looping reply",
+  "5ab917fcc412ac57": "Stopped a reply that only reasoned",
+  "242842f947503f6b": "Stopped a reply that went silent",
+  "853b9df3a9dec292": "kept repeating the same text",
+  "173884fc6affeb28": "reasoned at length without answering",
+  "ddb62cd78c15e1a8": "stopped sending anything",
+  "18061430b48dabbe": "{model} on {serverId} {why}, so T3 Code stopped it and freed the server.",
+  "7ac4455553fe632a": "Continuer",
   "f5948facf9a10261": "{count, plural, one {{count} fil démarré en arrière-plan} other {{count} fils démarrés en arrière-plan}}",
   "d2a83704191622a6": "Échec de l’envoi des messages.",
   "c11072d4a6072902": "Un prompt en arrière-plan n’a pas pu être envoyé",
@@ -5187,12 +5332,10 @@
   "830103d02a9ac4e2": "Relais hors ligne",
   "0b2dd2fe0a45c628": "Vérification de l’état du relais…",
   "6280ea23e2192d27": "État du relais indisponible",
-  "445511757fcd365a": "Connexion…",
   "7371e41e0852885f": "Disponible",
   "4ba692b01a327ce3": "Hors ligne",
   "81ca8a49acedf36d": "Vérification…",
   "363b49d2880a5109": "Vérification de l’état du relais",
-  "548f9db69b69ff04": "Ajout…",
   "ce6b7e994161e68f": "Ajouter une route",
   "d3ef4f9486e31279": "Ajouter",
   "c246e33dafd359cc": "Ajouter",
@@ -5292,7 +5435,6 @@
     ". T3 Code transmet votre réponse au processus SSH local et la garde en mémoire pour la réutiliser avec cet hôte. T3 Code ne l’écrit pas sur le disque."
   ],
   "1c26f62937f27d39": "Des clés SSH peuvent remplacer un mot de passe, mais votre serveur peut toujours exiger un code de vérification.",
-  "7ac4455553fe632a": "Continuer",
   "7f8953447668d0be": "Délai dépassé pour la commande de pliage.",
   "650a0c4c97430f03": "Impossible de changer la position de pliage.",
   "7bf0984b4aa3005b": "Commandes de pliage Android",
@@ -5357,6 +5499,8 @@
   "ac18a5e35195a258": "Émulateurs Android",
   "94215375ea2558b8": "En cours",
   "f8a65d4d662389b0": "Arrêté",
+  "381ceed77cb8b2b3": "Arrêter {name}",
+  "5b9fda36b610d25c": "Arrêter",
   "b1687c7b2b91e569": "Ouvrir {name}",
   "4b4ef3f2e2ed2c56": "Démarrer {name}",
   "08098a6fb84e8a34": "Ouvrir",
@@ -5379,6 +5523,7 @@
   ],
   "e902f208c4e6146f": "Aucun appareil virtuel Android trouvé. Créez-en un dans le Device Manager d’Android Studio, puis actualisez.",
   "d9a71f3db685cb0e": "Actualiser les appareils",
+  "1d372f6d555dde3c": "Arrêter tous les appareils",
   "4ad8ced64defdf73": "Appareil 3D interactif. Faites glisser l’écran pour interagir. Faites glisser en dehors ou balayez avec deux doigts pour le faire tourner.",
   "84e4baf07ad8883d": "Autorisez cet environnement à ouvrir des simulateurs et des émulateurs, qu’ils tournent ici ou sur un hôte d’appareils distant.",
   "771365c337509a82": "Autorisez les nouvelles sessions d’agent de cet environnement à démarrer et contrôler des appareils locaux et distants, avec les outils nécessaires configurés automatiquement.",
@@ -5544,6 +5689,8 @@
   "1601d7e39a52c48f": "Réessayer de charger le diff",
   "b7b137472adb6989": "Aperçu partiel du diff",
   "f0d79aa56f06663f": "Ce fichier est trop volumineux pour être affiché en entier. Les totaux incluent toutes les modifications.",
+  "ec9e0be8ec693302": "Réduire tous les dossiers",
+  "b791dd86f7991cc0": "Développer tous les dossiers",
   "7fdde2b893ba1b9d": "Supprimé",
   "e58ce271d835b447": "Ajouté",
   "07b9970b662ab70d": "Afficher la source Mermaid",
@@ -5644,7 +5791,6 @@
   "3c3e2a86f7fb439d": "Échec de la copie de la mention",
   "b3a779a7cf9fccab": "Ouvrez une discussion pour ce projet et réessayez.",
   "e3796d26e9912913": "La discussion n’est pas prête à recevoir une saisie pour le moment.",
-  "4ff72c2acc7f6656": "Chargement…",
   "69858f722a57708c": "Rechercher dans les fichiers de {projectName}",
   "e1e1094e43a5f3d7": "{error} Cliquez pour réessayer.",
   "ddb58ada5516a46d": "Fichiers de {projectName}",
@@ -5708,7 +5854,6 @@
   "6ad6c8fbb630657d": "Le fichier est indisponible.",
   "9450d1827ef336a1": "Une autre copie est en cours.",
   "8f48999eb6d9e2e3": "{count, plural, one {{formatted} ligne} other {{formatted} lignes}}",
-  "13b14784f8707ddd": "0 octet",
   "b75105bef8f564a4": "Affichage des 1 024 premières colonnes. Source et Enregistrer conservent toutes les colonnes.",
   "2a6e1b1f209c3888": "Ce fichier est vide.",
   "192fc79eb3b5b2cb": "Ce diagramme contient des URL de ressources, du balisage, des métadonnées de nœuds ou une configuration personnalisée. Affichez la source Mermaid pour l’examiner en toute sécurité.",
@@ -5984,7 +6129,6 @@
   "b6a29fff7c7c0808": "Personne",
   "54420465784bb1bd": "Charger les commentaires plus anciens",
   "9d82ebf35bfb4043": "Rien ne s’est encore passé ici.",
-  "1cf216566c1ee064": "Projet indisponible",
   "b5ddadeb0810688c": "État",
   "93c1fc19d9bf1db0": "Participation",
   "d5a8b335d88b65bc": "{hidden} masqués",
@@ -6089,7 +6233,6 @@
   "718a33a11c0e63a6": "Expire {time} · usage unique",
   "800f3d6ba89ed228": "Copier {label}",
   "402ad504ab1fe6a4": "Associé : {environments}",
-  "9ec433045537acfc": "Vérifier à nouveau",
   "88f60e3d23ebcdd8": "Vérification de T3 Connect…",
   "5492129175e04f8d": "Votre compte T3 Connect n’a plus de tunnels.",
   "1505e983a4f9b08d": [
@@ -6242,7 +6385,7 @@
   "a0fd24f965eb070b": "Impossible d’importer l’historique des fils.",
   "a506c135c2183ac3": "{count, plural, one {{count} dossier} other {{count} dossiers}}",
   "efc48b9736a534bc": "maintenant",
-  "edf393ff951b533a": "Bienvenue dans T3 Code",
+  "796ed296b58efdf6": "Welcome to mn3code",
   "3cc77f9daa7eeafd": [
     "Configuration de",
     " ",
@@ -6281,6 +6424,8 @@
   ],
   "f77d000c0710f066": "Activer",
   "4ed27bf946e504db": "Configurer",
+  "77ba79c85d052b2a": "Run models on your own hardware. Cloud agents remain available.",
+  "0726adcf81077bcb": "Use a local model",
   "7a26eaacff0607f7": [
     "Vérification de ",
     {
@@ -6666,8 +6811,6 @@
   "1b381201aba745c2": "Aucun check signalé",
   "a6d75a4380173c60": "Ouvrir les checks : {summary}",
   "be3d1766bad18693": "Checks : {summary}",
-  "425e4a3d6c5c2867": "{count, plural, one {{count} en échec} other {{count} en échec}}",
-  "fd63b391898889f9": "{count, plural, one {{count} en attente d’action} other {{count} en attente d’action}}",
   "cb116c139cdace98": "Aucun check signalé",
   "60b56e201607c7ec": "Les détails des checks ne sont plus à jour. Actualisez la pull request pour les mettre à jour.",
   "e74cd4e960cbb5e5": "Les lignes inchangées ne sont pas disponibles dans un fichier aux lignes tronquées.",
@@ -6683,7 +6826,6 @@
   "2250f241daadd71b": "Ajouter à l’agent",
   "be9b06fae29cc07a": "Tous les commits",
   "5ef391d5403d7bdd": "{count, plural, one {Afficher plus ({count} restant)} other {Afficher plus ({count} restants)}}",
-  "ccd5fc4db08374d7": "{count, plural, one {{count} fichier de test masqué} other {{count} fichiers de test masqués}}",
   "c12871955b159db4": "vus dans {app}",
   "98b353c208fd7977": "vus",
   "d65b870952bbe4f0": "Ces coches sont conservées ici, pas sur l’hôte",
@@ -6692,7 +6834,6 @@
   "a35be3a33a60ada9": "Une partie de ce diff n’a pas été affichée",
   "74c7bae34db3147e": "Les commentaires de ligne portent sur l’ensemble de la modification",
   "4050f873dc790f8f": "Options du diff",
-  "a92edf8d81354772": "Afficher les fichiers de test",
   "48be78e4550011d3": "Chargement du diff de la {term, select, mr {merge request} cr {demande de modification} other {pull request}}...",
   "e76a1455903eef18": "Cette {term, select, mr {merge request} cr {demande de modification} other {pull request}} ne modifie aucun fichier.",
   "50abbcbc41691cb5": "Ce commit ne modifie aucun fichier.",
@@ -6707,8 +6848,8 @@
   "1239149344bb4b2b": "Diff trop volumineux pour être affiché.",
   "3ab928741d208f41": "Chargement...",
   "3e272ae9c5b76744": "Charger le diff",
-  "d4ccbc96f4d05950": "Modifié",
   "c12888742e7bd0ce": "Ce fichier a reçu un push depuis que vous l’avez marqué comme vu.",
+  "d4ccbc96f4d05950": "Modifié",
   "6594b013f63d2a3a": "Vu",
   "687f81dd084a5ab0": "Impossible de charger le reste de ce diff.",
   "cf44cf4e3479ea7a": "Tous les commits",
@@ -6905,6 +7046,19 @@
   "36b7fbe31bde05f3": "Ce dépôt n’a aucun label.",
   "2764eab1d2853980": "Ce dépôt a plus de labels que ceux listés ici. Appliquez les autres sur l’hôte.",
   "5e5917c3b907c7d6": "Appliqué",
+  "4affc3da49f673c2": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": "a commenté"
+    }
+  ],
   "404ee0e0134b60ae": "Recherche de « {query} » sur tous les hôtes",
   "ca612a0074954046": "Vérification...",
   "8b04f78f836b6c11": "Rien avec ces filtres",
@@ -7021,8 +7175,8 @@
   "1df18577b47fe833": "Aucune personne ayant accès ne correspond.",
   "605ed234cd084078": "Impossible de lire la liste des personnes ayant accès.",
   "3e63297ce2f404d6": "Déjà sollicité",
-  "ad822604a0059e71": "trouvé dans la description",
   "3625557b4fc8ba68": "Trouvé dans la description",
+  "ad822604a0059e71": "trouvé dans la description",
   "ff1f73cd2455d0f6": "Aucune méthode de fusion n’est disponible pour ce dépôt.",
   "59b38d59700e0a5f": "Fermer",
   "25aa6faba20377ca": "Fermer #{number}",
@@ -7048,19 +7202,27 @@
     }
   ],
   "ce703d4ba40dc9b4": "Fusion de la pile...",
+  "8a883c4fbc127b68": "Activation de la fusion automatique de la pile...",
   "ac7feb9c583b02a0": "Rebase de la pile...",
   "cb0f63bbb0b68d94": "Impossible de fusionner la pile",
+  "5fb2a26ae31e8983": "Impossible d’activer la fusion automatique de la pile",
   "c8a943fa15a56b2b": "Impossible de faire le rebase de la pile",
   "ec22caeb8b949ed1": "L’hôte a refusé le rebase. Un rebase s’arrête au premier commit qui ne s’applique pas proprement.",
   "ead3e2bac1a8d231": "Demande de fusion de la pile terminée",
+  "986d0dcbf4dd0098": "Fusion automatique de la pile activée",
   "d7079b5ac269c65e": "Rebase de la pile effectué",
   "5631b32be0ce48d3": "{host} a fusionné la pile ou l’a ajoutée à sa file de fusion.",
+  "f3ed1f63c8a3eef2": "{host} fusionnera la pile jusqu’à #{number} dès que ses conditions seront remplies.",
+  "bd536a0a1754f6cb": "Impossible d’annuler la fusion automatique de la pile",
+  "bb90ac3b2f3a72d5": "L’hôte a refusé d’annuler la fusion automatique. Actualisez et réessayez.",
   "2d3b55018a54287e": "Vérification de la pile auprès de l’hôte…",
   "eea55205e46d2e3d": "Pile {number}, couche {position} sur {size}",
   "b6f729119107a145": "{count, plural, one {Fusionner la pile jusqu’à '#'{number} dans {base} ({count} {term, select, mr {merge request} cr {demande de modification} other {pull request}})} other {Fusionner la pile jusqu’à '#'{number} dans {base} ({count} {term, select, mr {merge requests} cr {demandes de modification} other {pull requests}})}}",
   "d4bfcdc6bb7676a3": "{count, plural, one {Fusionner {count} {term, select, mr {merge request} cr {demande de modification} other {pull request}} ?} other {Fusionner {count} {term, select, mr {merge requests} cr {demandes de modification} other {pull requests}} ?}}",
+  "9c28753c777c37b7": "{count, plural, one {Fusionner automatiquement {count} {term, select, mr {merge request} cr {demande de modification} other {pull request}} ?} other {Fusionner automatiquement {count} {term, select, mr {merge requests} cr {demandes de modification} other {pull requests}} ?}}",
   "b9f2a24a3757f6c9": "{count, plural, one {Faire le rebase de {count} {term, select, mr {merge request} cr {demande de modification} other {pull request}} ?} other {Faire le rebase de {count} {term, select, mr {merge requests} cr {demandes de modification} other {pull requests}} ?}}",
   "d1bcf19eb2753fff": "Fusionner #{number} et ses couches non fusionnées inférieures dans {base} avec {method}. {host} vérifie leurs règles avant de les fusionner ou de les mettre en file d’attente, puis fait le rebase du reste de la pile après la fusion.",
+  "a86b49982e18784d": "Fusionner #{number} et ses couches non fusionnées inférieures dans {base} avec {method} dès que chacune remplit les conditions de {host}. Cela peut se produire immédiatement.",
   "31d2f22f5a282719": "Faire le rebase des branches distantes de bas en haut sur {base}. Cela réécrit l’historique des branches et peut relancer les checks. Si une couche échoue, les mises à jour précédentes restent en place.",
   "a0adf78733c368ae": "Fusionner la pile",
   "140dc384c58b74f3": "Rebase de la pile",
@@ -7095,8 +7257,19 @@
     },
     ")"
   ],
+  "b1afda5c964deee4": [
+    "Fusion automatique de la pile (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ")"
+  ],
+  "33d18dda74f6d7b3": "Annuler la fusion automatique de la pile",
   "30440f98e929440a": "Rebase de la pile",
   "13718a03e3144142": "Chaque couche fusionnée doit être ouverte et prête pour la revue.",
+  "012c67c7f1a99e33": "Fusion automatique de la pile",
   "4aafe1baf113088a": "Fusionner la pile",
   "0292da19054f2a04": "Chargement de la pile…",
   "583869e6df57abeb": "Cette pull request ne fait plus partie d’une pile.",
@@ -7183,19 +7356,6 @@
       "t": "span",
       "i": 2,
       "c": "a fait une revue"
-    }
-  ],
-  "4affc3da49f673c2": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": "a commenté"
     }
   ],
   "04ea50285b00dcdd": "Vue d’ensemble",
@@ -7324,6 +7484,9 @@
   "9b0647af63a7d8c1": "Approbation de modifications antérieures",
   "abe99679224fea5e": "Modifications demandées sur des changements antérieurs",
   "6b31ad910278ff72": "Revue rejetée sur des changements antérieurs",
+  "425e4a3d6c5c2867": "{count, plural, one {{count} en échec} other {{count} en échec}}",
+  "fd63b391898889f9": "{count, plural, one {{count} en attente d’action} other {{count} en attente d’action}}",
+  "948185631ef288e6": "{count, plural, one {{count} en cours} other {{count} en cours}}",
   "aaf22207b2f18c45": "{workflows, plural, one {{workflows} workflow} other {{workflows} workflows}} et {checks, plural, one {{checks} check} other {{checks} checks}} en attente d’action",
   "c51411813ebafcc1": "{count, plural, one {{count} workflow en attente d’approbation} other {{count} workflows en attente d’approbation}}",
   "4946778c8e18a1db": "{count, plural, one {{count} check en attente d’action} other {{count} checks en attente d’action}}",
@@ -7369,6 +7532,7 @@
   "f1e707c54da8172d": "Rotation des comptes",
   "7df80be891060ba6": "Démarrer chaque nouveau fil sur le compte sélectionné ayant le plus de quota restant.",
   "5fac1f0cec32247d": "Faire tourner les comptes pour les nouveaux fils",
+  "0b236f40b2a852aa": "Désactivé",
   "7dcd788e2b342bbd": "Inclure {name} dans la rotation des comptes",
   "5498f2f33907b02c": "L’ACP n’a pas pu être préparé.",
   "2f96ca67420e3662": "Rechercher dans l’ACP Registry",
@@ -7565,6 +7729,7 @@
   "e4e5b75bba51396c": "Jeton Bearer (facultatif)",
   "e62cedcbcdbafc75": "Clé de gestion",
   "f1b3d0634ec035cb": "Libellé (facultatif)",
+  "b35256ca61016104": "Ajouter une source",
   "52814dd6f7d0a15c": "Ajouter le hub",
   "27b770d3402abfa2": "Avancé",
   "584595dfcadab699": "Illustration",
@@ -7574,6 +7739,7 @@
   "d5dc7576fd468be7": "Confortable",
   "3141408bf3874e64": "Large",
   "831badd18b64547e": "Pleine largeur",
+  "6287212fed0deec6": "Comme la discussion",
   "a96255594ebf2ce3": "Mot",
   "1ee44eb65708a8aa": "Barres",
   "7670f789e0d8672a": "Seuls les thèmes intégrés affichent une illustration ; ce thème affiche donc la pastille de version.",
@@ -7591,12 +7757,11 @@
   "03338c6aec8edacd": "Définissez la largeur maximale des messages et de la zone de saisie sur les grands écrans.",
   "92785adb251da88c": "Réinitialiser la largeur de la discussion à la valeur par défaut",
   "4d457bcce0c0e272": "Largeur de la discussion",
-  "7d7f65967cc821e3": "Largeur des aperçus HTML",
+  "81f3a196537bbee0": "Confortable (par défaut)",
   "70ce0af7f78d5957": "Permet aux aperçus HTML d’une discussion d’être plus larges que ses messages, qui restent centrés.",
   "f2b119bf02ae2558": "Réinitialiser la largeur des aperçus HTML à la valeur par défaut",
-  "6287212fed0deec6": "Comme la discussion",
+  "7d7f65967cc821e3": "Largeur des aperçus HTML",
   "dc8e85ea0364649c": "Comme la discussion (par défaut)",
-  "81f3a196537bbee0": "Confortable (par défaut)",
   "e79e5388f669495f": "Afficher l’effort de raisonnement dans la zone de saisie par son nom, comme Élevé, ou sous forme de barres.",
   "7f0365c7e4e8bcbf": "Réinitialiser l’affichage de l’effort à la valeur par défaut",
   "14bf40f765172a50": "Affichage de l’effort",
@@ -8396,7 +8561,6 @@
   "e6886a7f77b73a8e": "{platform} non disponible",
   "b0b7610d9860d18d": "Non configuré sur cette machine.",
   "f5b66c481aa3e4df": "Modifier",
-  "b35256ca61016104": "Ajouter une source",
   "3b20ef0670ae4b0b": "Machine via SSH",
   "121ccffacb6b8c6d": "Expo Simulators",
   "130b55a1410a8030": "Pool Simlock (alpha)",
@@ -8659,11 +8823,176 @@
   "7ee376c7db73ab57": "Associé",
   "e9f7a62ecd609a46": "Dernier contact",
   "70bae47e93a2f207": "Afficher l’erreur complète",
+  "08e8ac8ac3e81602": "its host",
+  "964975d946e78ec8": "The search failed.",
+  "03a99bac40f956c9": "{name} was not moved",
+  "655fae1076b7d882": "{name} now uses {baseUrl}",
+  "e6291ecc9e0882eb": "{name} moved to {baseUrl}, but is not ready",
+  "e774eec06d4ac93b": "Threads already running keep the old address until their agent session restarts.",
+  "3692630b105b7340": "Check its address in Settings, Inference.",
+  "860ae0f124589f0b": "Lists its models only with a key",
+  "10e114cbcc7799c9": [
+    "Find ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "57214cffc22fba17": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " does not answer at ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    ". Looking for model servers on ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    },
+    " that it may have moved to."
+  ],
+  "ba4292427a7aedf7": [
+    "Searching ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "…"
+  ],
+  "dab19580af4af4ad": [
+    "Nothing else answered on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". If you know where it moved, change its address."
+  ],
+  "9a6778caa96d5b01": "Same model",
+  "95e7dbb5664a9b45": [
+    "Uses ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "'s key"
+  ],
+  "d37a8a2b0d0d7e10": "Use this address",
+  "a6b134a328f33649": "Change address",
   "e4099af6d85770ff": "« {font} » n’est pas à chasse fixe",
   "a8448493d83279e2": "Le code et le terminal nécessitent une police à chasse fixe, la police actuelle a donc été conservée.",
   "e8622c39abe68f9d": "par défaut",
   "5383ef2d2c09cdf7": "Rechercher des polices…",
   "ea08337bcadd35b4": "Aucune police trouvée.",
+  "76d1a9f4ceedb40c": "Add an inference server",
+  "0223ddf9b20e12d5": "Defaults to the host name",
+  "d0d9a8ec77ca39ca": "Server default",
+  "bc714daca44e1826": "Enregistrer les modifications",
+  "2f130a0cfd0a6c69": "Add server",
+  "91fdc3eff686faad": [
+    "An OpenAI-compatible model server that ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " can reach. localhost means ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " itself."
+  ],
+  "c732b08a5fa8c3d7": "URL de base",
+  "3953d1cccd71ab7e": "Nom (facultatif)",
+  "a5d2e8fbe9bac047": "API key (optional)",
+  "d7cce385a1723070": "Max concurrent requests (optional)",
+  "16921d4bf7cb7ef7": "Fallback server (optional)",
+  "a87212dee280b4c9": "None",
+  "f04f5aeb00097eb0": "Takes requests while this server is down or unreachable, when it serves the same model.",
+  "6d5d3341bd731836": "Register the model servers on this machine or your network (Ollama, LM Studio, llama.cpp, MLX, vLLM, SGLang, TensorFold). localhost means the machine running this environment.",
+  "d8b4ac8d8177199f": "{label} runs a T3 Code server without inference servers.",
+  "49d57330680a7b24": "Restart this app to install its own server there. It updates SSH machines each time it connects.",
+  "3afff91e049d176a": "Install this app's server on that machine to use model servers there.",
+  "239de1e5faeccb6b": "No environment connected.",
+  "7e93bee79a62edcf": "Connect an environment to register the model servers it can reach.",
+  "79e4d73c1bc8cf45": "Checking",
+  "79ca35232b791625": "No model servers yet.",
+  "fe0bda9c78247a95": "Copied from {label}; enter its API key again.",
+  "798531382bc9a1f0": "Copied from {label}.",
+  "638f5589cb90d05d": "{name} on {label}",
+  "7e7a1f2e16749396": "Use it from {targetLabel} at {baseUrl}.",
+  "94e4b1968b8f52e1": "Not checked yet.",
+  "f54067c4081c96ed": "Use {name}",
+  "76d2def7d3b1f0b6": "Reads images",
+  "3809cba503724011": "Text only",
+  "51ad9a8ffe4f69fd": "Check images again",
+  "6ebbd3bef461bc29": "yes",
+  "7244886f22266d63": "unknown",
+  "30eca1e0239d3d0c": "Local inference is paused while fine-tuning is running",
+  "65d6afd5b652bdbb": "An active MLX training job holds the local GPU. Interactive requests will resume automatically when the job finishes or is cancelled.",
+  "89434277d4d1de8d": "Open training",
+  "cd7934cdd7ff6ad4": "Find servers",
+  "27b44316eab62b46": "Add server",
+  "88466f5a03be2419": "Paramètre propre à l’environnement. Sélectionnez un environnement pour le modifier.",
+  "7d950f10a1a83856": "Find local models",
+  "b8748b7091d641c5": "Add here",
+  "1c1ddbbd4567f2ab": "Disabled",
+  "9ea0945710fdb453": "No models reported.",
+  "e3b1654ed2b55974": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ", overdue"
+  ],
+  "b463e5aaced73a94": [
+    "Reports cached tokens: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "ca6deaf3da2674d0": [
+    "Last request ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " at",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "111a44209dc6e701": "Supprimer",
+  "a3538ba5ca802bd7": [
+    "Supprimer ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ?"
+  ],
+  "c424d877a3162380": "Its API key is deleted from this environment. Provider instances linked to it show a warning until you link them elsewhere, and servers that fall back to it stop doing so. The server itself is untouched.",
+  "a32fc6c5a36b6a95": "Remove server",
   "d6ad43bc4b700a88": "Aucune donnée de profil de navigateur à effacer.",
   "ad8efd437b301a37": "Système",
   "42e23caa6ef99cad": "Clair",
@@ -8790,9 +9119,13 @@
   "ed83b25c71c98a20": "Choisissez un ou plusieurs {scope}s {tracker} pour chaque projet. Leurs tickets s'affichent à côté de ceux du dépôt, et les agents créent les nouveaux tickets dans le premier, sauf si vous leur indiquez une autre destination.",
   "19c2d5e81ff8f89a": "{scope} {tracker} pour {project}",
   "68e061510b765772": "Non lié",
+  "99d51127f573296b": "Autre compte",
+  "8ec2c57414669b79": "Connectez un second espace de travail ou utilisateur {tracker}.",
+  "99963c0142e17f00": "Pour le nouveau compte {tracker}.",
   "a2d95d39d3398bda": "Identifiant refusé",
   "9eae463720500113": "Stocké sur le serveur.",
   "b6e27ab2537ef874": "En créer un",
+  "6d8e4ebc889bace9": "Ajouter un compte",
   "13ef526271b0f5d4": "Effacer toutes les conditions",
   "d1938a629f039515": "Supprimer la condition",
   "84a605b241ce65b7": "Supprimer le groupe et ses conditions",
@@ -8938,6 +9271,10 @@
   "f0e853acd2006d53": "Environnements associés",
   "ef10c2dff987f3ea": "Exécutez des workflows en plusieurs étapes à partir des fichiers du dossier workflows du répertoire T3 de ce serveur. Ouvrez-les depuis la palette de commandes. Tant que c'est désactivé, rien dans ce dossier ne s'exécute ; les exécutions attendent sa réactivation.",
   "2dadb2359422121c": "Workflows",
+  "933dabf0700708af": "Nombre d’exécutions ignorées que chaque workflow conserve dans son historique. Les exécutions ignorées plus anciennes sont supprimées ; celles qui ont fait quelque chose sont toujours conservées.",
+  "f172d7e5deb24f75": "Rétablir la valeur par défaut des exécutions ignorées conservées",
+  "ba94015389f327bc": "Exécutions ignorées conservées",
+  "d52b3d6bf9f2a013": "Mixte",
   "13e86eb5d8287a71": "Affiche un prochain message suggéré dans la zone de saisie vide après un tour Claude ou Codex. Tab l’utilise. Chaque suggestion est une requête en cache supplémentaire sur votre forfait. Nécessite Codex 0.165+. Les fils Claude se mettent à jour au redémarrage.",
   "d4b2a2ec812aafb0": "Suggérer le prochain prompt",
   "298c7150a7621c80": "Hôtes d’appareils Simlock",
@@ -8945,7 +9282,6 @@
   "f9904f78d3003f58": "Checkout rapide des worktrees",
   "9c2f647882522302": "Les machines sélectionnées utilisent des modes de retour des agents différents.",
   "31bbf7bf8c0a5279": "Retours des agents",
-  "d52b3d6bf9f2a013": "Mixte",
   "ec7623deed751c05": [
     "Partagez un fil avec un invité qui le suit en direct dans un navigateur et envoie des messages que vous approuvez. Nécessite T3 Connect : connectez-vous et associez cette machine dans",
     " ",
@@ -9228,7 +9564,6 @@
   "e749b8ba2ff18f8f": "Ajouter {name} au projet",
   "6d08f0285e2bbf34": "Ajouter un dossier",
   "b7820a37d8ff1918": "Les dépôts situés dans ce dossier font partie du projet dès qu’ils s’y trouvent. Ajoutez un dossier pour en intégrer un situé ailleurs.",
-  "111a44209dc6e701": "Supprimer",
   "daafb41c2b3c066f": "Dans le fichier d’espace de travail",
   "2c5c798252f91fdc": "Ajouter",
   "7e4d1ce9725c2327": "Suivez un dépôt ou un dossier situé n’importe où sur la machine de ce projet.",
@@ -9247,7 +9582,6 @@
   "b76e857a764ea02a": "Règle de regroupement de {path} sur {environment}",
   "e6e55f343639ae71": "Par défaut ({mode})",
   "87158e7b8e714bc6": "Ajoutez un projet depuis la barre latérale pour le configurer ici.",
-  "ee3ea4351c88e7d7": "Ce projet n’est plus disponible.",
   "062d19d24615e108": "Le titre du projet ne peut pas être vide",
   "303af9de2741db90": "Échec du renommage du projet",
   "f578154800d7af01": "Échec de la mise à jour de l’icône du projet",
@@ -9283,6 +9617,28 @@
   "d2ad2df4c015f417": "La règle de regroupement décide comment chaque checkout rejoint les groupes de projets de la barre latérale. La modifier peut déplacer un checkout vers un autre projet.",
   "0bdf6ae2117b6c23": "Vous ne trouvez pas un paramètre ? Gardez ce projet sélectionné ci-dessus et passez à n’importe quelle autre page de paramètres.",
   "3310e10f1efdc9bd": "Choisir une icône",
+  "a9cb97fca6a6576b": "Commande de création",
+  "90f45a354884ccdd": "Commande de suppression",
+  "0cdc8cdbed3e5eae": "Disposition des worktrees",
+  "c17b25519e2b194e": "Impossible de charger les commandes de disposition des worktrees",
+  "78e308ada516928b": "Impossible d’approuver la commande",
+  "a0c772d32a233da6": "Impossible de révoquer l’approbation",
+  "5ccd5614c65f8d1f": "Révoquer l’approbation de la commande {kind}",
+  "80c3794a5fa12f3a": "Approuver la commande {kind}",
+  "f206891e124c77b0": [
+    "Le ",
+    {
+      "t": "code",
+      "i": 1,
+      "c": "t3.json"
+    },
+    " de ce projet prépare les fils en worktree avec ses propres commandes. Elles s’exécutent sur la machine de cet environnement avec vos autorisations, et uniquement telles qu’approuvées ici : une commande dont le texte change doit être approuvée de nouveau."
+  ],
+  "8e73b883d41d4102": "Désactivé",
+  "f6a91589456cca50": "Approuvée",
+  "c92657bb7f2293ff": "Approbation requise",
+  "f1e5c1be1ac92361": "Approuver",
+  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal.",
   "65ccf4f8e049003e": "Choisissez un projet pour gérer son nom, son icône, ses checkouts et ses actions.",
   "067beea7d8f6e2c9": "Afficher tous les environnements",
   "1bf6da50131340d4": "Teinte de la couleur d’accent",
@@ -9374,6 +9730,8 @@
   "4cd59ceb5e2d6c47": "Commande de mise à jour de {provider} copiée",
   "7a425150e0d6f830": "Lancez-la dans un terminal quand vous êtes prêt à mettre à jour.",
   "30d8752e8b862700": "Impossible de copier la commande de mise à jour de {provider}",
+  "b1811ec662a97651": "{name} (disabled)",
+  "beb64efc6e2d1ff1": "{name} (removed)",
   "d2ddf02127f8abf1": "Incompatible",
   "d82511ccb6662fab": "Non pris en charge",
   "f67e8a1dbd410fff": "Prise en charge limitée",
@@ -9391,6 +9749,13 @@
   "21d0ef064eefa159": "Statut",
   "f31ce60f3f118c0d": "Nom affiché",
   "c45028de5c2f6cbb": "Libellé de l’instance",
+  "e448708b68d29236": "Inference server",
+  "d6cf01ce371ee48d": "The registered server this instance's models run on. Manage servers in Settings, Inference.",
+  "33dd23a7a5af094a": "{name} is disabled in Settings, Inference. Enable it or pick another server.",
+  "83615bcec8a3d001": "The linked server {id} is no longer registered. Pick another server or None.",
+  "2b67e86800693c97": "Runs local models",
+  "08db9539a4558099": "Linked to {name}",
+  "c9fe266c9fef7b7c": "Every model this instance can select runs on hardware you control. Local instances come first and handle background writing such as titles and commit messages.",
   "cf69675106e4bf46": "Configuration",
   "22078dd501ba3102": "Environnement d’exécution",
   "288c2d92df27a68c": "Modèles",
@@ -9421,6 +9786,7 @@
     },
     ", qui n’est pas disponible dans cette version. Sa configuration est conservée."
   ],
+  "9b5d3bfa0144685c": "Inference server unavailable",
   "b534d4cd528ede39": "Les préférences de modèle et les modèles personnalisés sont enregistrés dans l’environnement sélectionné et partagés entre les appareils connectés.",
   "caaef21e8722857d": "Mode rapide",
   "a860db2b1bb3aa31": "Sans raisonnement",
@@ -9654,7 +10020,6 @@
   "cd03f1a6d9d79875": "Alimentation externe",
   "7918a964c1578170": "Mode économie d’énergie",
   "f62db7ca5ce71d28": "Activé",
-  "0b236f40b2a852aa": "Désactivé",
   "6318d52001c1021f": "Inactif",
   "a8b0545544a81b2d": "Actif",
   "51a1d52c0e4eb89a": "Session",
@@ -9977,7 +10342,6 @@
   "0c816bce39329beb": "Modifier {label}",
   "02f531b974fc3dd5": "Ajouter un fournisseur 1Password",
   "acbf0b4710755dc1": "Personnel",
-  "bc714daca44e1826": "Enregistrer les modifications",
   "787b3fff435313e4": [
     "Les variables de fournisseur sur ",
     {
@@ -10015,16 +10379,6 @@
     " pour gérer ses fournisseurs de secrets."
   ],
   "13d4f258e93f1dc1": "Connectez un environnement pour gérer les fournisseurs de secrets lus par ses variables de fournisseur.",
-  "88466f5a03be2419": "Paramètre propre à l’environnement. Sélectionnez un environnement pour le modifier.",
-  "a3538ba5ca802bd7": [
-    "Supprimer ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " ?"
-  ],
   "0d5b3b39f92c04e4": "Supprimer le fournisseur",
   "c52bdbe39649742c": [
     "Rien ne lit depuis ",
@@ -10104,6 +10458,9 @@
   "cf0f7fc3df26fa75": "Statut et messages",
   "3bf40445a706e4c9": "Tout",
   "840497a2b41e60a3": "Jamais",
+  "5f217096ea7e47b9": "Local models only",
+  "a951a517c78fe4c9": "Any provider",
+  "393b572a6230681e": "Don't fall back",
   "91f76d566351a1ed": "Impossible de confirmer la mise à jour",
   "51afa46ca07c002e": "La confirmation de la mise à jour a échoué.",
   "9cedd1912bb1ce88": "Impossible d’installer la mise à jour",
@@ -10252,9 +10609,13 @@
   "a493648aceb375c9": "Toute nouvelle activité rouvre automatiquement un fil clos.",
   "daa0cf9a5aec4bc5": "L’inactivité ne clôt pas les fils qui ont une pull request. La fusion et la fermeture le font toujours.",
   "89416dc66d40ef67": "Génération de texte",
+  "8bee29d079154183": "Automatic: a ready local model writes thread titles and other generated text until you pick a model here. Source control can override it.",
   "08fcdecfd4fd11ec": "Pour les titres des fils et les autres textes générés. La gestion de versions a son propre paramètre. Les générateurs de texte des Fournisseurs apparaissent aussi ici.",
   "6c72064a8b709f24": "Réinitialiser le modèle de génération de texte à la valeur par défaut",
   "6560b4e16da91b06": "Modèle de génération de texte non enregistré",
+  "f90e37b98363f617": "Where background writing goes when its model cannot run. Local models only never sends it to a cloud provider you did not choose.",
+  "aa82206d3f6f721f": "Reset text generation fallback",
+  "c8378abe60e1b20c": "Fallback",
   "9aa7262bf9fbe4ad": "Les cibles sélectionnées utilisent des modes d’affichage progressif différents.",
   "6d906218686b3dd9": "Réinitialiser le streaming des réponses à la valeur par défaut",
   "e48e93f44d89ea86": "Mises à jour",
@@ -10316,6 +10677,7 @@
   "573ea5fdf293a9d6": "Tous les checkouts",
   "470ad8c54049d1e1": "Rechercher des checkouts",
   "7e2dfdd9f97fc027": "Portée des projets",
+  "1cf216566c1ee064": "Projet indisponible",
   "c1b8c351aa90f319": [
     {
       "t": "span",
@@ -11157,7 +11519,6 @@
   "b0d0aebadc521ed1": "Supprime les captures du navigateur enregistrées après ce nombre de jours. Les liens vers les anciennes captures ne s’ouvriront plus.",
   "fe4208562792c313": "Supprimer les anciens journaux archivés",
   "8debac9c8e9cff47": "Supprime les fichiers journaux archivés inactifs après ce nombre de jours. Les journaux actuels sont conservés.",
-  "8e73b883d41d4102": "Désactivé",
   "80d58a3fd4e4212a": "Projet",
   "de770505be25f1ff": "Dossier",
   "ada7b9a4d96959d2": "Fil",
@@ -11270,8 +11631,6 @@
     ". Tout ce qui utilise ce générateur se rabat sur le modèle de génération de texte."
   ],
   "2e487089c231536b": "Service",
-  "c732b08a5fa8c3d7": "URL de base",
-  "3953d1cccd71ab7e": "Nom (facultatif)",
   "304d6712ac5d3a89": [
     {
       "i": 1,
@@ -11474,8 +11833,7 @@
   "d673c77b300035cc": "Impossible de supprimer le thème",
   "c83d07c5cf498ba7": "Mode d’apparence",
   "4a95d9870eaddfa3": "Suivre l’apparence du système",
-  "b9b090c488584f1b": "Utiliser le mode clair",
-  "9f9e1113f12a9b41": "Utiliser le mode sombre",
+  "989cf9d373380272": "Use {appearance} appearance",
   "b55aba60a91dc142": "{count, plural, =1 {{label} mis à jour} other {{count} thèmes mis à jour}}",
   "9f7a18baae788a4a": "{count, plural, =1 {{label} ajouté} other {{count} thèmes ajoutés}}",
   "dfbfb4b6afd8bf91": "{label} ajouté",
@@ -11511,6 +11869,596 @@
   "42d843f45e1de53b": "Ajouté au prompt pour les titres de fil nouveaux ou régénérés.",
   "169d0ed4364b4644": "Réinitialiser les instructions de titre des fils à la valeur par défaut",
   "f307391eb1c5c9d7": "Limiter les titres à quelques mots. Commencer par le sujet principal.",
+  "513eac7e053118ac": "Fused model and exported GGUF",
+  "239f00e335ea3085": "Model fused",
+  "ef5b3d31fd76a90b": "Could not fuse model",
+  "3904d56be31e753b": "Stopped serving artifact",
+  "e586a8b94be853ce": "Could not stop served artifact",
+  "eb8e94bf90e5e02c": "Artifact server started",
+  "65fc043d1b35ca23": "Could not serve artifact",
+  "aaed68c2c3212782": "Registered in Inference settings",
+  "f9529e4ea4591f9a": "Could not register in Inference",
+  "d00c4e841df28e9a": "Held-out perplexity evaluation running",
+  "2913df150618afe9": "Local coding evaluation running",
+  "921d925cb8176612": "Results will update automatically when complete.",
+  "311f56e25662839d": "Could not start evaluation",
+  "aba73eb3f6e84b98": "Trained Artifacts",
+  "938fb80d0b621511": "Base vs. Fine-Tuned Evaluations",
+  "f7db8d44a6bb3c70": "No trained artifacts yet",
+  "9e8c206c6000ff34": "Completed fine-tuning jobs appear here so you can fuse weights, serve with mlx_lm.server, register in Inference, and compare evals.",
+  "453f4aabce61963a": [
+    "Serving :",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "b06f1a46f05a1042": "In Inference",
+  "252eed2661747505": "Eval running",
+  "42014c161d32f32e": [
+    "Provenance ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "830d8ea75beb393b": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " source threads"
+  ],
+  "4991509f4b0cbd13": [
+    "Test ppl ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "c549dd83af887dc3": "View in Inference",
+  "006ebf738493a0c2": [
+    "Adapter: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "32e32d614a08059c": [
+    "Fused: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "8c1429515fa2f126": [
+    "GGUF: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "244373432f139942": "Export GGUF",
+  "39e0fb3c926e22fb": "GGUF unsupported for this model family",
+  "71938ed857ae49c2": "Re-fuse",
+  "7e93afed70885080": "Fuse",
+  "7ac96d5c1dd02509": "Stop Server",
+  "bc5c547de47fec23": "Serve (mlx_lm)",
+  "6e555bd9751d9ac7": "Re-register in Inference",
+  "4e06d56fed87daec": "Register in Inference",
+  "2697c09816a4933a": "Running Perplexity...",
+  "6cd9ce3bbb24a803": "Eval Perplexity",
+  "b5801b47b2fb46c7": "Running Coding...",
+  "328e54b6660f5a86": "Eval Coding",
+  "35fb824a2d5a4a4c": "No evaluation runs yet. Run a held-out perplexity or local coding comparison from an artifact above.",
+  "dcc505274992e57c": "Artifact",
+  "619c366fd8e906a9": "Suite",
+  "204167c06dc9fb6e": "Status",
+  "aeee5f46fa958b07": "Base Model",
+  "9f154ac5e9608cfc": "Fine-Tuned",
+  "a2bcfb5705211b07": "Delta",
+  "8a538f758d2ea383": "Held-out Perplexity",
+  "45381b36864e58d6": "Local Coding",
+  "0d34b4852d9f8d77": "Training dataset created",
+  "f97aaa8f2e8637d1": "Could not create dataset",
+  "c8ad198cb8abd149": "e.g. TypeScript coding sessions",
+  "9b0277205d8a9b04": "Tous les fournisseurs",
+  "ebdb27736a1321f1": "claude-opus, qwen3 (optional)",
+  "f6d1a1f998519efc": "Comma-separated tags (optional)",
+  "a148b87d78e6be4b": "Settled threads only",
+  "63530f56df9d928f": "Include archived",
+  "42257e156f890903": "Include subagents",
+  "370282e0e5342862": "Include tool calls",
+  "29a8b6e085e55749": "Include reasoning",
+  "32e200d92cf152fb": "Checkpoint diffs",
+  "c09503681d600220": "Thread forks",
+  "1a570abfb98d2e7a": "Checkpoint rollbacks",
+  "6b5e62604e654719": "Superseded retry attempts",
+  "9f0807ca5e022845": "Redact env secret assignments",
+  "b942a42659127bd3": "Redact home paths & usernames",
+  "695701a07bb3f8b5": "Redact email addresses",
+  "7918bdf07b965f5e": "Redact high-entropy tokens",
+  "da25d86b6ac69e0c": "Internal company or client names, separated by commas",
+  "287aab63594e99da": "Matched threads",
+  "a7a9d9e4bf4b29bf": "Examples (T / V / Test)",
+  "479ece0093b459df": "Est. tokens",
+  "4ee3a4b75e98609c": "Redactions",
+  "4bff50b44f81da42": "{count, plural, one {[{count} tool call]} other {[{count} tool calls]}}",
+  "c999b04f76e40fe4": "Build Training Dataset",
+  "0a7ae82a3a283bb4": "Redaction Audit & Sample Preview",
+  "e7bbcda641a21b93": "Step 1 of 2: choose threads, extraction rules, and secret redaction before auditing samples.",
+  "e26f7f157ea5ed2c": "Step 2 of 2: verify redacted snippets and sample records before writing JSONL to disk.",
+  "ce996c56a949fa25": "Dataset name",
+  "f3444105eac0a60d": "Objective",
+  "4cab16a713c3c9ad": "Use curated threads only",
+  "837179e937e50b9c": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " curated threads in your training bucket."
+  ],
+  "9eda62107551fc6d": "All projects",
+  "cf5409d12fc3f53b": "Tous les fournisseurs",
+  "6597f0222241ca49": "Model filter",
+  "fc05d4fb26dd6f1a": "Tags",
+  "da338e4a17e7da85": "DPO preference pair sources",
+  "bc6093140847f324": "Min turns",
+  "dda13f21b33dc4b1": "Valid ratio",
+  "106914954203c4f2": "Test ratio",
+  "dacb4889ff40d9d2": "Max tool chars",
+  "5ccbc5d487438d7f": "Secret redaction",
+  "196bc0730b0e55c4": "Always active: provider API keys, JWT/bearer tokens, PEM private keys, cloud credentials, and URL credentials.",
+  "3125e39ef4b2c531": "Custom terms to redact",
+  "4ce86f0240e12304": "Storage location",
+  "5a5bf1a021b54310": [
+    "Default (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "free)"
+  ],
+  "5d6702432732f8b9": "Split seed",
+  "5957c075ecbc3906": "Preview failed",
+  "c7d0e9d96999e135": "Extraction warnings",
+  "1c95ed6936c56dcd": "Redaction audit",
+  "71fc3a5c6d034f6d": "No secrets or sensitive values matched in the selected transcripts.",
+  "c317fa79a76d4963": "Source",
+  "e55e4b2870b47a2d": "Redacted snippet",
+  "e4b57c4c002b74f7": "Showing the first 100 representative findings.",
+  "98ccff6da31e0490": "Redacted sample records",
+  "295593d6f5045a55": [
+    "Example ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " (",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " messages)"
+  ],
+  "555710ae0494c8c8": "No SFT sample records produced by these filters.",
+  "7247d85349f216cf": [
+    "Prompt: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " msgs | Chosen:",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " | Rejected:",
+    " ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
+  ],
+  "68338f240001e389": "No DPO preference pairs found for these filters.",
+  "578e60f8d0031911": "Scanning & redacting...",
+  "f911bb994d9020f4": "Preview & Audit Redaction",
+  "14c592458df60590": "Back to Filters",
+  "479c50cef585f907": "Creating...",
+  "8605e4e8d6536a09": "Create Dataset",
+  "81f41eb5a064420e": "Training job cancelled",
+  "6ae66540e1bb8983": "Could not cancel training job",
+  "b4194eb759834459": "Fuse failed",
+  "e9fa8f6080ad9d56": "Adapter serving and registered in Inference",
+  "677139402407920e": "Could not serve fine-tuned model",
+  "1c64185d4e913571": "Stopped serving fine-tuned model",
+  "f098df7b43216266": "Could not stop served model",
+  "3cc558939a0ef4e2": "{name} training progress",
+  "a8b7bf2be18f1243": "Iter",
+  "dab21be641750fa9": "Train Loss",
+  "38deff220cb28697": "Val Loss",
+  "3808d60c29f2f35c": "Throughput",
+  "3bf985b6e26879b4": "Peak Mem",
+  "f014aab0d6a3b886": "ETA",
+  "ea114955b7453167": "No log output recorded yet.",
+  "b406c89936bc2c1b": "GPU lease active",
+  "50ee8e8139a7617d": "View Logs",
+  "3c2d157b1d1824ab": "Training failed",
+  "ce9368fc5d15f06e": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " sequences exceeded max sequence length (",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    ") and were truncated during training."
+  ],
+  "cc658400a3f17db4": [
+    "Serving on port ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "987e55dadda97e6c": "Open in Inference settings",
+  "77185bedd4eceac6": "Re-fuse Model",
+  "b44616fc2ddd7db0": "Fuse Model",
+  "242028ab62cff28f": "Stop Serving",
+  "d528f8c78623d49e": "Serve & Register in Inference",
+  "1c6ca518bbc21844": "Eval Running",
+  "75de4a627c20e980": "Run Eval",
+  "8a4c51eb5291fb5a": "Cancel training job?",
+  "adea14bf70fff123": [
+    "This sends SIGTERM to the running trainer process for ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "and releases the local GPU lease. Saved checkpoints remain in the job folder."
+  ],
+  "8b7bedb683b617d4": "Keep running",
+  "f4291206bbd1f5ad": "Cancel job",
+  "91eb6c033ca27d18": [
+    "Showing last ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "of ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " (truncated)"
+  ],
+  "ae9095cc97b45917": [
+    "Showing last ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "of ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    }
+  ],
+  "560886b1d4071007": "Trainer process output (bounded tail).",
+  "78d2e0386f1c7c14": "Loading logs...",
+  "c87ce97fe7efeb40": "Training job queued",
+  "58616f03cd07ff7c": "Could not start training job",
+  "34f0706a863b7a7a": "e.g. Qwen3-Coder LoRA v1",
+  "b7234139b09b18b7": "Select a dataset",
+  "62d2b96282ad6fb8": "Choose a cached HF / MLX model",
+  "2e504e351cece341": "Base model slug or local directory",
+  "de18e768748dfb87": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+  "0deb98ea9fc41f4c": "Iterations",
+  "9f1b6749dbfe8023": "Batch size",
+  "a694a94a7e93e659": "Grad accumulation",
+  "0266e7040d78c746": "Max seq length",
+  "0c84786354d07370": "LoRA rank",
+  "ebe7f9eb12ce6ed1": "LoRA scale",
+  "b33c9bcc916eedf2": "LoRA dropout",
+  "703fe36291729738": "Layers (-1 = all)",
+  "c82c406990f56123": "Mask prompt tokens",
+  "2337bd8b5d514f46": "Gradient checkpointing",
+  "762e1564f37e42ec": "Pause local inference during run",
+  "1c674b2c0ddb4a57": "Auto-fuse adapter on completion",
+  "7ded6519b366410d": "Run held-out test eval",
+  "3af51cedd9031eda": "Trust remote code",
+  "c922f39fd1ab1043": "Launch Fine-Tuning Job",
+  "48f375f0ac17ea6a": "Configure a local MLX training run. Local inference pauses automatically during the GPU lease if enabled.",
+  "0b9602e4f2ae6e65": "Job name",
+  "8a43f97bcdff6004": "Dataset",
+  "c02456706d0a40be": "DPO dataset requires an SFT conversion or external DPO trainer",
+  "6053ab19b9459131": [
+    "The local mlx-lora trainer supports SFT datasets only. You can export the DPO JSONL at",
+    " ",
+    {
+      "t": "code",
+      "i": 1,
+      "c": {
+        "i": 2,
+        "k": "_gt_value_2",
+        "v": "v"
+      }
+    },
+    " ",
+    "or create an SFT dataset from the chosen completions."
+  ],
+  "e520e01161079527": "Converting...",
+  "4b3ebb2d43997486": "Create SFT dataset from chosen",
+  "745d1e9f5d3a5904": "Base model",
+  "311e8109d0f87ae2": "Custom HuggingFace slug or local path",
+  "8883726f8ee530b2": "Fine-tune type",
+  "c0e9b3205ffeb648": "Full",
+  "8b010afb76754ca5": "Preset",
+  "20cb7c21d964b175": "Advanced hyperparameters & storage",
+  "0d3e4f3e2691aae8": "Learning rate",
+  "29375c65ef867c6c": "Optimizer",
+  "f7b1f8ea6e3be19e": "Output storage root",
+  "d767248f5efc3505": "Starting...",
+  "a1fa708f856a7dab": "Start Training Job",
+  "7ea8e8e05e6c7cd1": "Training and validation loss chart",
+  "4acc1349bb661501": "Waiting for training loss metrics...",
+  "f5690acca5205fd5": "Loss curve",
+  "d8576b8838f0eb1e": [
+    "Train: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "b33ae1355277f75f": [
+    "Val: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "eb32f364465fa370": "Quick Smoke",
+  "3e441cc613250178": "100 iterations, fast sanity check on formatting and loss descent.",
+  "1fe6709caa61e2ff": "Balanced LoRA",
+  "f98e9dc944575d16": "600 iterations, strong coding style and tool-call adaptation.",
+  "699be1600c0ee7cc": "Deep LoRA",
+  "42dcb7256736027b": "1500 iterations across all layers for larger curated datasets.",
+  "7f0367124763b96e": "Provider API keys",
+  "96733475c8ea5f52": "JWT & bearer tokens",
+  "f660006e29022c1a": "PEM private keys",
+  "b16ebac424615c07": "Cloud credentials",
+  "05521fa3e94b108e": "Env secret assignments",
+  "52827d34732e88de": "URL credentials",
+  "5ef70d65cf6b5ce4": "Home paths & usernames",
+  "cc1a4ef6f20a1c24": "Email addresses",
+  "09dc051116a3ad2e": "High-entropy secrets",
+  "314e33085fc71b67": "Queued",
+  "93f4cb7c5f44de1a": "Draining inference",
+  "7aa93d15b040c73e": "Preparing dataset",
+  "672a868de6859d03": "Training",
+  "375056e46b705578": "Fusing",
+  "116bf08db875d474": "Running",
+  "ffbfbf32f99c73b4": "Select a dataset before starting training.",
+  "5bfbdb4e535345e0": "Dataset has {trainCount} training examples, which is fewer than batch size {batchSize}.",
+  "3f35ebba6497396c": "Validation split has {validCount} examples (below batch size {batchSize}); validation will be skipped automatically.",
+  "d795f8fc773d2a9a": "The selected mlx-lora backend supports SFT datasets only. Create an SFT dataset from the chosen completions or export the DPO JSONL.",
+  "57ebed888d3f4875": "Iterations must be a positive integer.",
+  "24254f007c6b9dc9": "Batch size must be at least 1.",
+  "2e2dcd0cbbe9b6ef": "Gradient accumulation steps must be at least 1.",
+  "54d7692c4d388d27": "Learning rate must be greater than 0.",
+  "64fb6839d5333621": "Max sequence length must be at least 64.",
+  "61e9cc7202a8e93c": "LoRA rank must be between 1 and 256.",
+  "be5da2d7942a0d8e": "LoRA scale must be greater than 0.",
+  "530abaeb14e321f1": "LoRA dropout must be between 0 and 0.5.",
+  "d955b6094e10532c": "LoRA layers must be -1 (all layers) or between 1 and 128.",
+  "d2ee7fd03e382668": "Target storage has {free} free; at least {required} GB is recommended for this run.",
+  "c4c064b977cd2bf2": "Enter a name for this training job.",
+  "3a0c1d4f4ce083f2": "The selected training backend is not available on this host.",
+  "63e876310936ae46": "Choose or enter a base model.",
+  "9102e8ffe1327055": "Base model cannot start with '-'.",
+  "dc103e10310f5d6e": "Base model must be a HuggingFace repo slug (org/model) or a local model path.",
+  "90a5332a43373453": "Training",
+  "501f01411f9b76b7": "Connect an environment to build datasets and run local MLX fine-tuning jobs.",
+  "fb61076fea4d04a8": "SFT dataset created from chosen completions",
+  "3acb607d4b2d1fc2": "Could not convert DPO dataset to SFT",
+  "b1a912fd5f357ad0": "Dataset deleted",
+  "e8453054d5fe86c9": "Could not delete dataset",
+  "e0412171c3c715b8": "Local Fine-Tuning (MLX)",
+  "44d8bb1752293d1f": "Delete dataset {name}",
+  "d7a53c48c9a6b138": "New Dataset",
+  "ae6f16d64c6cd71b": "New Training Job",
+  "1188f3d444bfbedb": [
+    "mlx_lm ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "846005810d6c6d5b": "mlx_lm unavailable",
+  "322af08d391b66cb": "Probing trainer...",
+  "ca9aa18bad51ef91": [
+    "Apple Silicon (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " ",
+    "unified)"
+  ],
+  "fb1b62e8af0c3dbb": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " RAM"
+  ],
+  "8394f9d53a74a11f": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " free"
+  ],
+  "64e1934e1c0191a3": [
+    "GPU lease: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "db876d5745029dd7": "GPU idle",
+  "e1cfd7e80959ee50": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " curated threads"
+  ],
+  "a300248a61ba3366": [
+    "Storage: ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "b51762b7ad0bd02c": "Local MLX trainer unavailable",
+  "d1fc7a9d1c895706": "Training stream disconnected",
+  "167904fd487a4fc7": [
+    "Could not subscribe to live training updates on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ],
+  "2283e8f06dee2dfa": [
+    "Jobs (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ")"
+  ],
+  "384742c9f2435156": [
+    "Datasets (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ")"
+  ],
+  "548a8fdb43d2a3a7": [
+    "Artifacts & Evals (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ")"
+  ],
+  "4b47721770c26d61": "No training jobs yet",
+  "31900f7c303bca64": "Build a redacted dataset from your threads, then launch a local MLX LoRA or DoRA run.",
+  "c0d1aa6d225a7e65": "No training datasets yet",
+  "d8ef4645142f9b74": "Extract SFT or DPO datasets from durable thread history with built-in secret redaction.",
+  "cb0cc83552983279": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " redacted"
+  ],
+  "ea81016abd80e956": [
+    "Train ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " / Valid",
+    " ",
+    {
+      "i": 2,
+      "k": "_gt_value_2",
+      "v": "v"
+    },
+    " / Test ",
+    {
+      "i": 3,
+      "k": "_gt_value_3",
+      "v": "v"
+    }
+  ],
+  "154fc8d90cc02edf": [
+    "~",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tokens"
+  ],
+  "288b270be03c3721": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " threads"
+  ],
+  "ce7a39752e800603": "Train",
+  "38a95f01262e06a1": "Delete dataset?",
+  "74ec7e41c5a8dca2": [
+    "This removes ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " and its JSONL files from disk. Your original threads remain untouched."
+  ],
+  "aba29e77e52bca46": "Delete",
   "ea6f97bad03faf84": "Monospace du système",
   "afa0ba3d124d9b8a": "Réinitialiser la police de l’interface à la valeur par défaut",
   "eb19ce0364bb9a6e": "Tout ce qui est hors des blocs de code et du terminal.",
@@ -11559,6 +12507,95 @@
   "4cf6a373a7535324": "{name} · Désactivé",
   "c792e744936dbe1b": "Ajouter une source HTTP",
   "4032a03ee5301037": "La connexion enregistrée et ses identifiants sont supprimés de cet environnement.",
+  "823fe8948ade5817": "Loading the models {agentLabel} lists…",
+  "5a3b14f82e2747ab": "{agentLabel} is not installed on {machineLabel}",
+  "0a130a8c79679c9a": "{serverName} is saved and linked. Install {agentLabel}, or pick another agent and try again.",
+  "fd57d0fd66ae7884": "{agentLabel} does not list {modelId} yet",
+  "7cd63a21700dce34": "{agentLabel} is linked to {serverName}, but its model list has not caught up. Try again in a moment.",
+  "72fcc3fd9b70bc67": "The default model was not saved",
+  "da5953bfaf4de96a": "Model server: {serverName}",
+  "6c48f2278430857d": "Agent: {agentLabel}",
+  "e7b7cc59c4885b68": "New threads on {machineLabel} use {modelId}",
+  "f94a8ce4ff8a3b0b": "Background writing (titles, commit messages, pull request text) uses {writing}.",
+  "4fd158b5904a0275": "Nothing was saved",
+  "3126df3b8e9a25cd": "Checking {serverName}…",
+  "449437801abd05f8": "{serverName} is saved but not ready",
+  "a132ba94ac0bbefb": "It did not answer the check. Start it and try again.",
+  "009a508d3360be84": "On {machineLabel}: {serverStep}, {agentStep}, and make {modelId} the default for new threads.",
+  "052859e52482a343": "use the model server {serverName}",
+  "8e363389bd707468": "add the model server {serverName}",
+  "94ae9f8c73502bd9": "use {agentLabel}, already linked to it",
+  "0561ab0c29ca6fab": "link {agentLabel} to it",
+  "bd1a32dddeb0b3e2": "Use this model",
+  "44b31038d7fa3129": [
+    "Find a model server on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " (Ollama, LM Studio, llama.cpp, MLX, vLLM, SGLang, TensorFold) and run new threads on it. Nothing leaves your hardware."
+  ],
+  "901e41570e5206c5": [
+    "Inference servers on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "6f19a5d56ac3f000": "Search again",
+  "995244a1785c5881": [
+    "Looking for model servers on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "…"
+  ],
+  "fb7b85e84c6ff5b7": [
+    "No model server answered on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". Start one, or enter its address below."
+  ],
+  "344547a54c0df8ba": [
+    "No model server answered on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " at the usual ports. Start one, or enter its address below."
+  ],
+  "b66c4b0f69997b3e": "Or enter its address",
+  "4ecbe85f7c82f1e3": "Check",
+  "066217798e6896ad": "Agent",
+  "25f457f910ba96b7": "Recommended",
+  "8cf42451fb30da7e": "Experimental",
+  "2efb5df48e4b24c8": [
+    "Not set up on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " yet; checked when you connect."
+  ],
+  "875fd762d6a15e9f": [
+    "Added as ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
+  "d94a2d6e41b3ba81": "Needs an API key",
+  "24cf021b4ff4df2e": "It answered, but lists its models only with a key. Add it in Settings, Inference, with its key.",
   "0424112d5a0ecd71": "Auto",
   "3f0e1b77e45d53a9": "Appuyer pour basculer, maintenir pour parler",
   "45928549c050a1b4": "Maintenir",
@@ -11653,6 +12690,7 @@
   "817dbf1c068b62e7": "Où votre parole est convertie en texte.",
   "710d3e4f0243014c": "Environnement choisi (indisponible)",
   "61088464d1b7174d": "environnement indisponible",
+  "800966eb58181745": "Vérification des langues prises en charge par le modèle…",
   "2b3e8ee4f31d1433": "Automatique utilise la langue de votre Mac. Une langue est téléchargée à sa première utilisation.",
   "71184e5a54a69f1d": "Le fournisseur détecte automatiquement votre langue.",
   "ffb2653eb2d9fc1a": "{model} détecte automatiquement la langue.",
@@ -11826,6 +12864,7 @@
   "afda415d2d75a5d3": "Discussion",
   "4beeab8d1814b251": "Diffs et pull requests",
   "3b958faa12d54484": "Raccourcis clavier",
+  "525a1961725bfe48": "Inference",
   "2ab325baee3ec9a3": "Tâches planifiées",
   "0a59e086514a62a9": "Gestion de versions et tickets",
   "1de0df2b8a4fb96e": "Partage et accès",
@@ -11889,9 +12928,6 @@
   "6826fa9579c22035": "bêta partager invité invitation lien coéquipier regarder t3 connect tunnel",
   "f10c06cba0cdf7fe": "bêta associer une autre machine vps pair agents y travaillent déléguer",
   "bc0b409d89ce086e": "bêta workflow exécutions durables automatisation étapes planification webhook dossier",
-  "933dabf0700708af": "Nombre d’exécutions ignorées que chaque workflow conserve dans son historique. Les exécutions ignorées plus anciennes sont supprimées ; celles qui ont fait quelque chose sont toujours conservées.",
-  "f172d7e5deb24f75": "Rétablir la valeur par défaut des exécutions ignorées conservées",
-  "ba94015389f327bc": "Exécutions ignorées conservées",
   "4b2669dcdb7d3776": "workflow historique rétention supprimer anciennes exécutions ignorées webhook history retention skipped runs",
   "4a21cf825a2045b0": "bêta tab autocomplétion prédire prochain message claude codex texte fantôme",
   "fea2dc36585c4a20": "Hôtes d’appareils Simlock (alpha)",
@@ -11951,6 +12987,8 @@
   "a26bd55959bfa3d3": "demander avant fil historique de discussion",
   "de504407a9dfe3bd": "confirmation app de bureau quitter direct maintenir double clic appuyer deux fois",
   "a8a6da6439b8333e": "titres de fils générés gestion de versions contenu fournisseur par défaut",
+  "907bf183c139e405": "Text generation fallback",
+  "0b392ceecc4e4497": "local models only cloud privacy background writing titles commit messages",
   "0c5fc3b5e41e1956": "titres de fils générés prompt style personnalisé nommage renommer régénérer",
   "a83570bcb45d8fa1": "à propos rechercher des mises à jour télécharger installer mettre à niveau version",
   "d65bdf6748801734": "canal de publication stable latest nightly préversion",
@@ -11973,7 +13011,13 @@
   "2b5484226f202c19": "Son de capture",
   "dd95128501e22145": "Flash de capture",
   "9f5280c955132ee1": "Animations de capture",
-  "f8d32e19131fd5b3": "agents cli codex claude cursor grok fx kiro opencode antigravity google se connecter se déconnecter installer abonnement instances authentification clé d’api modèles configuration chemin du binaire répertoire de configuration codex_home home fantôme point de terminaison arguments variables d’environnement nom d’affichage couleur d’accent personnalisé favori masqué compactage auto sessions natives importer reprendre",
+  "2fb7291db0e77c73": "agents cli local models self-hosted ollama lm studio llama.cpp mlx vllm sglang pi codex claude cursor grok fx kiro opencode antigravity google sign in sign out install subscription instances authentication api key models configuration binary path config directory codex_home shadow home endpoint arguments environment variables display name accent color custom favorite hidden auto compact native sessions import resume",
+  "fd8e3c3a97ea4c77": "Inference servers",
+  "3acf9851b7e3d7a7": "local models self-hosted model server gpu ollama lm studio llama.cpp mlx vllm sglang tensorfold openai compatible base url api key context window concurrency load queue",
+  "54d64a39d878f5b6": "Fine-tune local model",
+  "0f4c31b00cf755e6": "mlx lora dora fine-tuning training local model adapter fuse gguf apple silicon gpu loss chart eval",
+  "2cd0c3f80d3213d9": "Training datasets",
+  "997731ec4fb768f9": "sft dpo curated threads dataset builder secret redaction audit jsonl training storage directory",
   "ad371af21e5b4b01": "Fournisseurs d’utilisation",
   "9d9d31a4f3d5ff69": "sources d’utilisation CLIProxyAPI proxy CLI hub quota abonnement limites clé de gestion ajouter supprimer",
   "d65fa0946585b245": "Générateurs de texte",
@@ -12069,7 +13113,7 @@
   "9c73aa0c2e2b4e7d": "Choisir un raccourci",
   "300a948f90c4d75c": "Revenir en arrière",
   "2a50e229df85d553": "Avancer",
-  "8aa6404c8018ea67": "Accueil T3 Code",
+  "904752f4d16d8b05": "mn3code home",
   "8e9626aa27cb188a": "Tickets",
   "9d2fc1003e82feb1": "Utilisation",
   "20283eb1dd6119f9": "{count, plural, one {{count} pièce jointe} other {{count} pièces jointes}}",
@@ -12114,8 +13158,8 @@
   "8cf699ae75fd8067": "Épinglés",
   "be451f475c514b37": "Ignorer la notification Réveillé",
   "e9ced65134f2f36c": "Réveiller le fil maintenant",
-  "374dac09151d4578": "En attente",
   "a8f30f631e2b010e": "En attente de synchronisation avec son environnement",
+  "374dac09151d4578": "En attente",
   "aca5896600bf173e": "Vous êtes actuellement sur une autre branche.",
   "f665b5be60d8c144": [
     "Transféré depuis ",
@@ -12182,14 +13226,12 @@
   "c1a9fe8e24876f1d": "{count, plural, one {{count} fil en cours sera interrompu.} other {{count} fils en cours seront interrompus.}}",
   "ecdf5f108ecc71d0": "{count, plural, one {{count} peut reprendre après le redémarrage.} other {{count} peuvent reprendre après le redémarrage.}}",
   "0576c87870fb6389": "Mettre à jour",
-  "948185631ef288e6": "{count, plural, one {{count} en cours} other {{count} en cours}}",
   "3d9a2f6b9c114039": "Fournisseurs",
   "f4baf8deafbb227d": "Ignorés",
   "f938bb483eb3d189": "redémarre en dernier",
+  "f13e08bd3614112e": "mettez à jour T3 Code sur cette machine",
   "9bca02be2b4d612a": "non connecté",
   "2dcc418b6a13b83c": "nécessite une mise à jour manuelle",
-  "f13e08bd3614112e": "mettez à jour T3 Code sur cette machine",
-  "3c3348c36a2695af": "changez le canal de mise à jour sur cette machine",
   "fa8faa732a2688ef": "sur le canal {channel}",
   "e65649675cb4cbaa": "désactivé",
   "a1e7c08d9ef315c7": "chargement en cours",
@@ -12206,6 +13248,7 @@
   "3ac986d604a2ad62": "Cette app ne peut pas basculer : son serveur n’est pas connecté, sa base de données ne peut donc pas être vérifiée.",
   "3bbb6e9ade0cf7e1": "lancez `{command}` sur cette machine",
   "e7194946af611278": "exécute un build preview",
+  "3c3348c36a2695af": "changez le canal de mise à jour sur cette machine",
   "f5eac23351c99297": "changez l’app Mac sur ce Mac",
   "d7444fbde9a80f04": "<1 min",
   "09c1af20e9323765": "Redémarrage dans {seconds} s",
@@ -12322,7 +13365,9 @@
   ],
   "8bd6f07136317c8f": "Aucun fournisseur des environnements sélectionnés ne signale de limites d’abonnement.",
   "87f5d0c61b335f38": "Consultez l’utilisation dans ChatGPT avec votre compte connecté.",
+  "bbed7ffde045e5d8": "Estimated equivalent API spend",
   "5b4c71b36b979e80": "Coût",
+  "4d1326fad2b65d90": "Local",
   "fce17caaa0d1a45b": "Sans prix",
   "8f01f72ab87d0628": "Tokens",
   "bad042fdd1b3cb1f": "Pour 1 M de tokens",
@@ -12358,9 +13403,9 @@
   "d2d071e45a2d6b89": "Sélectionnez un environnement pour voir les limites.",
   "c9180daea905a0a6": "Sélectionnez un environnement pour voir l’utilisation.",
   "f0297ec79e896a13": "{environment} : {error}",
+  "61571f4542da9903": "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
   "b01bf98dd90ee819": "Estimation API",
   "bab34b28e9ee8e88": "Détails de l’utilisation sans prix",
-  "61571f4542da9903": "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
   "2a57181a9d128463": "{share} du coût · {tokens} tokens",
   "d8a6a99fbdda0d3e": "{share} des tokens · {cost}",
   "ae86762909d453d2": "Tokens traités par heure",
@@ -12381,7 +13426,6 @@
   "9b84232a3f71dae1": "Certains environnements n’ont pas pu signaler leur utilisation",
   "004d25875c02d3eb": "Analyse…",
   "1210d5c3d0cf203b": "Prêt",
-  "9b0277205d8a9b04": "Tous les fournisseurs",
   "31fd849033990734": "Aucun fournisseur",
   "0d4d01729dabc81e": "{count, plural, one {{count} fournisseur} other {{count} fournisseurs}}",
   "19ace67a44293eba": "Utilisation",
@@ -12402,13 +13446,14 @@
   "fc41173bcd7495a4": "Part",
   "b4ae29a86f8a6ade": "Tokens",
   "49c4cd88ca4d260a": "Aucune activité dans cette fenêtre.",
+  "e472e206131c5395": "Estimated equivalent API spend",
+  "88516c68e8bb86e0": "Local",
   "0a492183a4c7bb3d": "Sans prix",
   "7853bd9e23f25bb6": "Total",
   "873ae13250e5bc5c": "Tous les environnements",
   "e051bdc6c63a0b4b": "Aucun environnement connecté.",
   "b11af3f3da3d494e": "Les totaux sont partiels pendant l’analyse des environnements sélectionnés.",
   "8062808b87ce6032": "Prix des modèles",
-  "cf5409d12fc3f53b": "Tous les fournisseurs",
   "55e99aaf3d0e6af4": "Prix non chargés",
   "ed447281261f2d0e": "Accès en lecture seule",
   "67633defded66bf7": "Saisissez un ID de modèle.",
@@ -12535,6 +13580,8 @@
   "b8dcbc93a2ca1861": "Cette exécution ne le mentionne plus.",
   "115c69de3202f664": "Ouvrir",
   "a2bbf464a3be4882": "{count, plural, =1 {1er essai} =2 {2e essai} =3 {3e essai} other {{count}e essai}}",
+  "0398ca6c1d24b92d": "en attente, le prochain",
+  "0af6d5ffd5166214": "{count, plural, one {en attente, {count} devant} other {en attente, {count} devant}}",
   "e39f89c909df4db0": "Impossible de reprendre l’exécution",
   "865f034346b82f47": "Annuler {title} ? Ses agents s’arrêtent et l’exécution ne pourra pas être reprise.",
   "6bc75632fd9c9136": "Impossible d’annuler l’exécution",
@@ -12561,11 +13608,17 @@
   "dd7a1e58c2553933": "réveil dans {duration}",
   "95cc952724dd7310": "réveil imminent",
   "3cc34921c0128593": "en cours",
-  "e777db2880f53a46": "personne n’a répondu",
   "dc90739d391a5e67": "Vous avez répondu {choice}",
+  "4e96712d839ccbff": "{who} a répondu {choice}",
+  "e777db2880f53a46": "personne n’a répondu",
+  "201490988858b511": "retirée par {by}",
   "389f2563b5b763fd": "Étapes rapides",
+  "99451a5d2d40440f": "Retirée par {by}.",
+  "3ee30a50b70fffab": "Retirée par {by} : {reason}",
+  "92e129bf413a1220": "retirée",
   "a41c8d758121ad81": "en veille",
   "9db248b770096984": "a attendu",
+  "49be26a27dcb30e5": "en attente",
   "c76124517af28686": "en cours depuis {duration}",
   "89102905bf09b0e8": "Suivre en direct",
   "bdf338cdff4118f0": "Transcription",
@@ -12599,6 +13652,49 @@
   "8bffb377e2a6a7de": "sa version n’est plus enregistrée",
   "f92d9132f7b85d1a": "Chargement des étapes…",
   "6ebc59f64c761a49": "Rien pour l’instant.",
+  "19097cfb8f5a79cf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a répondu",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    "."
+  ],
+  "e7bbf693910057bf": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a répondu",
+    " ",
+    {
+      "t": "span",
+      "i": 2,
+      "c": {
+        "i": 3,
+        "k": "_gt_value_3",
+        "v": "v"
+      }
+    },
+    ": ",
+    {
+      "i": 4,
+      "k": "_gt_value_4",
+      "v": "v"
+    }
+  ],
   "a759dccd157d7dae": [
     "Vous avez répondu",
     " ",
@@ -12632,6 +13728,15 @@
       "v": "v"
     }
   ],
+  "3759768c5d342c22": [
+    "répondue",
+    " ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "c98009be9a273b31": "Ouvrir l’exécution",
   "c8eb9be36d4d51ad": [
     "Fil sur ",
@@ -12657,6 +13762,15 @@
   ],
   "02dfe6c63fd0b8a1": "Ajouter une raison",
   "19abd94828a3bdbc": "Demander d’abord à l’agent",
+  "e114d37b32ab0dc7": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " nécessite une raison."
+  ],
+  "46d614fa7b4bf1e5": "Exécutions de workflow",
   "a18721fa8f328361": "Vous attendent",
   "bbf24e7920c1e86b": "En cours",
   "8d6e18d2ad832db6": "Toutes",
@@ -12671,13 +13785,22 @@
   "b6409289e0c9a4dd": "Workflow",
   "035cb02ca1ae4952": "Les {count} workflows",
   "8eeb9cb07d7c59e1": "Type de question",
-  "e4d1316c85ed7066": "Aucune question de ce type ne vous attend.",
   "e2131cbec8accfe3": "Tous les types",
-  "46d614fa7b4bf1e5": "Exécutions de workflow",
   "1c635faa2fb45b8b": "Pas encore exécuté.",
+  "e4d1316c85ed7066": "Aucune question de ce type ne vous attend.",
   "156ff7b625287a1e": "Masquer les éléments ignorés",
   "69b985b97ab45e6b": "Afficher {count} ignorés",
   "2400254d362de84d": "Chargement des exécutions de workflow…",
+  "cae5c3205c01d062": [
+    {
+      "t": "span",
+      "i": 1,
+      "c": "Un fichier de workflow présente un problème."
+    },
+    " ",
+    "La dernière version valide continue de s’exécuter."
+  ],
+  "ed8ce6ebc73dc12d": "Ouvrir le fichier",
   "145e1f7503ba3b2c": [
     "Cet environnement n’a aucune exécution avec ce lien.",
     " ",
@@ -12703,16 +13826,6 @@
       "c": "Lire le guide"
     }
   ],
-  "cae5c3205c01d062": [
-    {
-      "t": "span",
-      "i": 1,
-      "c": "Un fichier de workflow présente un problème."
-    },
-    " ",
-    "La dernière version valide continue de s’exécuter."
-  ],
-  "ed8ce6ebc73dc12d": "Ouvrir le fichier",
   "5d8d278ff828102d": "Tous les workflows",
   "3b0f1659172107e4": "Tous les types",
   "39459da07479f482": "Agent",
@@ -12858,168 +13971,5 @@
   "27d76249d09eb69f": "Guide de revue prêt",
   "faa3bb26abb39c93": "Échec du guide de revue",
   "b7df38b7d8792d78": "Ouvrir le guide",
-  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue",
-  "99d51127f573296b": "Autre compte",
-  "8ec2c57414669b79": "Connectez un second espace de travail ou utilisateur {tracker}.",
-  "99963c0142e17f00": "Pour le nouveau compte {tracker}.",
-  "6d8e4ebc889bace9": "Ajouter un compte",
-  "8a883c4fbc127b68": "Activation de la fusion automatique de la pile...",
-  "5fb2a26ae31e8983": "Impossible d’activer la fusion automatique de la pile",
-  "986d0dcbf4dd0098": "Fusion automatique de la pile activée",
-  "f3ed1f63c8a3eef2": "{host} fusionnera la pile jusqu’à #{number} dès que ses conditions seront remplies.",
-  "bd536a0a1754f6cb": "Impossible d’annuler la fusion automatique de la pile",
-  "bb90ac3b2f3a72d5": "L’hôte a refusé d’annuler la fusion automatique. Actualisez et réessayez.",
-  "9c28753c777c37b7": "{count, plural, one {Fusionner automatiquement {count} {term, select, mr {merge request} cr {demande de modification} other {pull request}} ?} other {Fusionner automatiquement {count} {term, select, mr {merge requests} cr {demandes de modification} other {pull requests}} ?}}",
-  "a86b49982e18784d": "Fusionner #{number} et ses couches non fusionnées inférieures dans {base} avec {method} dès que chacune remplit les conditions de {host}. Cela peut se produire immédiatement.",
-  "b1afda5c964deee4": [
-    "Fusion automatique de la pile (",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    ")"
-  ],
-  "33d18dda74f6d7b3": "Annuler la fusion automatique de la pile",
-  "012c67c7f1a99e33": "Fusion automatique de la pile",
-  "4a18481bea4b4ad5": "Nouvel appareil connecté à {environmentLabel}",
-  "4144ab6aa487528a": "{device} s’est connecté via {product}. Ce n’était pas vous ? Vérifiez-le.",
-  "a10cfdb27152c757": "{count, plural, one {{count} appareil s’est connecté} other {{count} appareils se sont connectés}} via {product}. Ce n’était pas vous ? Vérifiez-les.",
-  "e0856d6a402ad821": "La politique de {organization} n’autorise pas les commandes de disposition des worktrees des projets.",
-  "206811f6f441bfc7": "Ce projet prépare ses worktrees avec sa propre commande, que personne n’a approuvée telle qu’elle est écrite actuellement. Cette connexion ne peut pas l’approuver : approuvez-la depuis un client qui peut utiliser le terminal.",
-  "b8087c9a70c26da9": "Impossible d’approuver la commande de disposition des worktrees.",
-  "49eda70cfd56e621": "S’exécute au démarrage d’un fil dans un worktree et à la restauration de son dossier",
-  "188ccaa1199f5611": "S’exécute à la suppression du worktree d’un fil",
-  "7e8476e7306acabe": "Autoriser ce projet à exécuter ses commandes de worktree ?",
-  "8e11914556fd8b13": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " prépare les fils en worktree avec ses propres commandes issues de ",
-    {
-      "t": "code",
-      "i": 2,
-      "c": "t3.json"
-    },
-    ". Elles s’exécutent sur la machine de cet environnement avec vos autorisations, hors de tout bac à sable d’agent. La question vous sera reposée chaque fois que leur texte changera."
-  ],
-  "46807acd02a4ff72": "Approuver et continuer",
-  "a9cb97fca6a6576b": "Commande de création",
-  "90f45a354884ccdd": "Commande de suppression",
-  "78e308ada516928b": "Impossible d’approuver la commande",
-  "a0c772d32a233da6": "Impossible de révoquer l’approbation",
-  "0cdc8cdbed3e5eae": "Disposition des worktrees",
-  "c17b25519e2b194e": "Impossible de charger les commandes de disposition des worktrees",
-  "5ccd5614c65f8d1f": "Révoquer l’approbation de la commande {kind}",
-  "80c3794a5fa12f3a": "Approuver la commande {kind}",
-  "f206891e124c77b0": [
-    "Le ",
-    {
-      "t": "code",
-      "i": 1,
-      "c": "t3.json"
-    },
-    " de ce projet prépare les fils en worktree avec ses propres commandes. Elles s’exécutent sur la machine de cet environnement avec vos autorisations, et uniquement telles qu’approuvées ici : une commande dont le texte change doit être approuvée de nouveau."
-  ],
-  "f6a91589456cca50": "Approuvée",
-  "c92657bb7f2293ff": "Approbation requise",
-  "f1e5c1be1ac92361": "Approuver",
-  "fcb5f3c4d4753326": "Cette connexion ne peut pas approuver de commandes. Utilisez un client qui peut utiliser le terminal.",
-  "7150557773b3818b": "En file d’attente",
-  "efbeb3993ee2c3f5": "En attente de {pool}",
-  "0398ca6c1d24b92d": "en attente, le prochain",
-  "0af6d5ffd5166214": "{count, plural, one {en attente, {count} devant} other {en attente, {count} devant}}",
-  "49be26a27dcb30e5": "en attente",
-  "4e96712d839ccbff": "{who} a répondu {choice}",
-  "19097cfb8f5a79cf": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " a répondu",
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": {
-        "i": 3,
-        "k": "_gt_value_3",
-        "v": "v"
-      }
-    },
-    "."
-  ],
-  "e7bbf693910057bf": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " a répondu",
-    " ",
-    {
-      "t": "span",
-      "i": 2,
-      "c": {
-        "i": 3,
-        "k": "_gt_value_3",
-        "v": "v"
-      }
-    },
-    ": ",
-    {
-      "i": 4,
-      "k": "_gt_value_4",
-      "v": "v"
-    }
-  ],
-  "3759768c5d342c22": [
-    "répondue",
-    " ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
-  "e114d37b32ab0dc7": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " nécessite une raison."
-  ],
-  "91aadfc843c600de": "Vérifier le compte Google",
-  "201490988858b511": "retirée par {by}",
-  "99451a5d2d40440f": "Retirée par {by}.",
-  "3ee30a50b70fffab": "Retirée par {by} : {reason}",
-  "92e129bf413a1220": "retirée",
-  "800966eb58181745": "Vérification des langues prises en charge par le modèle…",
-  "410dded6e21c280d": "La réserve est pleine",
-  "1af8d12ac21cb183": "La réserve contient {max} prompts. Restaurez-en ou supprimez-en un pour faire de la place ; la zone de saisie a été laissée telle quelle.",
-  "381ceed77cb8b2b3": "Arrêter {name}",
-  "5b9fda36b610d25c": "Arrêter",
-  "1d372f6d555dde3c": "Arrêter tous les appareils",
-  "06d3fe3e6b255d15": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " de plus"
-  ],
-  "f1b18820c0ab93ac": [
-    "+",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " de plus dans Éléments associés"
-  ]
+  "9e91e9a77b664e4e": "Impossible de démarrer un guide de revue"
 }

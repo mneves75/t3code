@@ -1,8 +1,9 @@
-import type { ScopedProjectRef } from "@t3tools/contracts";
 import { resolveRotatedNewThreadSelection } from "@t3tools/client-runtime/account-rotation";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ScopedProjectRef, ServerSettings } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
-import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
+import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { getClientSettings } from "../hooks/useSettings";
 import { resolveProjectDefaultProviderModelSelection } from "../providerInstances";
 import { readProject, readThreadShells } from "../state/entities";
@@ -52,4 +53,24 @@ export function seedDraftModelSelection(draftId: DraftId, projectRef: ScopedProj
     now: Date.now(),
   });
   if (selection) store.setModelSelection(draftId, selection, { replaceOptions: true });
+}
+
+/**
+ * An open draft holds the model it was seeded with, so a new default would otherwise reach only
+ * drafts opened later. Drafts whose model the user picked keep it.
+ */
+export function followDefaultModelInOpenDrafts(
+  environmentId: EnvironmentId,
+  settings: ServerSettings,
+): void {
+  const store = useComposerDraftStore.getState();
+  for (const [rawDraftId, draftThread] of Object.entries(store.draftThreadsByThreadKey)) {
+    if (draftThread.environmentId !== environmentId || draftThread.promotedTo != null) continue;
+    const draftId = DraftId.make(rawDraftId);
+    if (hasExplicitComposerModelSelection(store.getComposerDraft(draftId))) continue;
+    const project = readProject(scopeProjectRef(environmentId, draftThread.projectId));
+    const selection = resolveProjectSettings(settings, draftThread.projectId, project).settings
+      .defaultModelSelection;
+    if (selection) store.setModelSelection(draftId, selection, { replaceOptions: true });
+  }
 }

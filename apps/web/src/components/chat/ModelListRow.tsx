@@ -11,11 +11,13 @@ import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { SharedTooltipTrigger } from "../ui/shared-tooltip";
+import { serverSuffixOf } from "./ProviderModelPicker.logic";
 
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;
   slug: string;
   name: string;
+  serverName?: string | undefined;
   subProvider?: string | undefined;
   instanceId: ProviderInstanceId;
   driverKind: ProviderDriverKind;
@@ -41,6 +43,14 @@ export const ModelListRow = memo(function ModelListRow(props: {
     name: props.name,
     subProvider: props.subProvider,
   };
+  const displayName = getDisplayModelName(model);
+  const serverSuffix = serverSuffixOf(displayName, props.serverName);
+  const baseName = serverSuffix === null ? displayName : displayName.slice(0, -serverSuffix.length);
+  // A server's models share their organization ("mlx-community/"), so it gives way first.
+  const organization =
+    serverSuffix === null ? "" : baseName.slice(0, baseName.lastIndexOf("/") + 1);
+  // The logo is decorative, so name the provider for screen readers.
+  const providerLabel = <span className="sr-only">, {props.providerDisplayName}</span>;
 
   const row = (
     <ComboboxItem
@@ -70,19 +80,37 @@ export const ModelListRow = memo(function ModelListRow(props: {
       />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <div
-          className="min-w-0 truncate text-sm font-normal leading-snug"
-          // Names the row in full on hover only when it is cut off.
+          className="flex min-w-0 text-sm font-normal leading-snug"
+          // Names the row in full on hover only when part of it is cut off.
           onPointerEnter={(event) => {
             const name = event.currentTarget;
-            name.title = name.scrollWidth > name.clientWidth ? getDisplayModelName(model) : "";
+            const parts = Array.from(name.querySelectorAll("span:not(.sr-only)"));
+            const cut = parts.some((part) => part.scrollWidth > part.clientWidth);
+            name.title = cut ? displayName : "";
           }}
         >
-          {getDisplayModelName(model)}
-          {/* The logo is decorative, so name the provider for screen readers. */}
-          <span className="sr-only">, {props.providerDisplayName}</span>
+          {serverSuffix === null ? (
+            <span className="min-w-0 truncate">
+              {displayName}
+              {providerLabel}
+            </span>
+          ) : (
+            <>
+              {/* Each part shrinks only once the one before it is gone; the server, capped, stays. */}
+              {organization ? <span className="min-w-0 truncate">{organization}</span> : null}
+              <span className="flex min-w-0 max-w-full shrink-0">
+                <span className="min-w-0 truncate">{baseName.slice(organization.length)}</span>
+                <span className="max-w-24 shrink-0 overflow-hidden text-ellipsis whitespace-pre">
+                  {serverSuffix}
+                  {providerLabel}
+                </span>
+              </span>
+            </>
+          )}
         </div>
         {props.isSelected ? <CheckIcon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
-        {props.subProvider ? (
+        {/* A linked server's models carry the gateway's provider id; the server's name replaces it. */}
+        {props.subProvider && serverSuffix === null ? (
           <span className="min-w-0 shrink truncate text-xs text-muted-foreground/70">
             {props.subProvider}
           </span>

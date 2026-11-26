@@ -1,9 +1,11 @@
+import { InferenceServerId } from "./inference.ts";
 import { EasDeviceHostConfigs, SimlockDeviceHostConfigs, SshDeviceHostConfigs } from "./device.ts";
 import {
   AuthOrchestrationOperateScope,
   AuthAccessWriteScope,
   AuthSettingsWriteScope,
   AuthProvidersManageScope,
+  AuthTerminalOperateScope,
   type AuthEnvironmentScope,
 } from "./auth.ts";
 import * as Effect from "effect/Effect";
@@ -17,6 +19,7 @@ import {
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
   OmittedWhenNull,
+  PositiveInt,
   ProjectId,
   ThreadId,
   TrimmedNonEmptyString,
@@ -354,6 +357,10 @@ export const AccountRotationInstances = Schema.Record(
 
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
+/** The standard theme's dark mode: dark gray, or true black for OLED screens. */
+export const DarkStyle = Schema.Literals(["gray", "oled"]);
+export type DarkStyle = typeof DarkStyle.Type;
+
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
@@ -426,6 +433,7 @@ export const ClientSettingsSchema = Schema.Struct({
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
   ),
+  darkStyle: DarkStyle.pipe(Schema.withDecodingDefault(Effect.succeed("gray" as const))),
   chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),
   htmlPreviewWidth: HtmlPreviewWidth.pipe(
     Schema.withDecodingDefault(Effect.succeed("chat" as const)),
@@ -987,6 +995,27 @@ export const UsageLimitSourceConfig = Schema.Struct({
 });
 export type UsageLimitSourceConfig = typeof UsageLimitSourceConfig.Type;
 
+export const InferenceServerConfig = Schema.Struct({
+  displayName: Schema.optional(TrimmedNonEmptyString),
+  /** OpenAI-compatible root such as http://localhost:8080/v1; credentials belong in apiKey. */
+  baseUrl: TrimmedNonEmptyString,
+  apiKey: SettingsSecretValue.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  maxConcurrency: Schema.optional(PositiveInt),
+  /** Serves this server's requests while it is down or unreachable, if it serves the same model; never overflow. */
+  fallbackServerId: Schema.optional(InferenceServerId),
+  /** T3's gateway stops a reply that loops, only thinks, or goes silent; on unless turned off. */
+  watchdog: Schema.optional(Schema.Struct({ enabled: Schema.optional(Schema.Boolean) })),
+});
+export type InferenceServerConfig = typeof InferenceServerConfig.Type;
+
+export const TrainingSettings = Schema.Struct({
+  storageDir: Schema.optionalKey(TrimmedString),
+  mlxBinDir: Schema.optionalKey(TrimmedString),
+  defaultPauseLocalInference: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+});
+export type TrainingSettings = typeof TrainingSettings.Type;
+
 export const TextGeneratorKind = Schema.Literals(["openaiCompatible", "anthropic"]);
 export type TextGeneratorKind = typeof TextGeneratorKind.Type;
 
@@ -1124,6 +1153,10 @@ const SourceControlWritingStyleSetting = Schema.Union([
   SourceControlWritingStyleSettings,
   LegacySourceControlWritingStyle,
 ]);
+
+/** Where background writing may go when its model cannot run: local-marked instances, anything, or nowhere. */
+export const TextGenerationFallback = Schema.Literals(["local", "any", "none"]);
+export type TextGenerationFallback = typeof TextGenerationFallback.Type;
 
 export const BranchNamingMode = Schema.Literals(["static", "semantic", "custom"]);
 export type BranchNamingMode = typeof BranchNamingMode.Type;
@@ -1608,6 +1641,13 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
+  /** Set when a client picks a text generation model; until then a ready local instance is preferred. */
+  textGenerationModelSelectionExplicit: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  textGenerationFallback: TextGenerationFallback.pipe(
+    Schema.withDecodingDefault(Effect.succeed("local" as const)),
+  ),
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
@@ -1647,6 +1687,12 @@ export const ServerSettings = Schema.Struct({
   usageLimitSources: Schema.Record(UsageLimitSourceId, UsageLimitSourceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  inferenceServers: Schema.Record(InferenceServerId, InferenceServerConfig).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  training: TrainingSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed({ defaultPauseLocalInference: true })),
+  ),
   textGenerators: Schema.Record(ProviderInstanceId, TextGeneratorConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1683,8 +1729,8 @@ export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | un
 
 // Must match each driver's enabled decoding default.
 const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
-  ["cursor", "grok", "fx", "kiro", "muse", "pi", "opencode", "antigravity"].map((driver) =>
-    ProviderDriverKind.make(driver),
+  ["cursor", "grok", "fx", "kiro", "muse", "pi", "opencode", "noname", "antigravity"].map(
+    (driver) => ProviderDriverKind.make(driver),
   ),
 );
 
@@ -2009,6 +2055,9 @@ export const ServerSettingsPatch = Schema.Struct({
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   ghqCloneLayout: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  textGenerationFallback: Schema.optionalKey(TextGenerationFallback),
+  /** Omitted with a selection means the user picked it; resets send false to restore automatic. */
+  textGenerationModelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),
@@ -2041,6 +2090,16 @@ export const ServerSettingsPatch = Schema.Struct({
   // Merge per source to avoid racing other edits; null removes an entry.
   usageLimitSources: Schema.optionalKey(
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),
+  ),
+  inferenceServers: Schema.optionalKey(
+    Schema.Record(InferenceServerId, Schema.NullOr(InferenceServerConfig)),
+  ),
+  training: Schema.optionalKey(
+    Schema.Struct({
+      storageDir: Schema.optionalKey(Schema.NullOr(TrimmedString)),
+      mlxBinDir: Schema.optionalKey(Schema.NullOr(TrimmedString)),
+      defaultPauseLocalInference: Schema.optionalKey(Schema.Boolean),
+    }),
   ),
   // Merge per entry like usageLimitSources; null removes an entry.
   textGenerators: Schema.optionalKey(
@@ -2078,6 +2137,11 @@ function carriesProjectScripts(patch: ServerSettingsPatch): boolean {
   );
 }
 
+/** Pointing training at a custom binary or storage directory decides what binaries execute and where host data writes go. */
+function carriesTrainingHostPaths(patch: ServerSettingsPatch): boolean {
+  return patch.training?.mlxBinDir !== undefined || patch.training?.storageDir !== undefined;
+}
+
 export function requiredScopesForServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ReadonlyArray<AuthEnvironmentScope> {
@@ -2092,6 +2156,7 @@ export function requiredScopesForServerSettingsPatch(
       key === "providers" ||
       key === "providerInstances" ||
       key === "usageLimitSources" ||
+      key === "inferenceServers" ||
       key === "textGenerators" ||
       key === "secretProviders"
     ) {
@@ -2112,6 +2177,7 @@ export function requiredScopesForServerSettingsPatch(
     ...(changesAccess ? [AuthAccessWriteScope] : []),
     // Saving a script is choosing a command for the host to run, wherever the patch carries it.
     ...(carriesProjectScripts(patch) ? [AuthOrchestrationOperateScope] : []),
+    ...(carriesTrainingHostPaths(patch) ? [AuthTerminalOperateScope] : []),
   ];
 }
 
@@ -2134,6 +2200,7 @@ export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
+  darkStyle: Schema.optionalKey(DarkStyle),
   chatWidth: Schema.optionalKey(ChatWidth),
   htmlPreviewWidth: Schema.optionalKey(HtmlPreviewWidth),
   effortDisplay: Schema.optionalKey(EffortDisplay),

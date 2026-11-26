@@ -7,6 +7,7 @@ import * as NodeVM from "node:vm";
 import { assert, describe, it } from "@effect/vitest";
 import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
 
+import { PI_T3_GATEWAY_EXTENSION_SOURCE } from "./gatewayExtensionSource.ts";
 import { PI_T3_MCP_EXTENSION_SOURCE, PI_T3_SERVICE_TIER_COMMAND } from "./mcpExtensionSource.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
 
@@ -749,5 +750,85 @@ describe("Pi skill references", () => {
     } finally {
       await NodeFSP.rm(directory, { recursive: true });
     }
+  });
+});
+
+describe("Pi MCP tool profiles", () => {
+  it.each([
+    ["lean", ["orchestrator_capabilities", "delegate_task", "task_status"]],
+    ["full", ["orchestrator_capabilities", "delegate_task", "task_status", "preview_snapshot"]],
+    ["unset", ["orchestrator_capabilities", "delegate_task", "task_status", "preview_snapshot"]],
+  ] as const)("the %s tool profile registers only its tools", async (toolProfile, expected) => {
+    const bridge = await loadMcpBridge({
+      modern: true,
+      toolSearchAvailable: true,
+      ...(toolProfile === "unset" ? {} : { toolProfile }),
+    });
+    const gatewayContext = { model: { api: "openai-completions" }, ui: { notify: assert.fail } };
+    await bridge.handlers.get("session_start")!({ systemPrompt: "" }, gatewayContext);
+    const prefixed = expected.map((name) => `mcp__t3-code__${name}`);
+    assert.deepEqual(
+      bridge.tools
+        .filter((tool) => tool.name.startsWith("mcp__t3-code__"))
+        .map((tool) => tool.name),
+      prefixed,
+    );
+    assert.deepEqual(bridge.getActiveTools(), ["read", "tool_search", ...prefixed]);
+    const prompt = await bridge.handlers.get("before_agent_start")!(
+      { systemPrompt: "Pi system prompt" },
+      gatewayContext,
+    );
+    assert.equal((prompt?.systemPrompt ?? "").includes("html_preview"), toolProfile !== "lean");
+  });
+});
+
+describe("Pi T3 gateway provider registration", () => {
+  const registrations = async (source: string, env: Record<string, string>) => {
+    const registered: Array<[string, unknown]> = [];
+    const runnable = NodeModule.stripTypeScriptTypes(
+      source
+        .replace(/^import .*;$/gm, "")
+        .replace(/export default (async )?function (\w+)/, "async function $2"),
+    );
+    const entry = /async function (t3McpExtension|t3GatewayExtension)/.exec(runnable)![1];
+    await NodeVM.runInNewContext(`${runnable}\n${entry}(pi)`, {
+      process: { env, argv: [] },
+      NodeFSP,
+      NodePath,
+      stripFrontmatter: (content: string) => content,
+      pi: {
+        on: () => undefined,
+        getCommands: () => [],
+        registerCommand: () => undefined,
+        registerTool: () => undefined,
+        registerProvider: (name: string, config: unknown) => registered.push([name, config]),
+      },
+    });
+    return registered;
+  };
+  const env = {
+    T3_GATEWAY_URL: "http://127.0.0.1:1/inference/rtx/v1",
+    T3_GATEWAY_TOKEN: "gateway-secret",
+    T3_GATEWAY_PROVIDER: "t3-rtx",
+    T3_GATEWAY_MODELS: JSON.stringify([{ id: "GLM-5.3-Flash" }]),
+  };
+
+  it.each([
+    ["T3's full extension", PI_T3_MCP_EXTENSION_SOURCE],
+    ["the gateway-only extension", PI_T3_GATEWAY_EXTENSION_SOURCE],
+  ])("%s registers the gateway with the token read from the environment", async (_, source) => {
+    assert.deepEqual(await registrations(source, env), [
+      [
+        "t3-rtx",
+        {
+          baseUrl: "http://127.0.0.1:1/inference/rtx/v1",
+          apiKey: "$T3_GATEWAY_TOKEN",
+          api: "openai-completions",
+          models: [{ id: "GLM-5.3-Flash" }],
+        },
+      ],
+    ]);
+    const { T3_GATEWAY_TOKEN: _token, ...withoutToken } = env;
+    assert.deepEqual(await registrations(source, withoutToken), []);
   });
 });

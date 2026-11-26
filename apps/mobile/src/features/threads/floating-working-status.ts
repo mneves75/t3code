@@ -11,6 +11,8 @@ export interface FloatingStatusAction {
 }
 
 export type FloatingWorkingStatus =
+  /** The gateway is holding the turn's request for a busy inference server. */
+  | { readonly kind: "inference-wait"; readonly label: string }
   | {
       readonly kind: "child-input";
       readonly label: string;

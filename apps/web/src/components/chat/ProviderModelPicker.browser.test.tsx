@@ -1,5 +1,7 @@
 import {
   DEFAULT_CLIENT_SETTINGS,
+  EnvironmentId,
+  InferenceServerId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ModelSelection,
@@ -15,6 +17,54 @@ import { render } from "../../../test/render";
 import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+
+const LINKED_ENVIRONMENT = vi.hoisted(() => "linked-environment");
+vi.mock(import("~/state/server"), async (original) => {
+  const { Atom } = await import("effect/reactivity");
+  const actual = await original();
+  const config = Atom.make({
+    environment: { label: "devbox", capabilities: {} },
+    inferenceServers: [
+      ["mlx-studio", "MLX"],
+      ["attic", "Mac Studio in the attic upstairs"],
+    ].map(([id, displayName]) => ({
+      id,
+      displayName,
+      baseUrl: "http://127.0.0.1:8082/v1",
+      enabled: true,
+      status: "ready",
+      checkedAt: null,
+      models: [],
+    })),
+  });
+  return {
+    ...actual,
+    serverEnvironment: {
+      ...actual.serverEnvironment,
+      configValueAtom: ((id: never) =>
+        id === LINKED_ENVIRONMENT ? config : actual.serverEnvironment.configValueAtom(id)) as never,
+    },
+  };
+});
+
+/** Whether `text` inside `row` runs past an ancestor that clips it. */
+function isClipped(row: HTMLElement, text: string) {
+  const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const start = node.textContent?.indexOf(text) ?? -1;
+    if (start < 0) continue;
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, start + text.length);
+    const right = range.getBoundingClientRect().right;
+    for (let box = node.parentElement; box !== null && row.contains(box); box = box.parentElement) {
+      if (getComputedStyle(box).overflowX === "visible") continue;
+      if (right > box.getBoundingClientRect().right + 0.5) return true;
+    }
+    return false;
+  }
+  throw new Error(`"${text}" is not in the row`);
+}
 
 it("keeps each registry image when adding a model from another ACP agent", async () => {
   const icons = [
@@ -342,4 +392,82 @@ it("keeps the touch keyboard down while choosing a provider", async () => {
   await page.getByRole("button", { name: /^Claude/ }).click();
   await expect.element(page.getByRole("option", { name: /Claude model/ })).toBeVisible();
   await expect.element(search).not.toHaveFocus();
+});
+
+it("keeps what tells a managed model apart in view when its name is cut off", async () => {
+  const linkedPi = (server: string, serverName: string) => ({
+    instanceId: ProviderInstanceId.make(`pi-${server}`),
+    driver: ProviderDriverKind.make("pi"),
+    displayName: `Pi · ${serverName}`,
+    enabled: true,
+    installed: true,
+    version: null,
+    status: "ready" as const,
+    auth: { status: "authenticated" as const },
+    checkedAt: "2026-01-01T00:00:00.000Z",
+    inference: "local" as const,
+    inferenceServerId: InferenceServerId.make(server),
+    models: [],
+    slashCommands: [],
+    skills: [],
+  });
+  const atticName = "Mac Studio in the attic upstairs";
+  const entries = deriveProviderInstanceEntries([
+    linkedPi("mlx-studio", "MLX"),
+    linkedPi("attic", atticName),
+  ]);
+  const [mlx, attic] = entries.map((entry) => entry.instanceId);
+  const managed = (server: string, serverName: string, model: string) => ({
+    slug: `t3-${server}/${model}`,
+    name: `${model} (${serverName})`,
+    subProvider: `t3-${server}`,
+  });
+  const small = "mlx-community/Qwen2.5-0.5B-Instruct-4bit";
+  const coder = "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit-DWQ";
+  const options = new Map([
+    [mlx!, [small, coder, "phi4"].map((model) => managed("mlx-studio", "MLX", model))],
+    [attic!, [managed("attic", atticName, "gemma3:4b")]],
+  ]);
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={EnvironmentId.make(LINKED_ENVIRONMENT)}
+      activeInstanceId={mlx!}
+      model={`t3-mlx-studio/${coder}`}
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={options}
+      triggerAriaLabel="Choose model"
+      onInstanceModelChange={() => {}}
+    />,
+  );
+  const chip = screen.getByRole("button", { name: /^Choose model, runs on/ });
+  // The chip names the machine beside the model, so it drops the server the name ends with.
+  await expect.element(chip).not.toHaveTextContent("(MLX)");
+  await chip.click();
+  const row = async (text: string) => {
+    const option = page.getByRole("option").filter({ hasText: text });
+    await expect.element(option).toBeVisible();
+    return option.element() as HTMLElement;
+  };
+
+  // Two models from one organization: the shared prefix gives way, the model and server stay.
+  const coderRow = await row(`${coder} (MLX)`);
+  expect(isClipped(coderRow, "mlx-community")).toBe(true);
+  expect(isClipped(coderRow, "Qwen3-Coder")).toBe(false);
+  expect(isClipped(coderRow, "(MLX)")).toBe(false);
+  const smallRow = await row(`${small} (MLX)`);
+  expect(isClipped(smallRow, "Qwen2.5-0.5B")).toBe(false);
+  // With only the organization cut, hovering still names the model in full.
+  await page.getByText("Qwen2.5-0.5B-Instruct-4bit", { exact: true }).hover();
+  expect(smallRow.querySelector("[title]")?.getAttribute("title")).toBe(`${small} (MLX)`);
+  expect(isClipped(await row("phi4 (MLX)"), "(MLX)")).toBe(false);
+  // The server's name says where it runs; the gateway's internal provider id says nothing more.
+  expect(coderRow.textContent).not.toContain("t3-mlx-studio");
+
+  // A long server name is cut before it can crowd out the model.
+  await page.getByRole("button", { name: new RegExp(`^Pi · ${atticName}`) }).click();
+  const gemmaRow = await row(`gemma3:4b (${atticName})`);
+  expect(isClipped(gemmaRow, "gemma3:4b")).toBe(false);
+  expect(isClipped(gemmaRow, "(Mac")).toBe(false);
 });

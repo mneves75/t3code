@@ -2,6 +2,7 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_SERVER_SETTINGS,
+  InferenceServerId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -369,6 +370,67 @@ describe("instance-scoped model selection", () => {
         { preserveUnavailableSelection: true },
       ),
     ).toBe("claude-sonnet-4-6");
+  });
+
+  it("starts a local instance on a model its server serves, not the harness default", () => {
+    const pi = (instanceId: string) =>
+      provider({
+        provider: ProviderDriverKind.make("pi"),
+        instanceId,
+        models: ["default", "t3-mlx/qwen-0.5b", "t3-mlx/qwen3-4b"],
+      });
+    const providers = [{ ...pi("pi-mlx"), inference: "local" as const }, pi("pi")];
+    const settings = settingsWithProviderInstances();
+
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("pi-mlx"),
+        settings,
+        providers,
+        null,
+      ),
+    ).toBe("t3-mlx/qwen-0.5b");
+    expect(
+      resolveAppModelSelectionForInstance(ProviderInstanceId.make("pi"), settings, providers, null),
+    ).toBe("default");
+    // A user who picks Pi default on purpose keeps it.
+    expect(
+      resolveAppModelSelectionForInstance(
+        ProviderInstanceId.make("pi-mlx"),
+        settings,
+        providers,
+        "default",
+      ),
+    ).toBe("default");
+  });
+
+  it("starts a linked instance on its server's model, not the harness's cloud default", () => {
+    const linked = provider({
+      provider: ProviderDriverKind.make("opencode"),
+      instanceId: "opencode-mlx",
+      models: ["opencode/beam-free", "t3-mlx-studio/qwen3-4b"],
+    });
+    const opencode = {
+      ...linked,
+      inference: "local" as const,
+      inferenceServerId: InferenceServerId.make("mlx-studio"),
+      models: linked.models.map((model, index) =>
+        index === 0 ? { ...model, isDefault: true } : model,
+      ),
+    };
+    const settings = settingsWithProviderInstances();
+
+    expect(
+      resolveAppModelSelectionForInstance(opencode.instanceId, settings, [opencode], null),
+    ).toBe("t3-mlx-studio/qwen3-4b");
+    expect(
+      resolveAppModelSelectionForInstance(
+        opencode.instanceId,
+        settings,
+        [opencode],
+        "opencode/beam-free",
+      ),
+    ).toBe("opencode/beam-free");
   });
 
   it("falls back instead of resolving a custom slug against the wrong instance", () => {

@@ -122,6 +122,20 @@ describe("resolveProjectSettings", () => {
     expect(resolved.sources.defaultModelSelection).toBe("environment");
   });
 
+  it("keeps text generation in place under Local models only, rather than moving it to the cloud", () => {
+    const codex = ProviderInstanceId.make("codex");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [codex]: { enabled: false } } },
+      },
+    };
+    expect(
+      resolveProjectSettings(settings, projectId).settings.textGenerationModelSelection,
+    ).toEqual(settings.textGenerationModelSelection);
+  });
+
   // regression: #17556 a hidden project default silently became the catalog's first model
   it.each([
     ["hidden", ["gpt-5.6-terra", "gpt-5.6-sol"], [], "gpt-6.1-sol", "environment"],
@@ -152,6 +166,7 @@ describe("resolveProjectSettings", () => {
     const codex = ProviderInstanceId.make("codex");
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
+      textGenerationFallback: "any" as const,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
       projectSettingsOverrides: {
         [projectId]: { providerInstances: { [codex]: { enabled: false } } },
@@ -170,6 +185,7 @@ describe("resolveProjectSettings", () => {
     const codexWork = ProviderInstanceId.make("codex_work");
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,
+      textGenerationFallback: "any" as const,
       textGenerationModelSelection: createModelSelection(codex, "gpt-5"),
       providerInstances: { [codexWork]: { driver: ProviderDriverKind.make("codex"), config: {} } },
       projectSettingsOverrides: {

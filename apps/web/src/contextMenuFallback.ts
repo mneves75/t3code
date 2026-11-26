@@ -160,6 +160,17 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
     { tag: "circle", attrs: { cx: "17", cy: "15", r: "3" } },
     { tag: "path", attrs: { d: "m21 19-1.9-1.9" } },
   ],
+  "sliders-horizontal": [
+    { tag: "line", attrs: { x1: "21", x2: "14", y1: "4", y2: "4" } },
+    { tag: "line", attrs: { x1: "10", x2: "3", y1: "4", y2: "4" } },
+    { tag: "line", attrs: { x1: "21", x2: "12", y1: "12", y2: "12" } },
+    { tag: "line", attrs: { x1: "8", x2: "3", y1: "12", y2: "12" } },
+    { tag: "line", attrs: { x1: "21", x2: "16", y1: "20", y2: "20" } },
+    { tag: "line", attrs: { x1: "12", x2: "3", y1: "20", y2: "20" } },
+    { tag: "line", attrs: { x1: "14", x2: "14", y1: "2", y2: "6" } },
+    { tag: "line", attrs: { x1: "8", x2: "8", y1: "10", y2: "14" } },
+    { tag: "line", attrs: { x1: "16", x2: "16", y1: "18", y2: "22" } },
+  ],
   trash: [
     { tag: "path", attrs: { d: "M3 6h18" } },
     { tag: "path", attrs: { d: "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" } },

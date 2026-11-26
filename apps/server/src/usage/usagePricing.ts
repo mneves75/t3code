@@ -340,6 +340,7 @@ export interface PricedUsage {
   readonly costSource: UsageCostSource;
   readonly categoryCostUsd: UsageCategoryCost | null;
   readonly speedPremiumUsd: number;
+  readonly estimatedCostUsd?: number;
 }
 
 function costByCategory(record: PricedRecord, rates: TokenRates): UsageCategoryCost {
@@ -400,6 +401,29 @@ export function priceUsage(
       output: listCost.output * scale,
     },
     speedPremiumUsd: premiumUsd * scale,
+  };
+}
+
+/**
+ * A local run is never cloud spend, whatever cloud model shares its name. Only a price the user
+ * set, or a mapping to another model, gives it a cost, kept apart as estimated API spend.
+ */
+export function priceLocalUsage(
+  table: RateTable,
+  record: PricedRecord,
+  overrides: RateTable | undefined,
+  mapped: boolean,
+): PricedUsage {
+  const priced =
+    mapped || overrides?.has(record.model.trim()) === true
+      ? priceUsage(table, { ...record, reportedCostUsd: null }, overrides)
+      : null;
+  return {
+    costUsd: 0,
+    costSource: "unpriced",
+    categoryCostUsd: null,
+    speedPremiumUsd: 0,
+    estimatedCostUsd: priced?.costUsd ?? 0,
   };
 }
 

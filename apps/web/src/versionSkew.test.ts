@@ -17,7 +17,7 @@ import {
 } from "./versionSkew";
 
 const MISMATCH_HINT =
-  "Version mismatch. Try syncing the client and server to the same T3 Code version.";
+  "Version mismatch. Try syncing the client and server to the same mn3code version.";
 
 describe("versionSkew", () => {
   it("updates only the proven install and safely quotes its paths", () => {
@@ -112,6 +112,22 @@ describe("versionSkew", () => {
       serverVersion: "0.0.34",
       hint: MISMATCH_HINT,
     });
+  });
+
+  it("parses and compares -mvn.<time>.g<hash> fork prereleases cleanly", () => {
+    branding.APP_VERSION = "0.1.12-mvn.20261124210000.gabcdef123";
+
+    expect(resolveVersionMismatch("0.1.12")).toBeNull();
+    expect(resolveVersionMismatch("0.1.12-mvn.20261124210000.gabcdef123")).toBeNull();
+    expect(resolveVersionMismatch("0.1.12-mvn.20261124220000.g999999999")).toBeNull();
+    expect(resolveVersionMismatch("0.1.12-mvn.20261124200000.g000000001")).toEqual({
+      clientVersion: "0.1.12-mvn.20261124210000.gabcdef123",
+      serverVersion: "0.1.12-mvn.20261124200000.g000000001",
+      hint: MISMATCH_HINT,
+    });
+    // A -pr. desktop build paired with a stamped fork runtime compares cores only.
+    branding.APP_VERSION = "0.1.12-pr.16076.32";
+    expect(resolveVersionMismatch("0.1.12-mvn.20261124210000.gabcdef123")).toBeNull();
   });
 
   it("falls back to string inequality when a version is not semver", () => {

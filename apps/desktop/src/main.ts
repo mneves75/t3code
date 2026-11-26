@@ -15,12 +15,14 @@ import * as NodeOS from "node:os";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 
 import * as Electron from "electron";
 
 import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
@@ -108,23 +110,40 @@ const layerDesktopEnvironment = Layer.unwrap(
   }),
 );
 
+const readBundledRemoteRuntime = Effect.fn("desktop.readBundledRemoteRuntime")(function* (
+  environment: DesktopEnvironment.DesktopEnvironment["Service"],
+  base: RemoteT3RunnerOptions,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const localArchiveDir = path.join(environment.resourcesPath, "remote-runtime");
+  const version = yield* fs
+    .readFileString(path.join(localArchiveDir, "VERSION"))
+    .pipe(Effect.orElseSucceed(() => ""));
+  return version.trim() === ""
+    ? base
+    : { ...base, archiveVersion: version.trim(), localArchiveDir };
+});
+
 const layerDesktopSshEnvironment = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const env = yield* HostProcess.Environment;
+    const runtimeContext = yield* Effect.context<
+      FileSystem.FileSystem | Path.Path | SecureRandom.SecureRandom
+    >();
     return DesktopSshEnvironment.layer({
-      // Per connect: the login shell's environment is installed after this layer is built.
-      resolveCliRunner: Effect.sync(() =>
-        DesktopSshEnvironment.resolveDesktopSshCliRunner(environment, env),
-      ),
+      // Resolve per connect, after installing the login shell environment.
+      resolveCliRunner: Effect.suspend(() => {
+        const runner = DesktopSshEnvironment.resolveDesktopSshCliRunner(environment, env);
+        return runner.nodeScriptPath === undefined
+          ? readBundledRemoteRuntime(environment, runner).pipe(Effect.provide(runtimeContext))
+          : Effect.succeed(runner);
+      }),
       resolveLauncherId: yield* Effect.cached(
         DesktopSshEnvironment.readOrCreateLauncherId(
           environment.path.join(environment.stateDir, "ssh-launcher-id"),
-        ).pipe(
-          Effect.provide(
-            yield* Effect.context<FileSystem.FileSystem | SecureRandom.SecureRandom>(),
-          ),
-        ),
+        ).pipe(Effect.provide(runtimeContext)),
       ),
     });
   }),

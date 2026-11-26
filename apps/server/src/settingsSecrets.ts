@@ -4,6 +4,7 @@ import {
   CloudSpeechCredentials,
   CodexSettings,
   EasDeviceHostConfig,
+  InferenceServerConfig,
   type ProviderInstanceConfig,
   type ProviderInstanceId,
   type ServerSettings,
@@ -50,6 +51,7 @@ const providerSecretFields = new Map([
   ),
 ]);
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
+const inferenceServerSecretFields = secretSettingsFields(InferenceServerConfig);
 const textGeneratorSecretFields = secretSettingsFields(TextGeneratorConfig);
 const voiceSecretFields = secretSettingsFields(CloudSpeechCredentials);
 const easDeviceHostSecretFields = secretSettingsFields(EasDeviceHostConfig);
@@ -214,6 +216,19 @@ function mapSecretFieldGroups(
     ]),
   ) as ServerSettings["usageLimitSources"];
 
+  const inferenceServers = Object.fromEntries(
+    Object.entries(settings.inferenceServers).map(([id, server]) => [
+      id,
+      mapFields(
+        server,
+        inferenceServerSecretFields,
+        (field, serverHost) =>
+          `inference-server-${encode(id)}-${encode(field)}` +
+          (serverHost === null ? "" : `-${encode(serverHost)}`),
+      ),
+    ]),
+  ) as ServerSettings["inferenceServers"];
+
   const textGenerators = Object.fromEntries(
     Object.entries(settings.textGenerators).map(([id, generator]) => [
       id,
@@ -260,6 +275,7 @@ function mapSecretFieldGroups(
     providerInstances,
     sourceControlHosts,
     usageLimitSources,
+    inferenceServers,
     textGenerators,
     easDeviceHosts,
     simlockDeviceHosts,

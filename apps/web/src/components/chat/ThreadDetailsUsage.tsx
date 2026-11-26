@@ -1,10 +1,14 @@
 import type {
+  EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
   ServerProviderUsageLimits,
   ServerProviderUsageWindow,
+  ThreadId,
   UsageLimitSourceSnapshots,
 } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import * as AsyncResult from "effect/reactivity/AsyncResult";
 import {
   type LimitPace,
   type LimitPoolWindow,
@@ -21,6 +25,16 @@ import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import type { ContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
+import {
+  formatLastInferenceRequest,
+  formatLastInferenceRequestMeasures,
+  formatLastRequestCompact,
+  formatLastRequestServer,
+  inferenceServerSnapshotName,
+  lastRequestObservations,
+} from "@t3tools/client-runtime/state/inference-presentation";
+import { hasInferenceServersAtom, threadInferenceRequestAtom } from "../../state/inference";
+import { serverEnvironment } from "../../state/server";
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -174,6 +188,59 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
                   {formatContextWindowCompactionMessage(threshold, m)}
                 </span>
               ) : null}
+            </>
+          }
+        />
+      </div>
+    </ThreadDetailsSection>
+  );
+}
+
+interface ThreadKey {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}
+
+/** Measured numbers for the thread's latest request through T3's gateway, read when details open. */
+export function ThreadDetailsLastRequest(thread: ThreadKey) {
+  const hasInferenceServers = useAtomValue(hasInferenceServersAtom(thread.environmentId));
+  return hasInferenceServers ? <LastRequestSection {...thread} /> : null;
+}
+
+function LastRequestSection({ environmentId, threadId }: ThreadKey) {
+  const gt = useGT();
+  const result = useAtomValue(threadInferenceRequestAtom({ environmentId, threadId }));
+  const servers = useAtomValue(serverEnvironment.inferenceServersValueAtom(environmentId));
+  const last = AsyncResult.getOrElse(result, () => null)?.last ?? null;
+  if (last === null) return null;
+  const measures = formatLastInferenceRequestMeasures(last);
+  const summary = formatLastInferenceRequest(last);
+  const served = formatLastRequestServer(last, (id) => inferenceServerSnapshotName(servers, id));
+  return (
+    <ThreadDetailsSection
+      headingId="thread-details-last-request-heading"
+      title={gt("Last request")}
+      showHeading={false}
+    >
+      <div className="grid grid-cols-[auto_minmax(3rem,1fr)_auto] gap-x-3 text-xs">
+        <UsageRow
+          label={gt("Last request")}
+          fill={null}
+          tone={null}
+          value={formatLastRequestCompact(last)}
+          ariaValue={measures}
+          tooltip={
+            <>
+              <span className="text-foreground">{summary}</span>
+              <span className="text-muted-foreground">
+                {last.model} · {served}
+              </span>
+              {lastRequestObservations(last).map((observation) => (
+                <span key={observation} className="text-muted-foreground">
+                  {observation}
+                </span>
+              ))}
+              <span className="text-muted-foreground">{gt("Measured by T3's gateway")}</span>
             </>
           }
         />

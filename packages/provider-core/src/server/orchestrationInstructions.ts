@@ -29,6 +29,12 @@ export const T3_CODE_ORCHESTRATION_INSTRUCTIONS = `
 ${T3_CODE_ORCHESTRATION_SECTIONS.join("\n\n")}
 `;
 
+/** The lean tool profile has no HTML render or preview tools, so it skips the visuals section. */
+export const T3_CODE_LEAN_ORCHESTRATION_INSTRUCTIONS = `
+
+${T3_CODE_ORCHESTRATION_SECTIONS.filter((section) => !section.startsWith("### Visuals")).join("\n\n")}
+`;
+
 export const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## T3 Code browser
@@ -118,6 +124,8 @@ export function t3OrchestrationPrompt(input: {
   readonly prompt: string;
   readonly hasT3Mcp: boolean;
   readonly hasDeviceTools: boolean;
+  /** Matches the advertised lean MCP catalog, which omits visual/browser tools. */
+  readonly leanTools?: boolean;
   readonly orchestrationDelivered: boolean;
   readonly deviceInstructionsDelivered: boolean;
   /** Guidance for this provider's own tools, sent until `providerInstructionsDelivered`. */
@@ -127,8 +135,10 @@ export function t3OrchestrationPrompt(input: {
   if (!input.hasT3Mcp) return input.prompt;
   const instructions = [
     !input.orchestrationDelivered
-      ? orchestrationInstructions(input.hasDeviceTools)
-      : input.hasDeviceTools && !input.deviceInstructionsDelivered
+      ? input.leanTools
+        ? T3_CODE_LEAN_ORCHESTRATION_INSTRUCTIONS
+        : orchestrationInstructions(input.hasDeviceTools)
+      : !input.leanTools && input.hasDeviceTools && !input.deviceInstructionsDelivered
         ? T3_CODE_DEVICE_TOOL_INSTRUCTIONS
         : undefined,
     input.providerInstructionsDelivered === true ? undefined : input.providerInstructions,

@@ -1351,6 +1351,10 @@ function ProviderInstanceRow({
   const gt = useGT();
   const allProjects = useProjects();
   const secretSources = useSecretSources(environmentId);
+  const inferenceServers = useEnvironmentSettings(
+    environmentId,
+    (settings) => settings.inferenceServers,
+  );
   const acpProjects =
     mode === "editor" && liveProvider?.driver === "acpRegistry"
       ? allProjects.filter((project) => project.environmentId === environmentId)
@@ -1390,6 +1394,7 @@ function ProviderInstanceRow({
     <ProviderInstanceCard
       environmentId={environmentId}
       secretSources={secretSources}
+      inferenceServers={inferenceServers}
       acpProjects={acpProjects}
       projectOverride={projectOverride}
       onAcceptUrlAuth={

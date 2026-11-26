@@ -158,6 +158,12 @@ import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts"
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as InferenceDiscovery from "./inference/InferenceDiscovery.ts";
+import * as InferenceImageChecks from "./inference/InferenceImageChecks.ts";
+import * as InferenceServerRegistry from "./inference/InferenceServerRegistry.ts";
+import * as InferenceStops from "./inference/InferenceStops.ts";
+import * as InferenceRequests from "./persistence/InferenceRequests.ts";
+import * as TrainingService from "./training/TrainingService.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -914,6 +920,15 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ThreadManagement.ThreadManagementService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
   Layer.mock(UsageService.UsageService)({}),
+  Layer.mock(InferenceServerRegistry.InferenceServerRegistry)({
+    current: Effect.succeed([]),
+    streamChanges: Stream.make([]),
+  }),
+  Layer.mock(InferenceDiscovery.InferenceDiscovery)({}),
+  Layer.mock(InferenceStops.InferenceStops)({}),
+  Layer.mock(InferenceImageChecks.InferenceImageChecks)({}),
+  Layer.mock(InferenceRequests.InferenceRequestLog)({}),
+  Layer.mock(TrainingService.TrainingService)({}),
   Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
   Layer.mock(WorkspaceEntries.WorkspaceEntries)({}),

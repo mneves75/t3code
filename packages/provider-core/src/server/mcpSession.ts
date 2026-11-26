@@ -18,8 +18,18 @@ export interface McpProviderSessionConfig {
   readonly browserToolsAvailable: boolean;
   readonly capabilities?: ReadonlySet<string>;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  /** Present when the instance is linked to an enabled inference server: T3's gateway for it. */
+  readonly inferenceGateway?: InferenceGatewayCredential;
   /** True while a delegated task this thread started will wake it with its result. */
   readonly hasPendingWake?: Effect.Effect<boolean>;
+}
+
+/** A token for T3's inference gateway only; MCP rejects it, and it never reaches argv or logs. */
+export interface InferenceGatewayCredential {
+  readonly serverId: string;
+  /** `<origin>/inference/<serverId>/v1` */
+  readonly baseUrl: string;
+  readonly token: string;
 }
 
 export function withAgentDeviceEnvironment(

@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  InferenceServerId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -153,6 +154,49 @@ describe("resolvePromptLinkModelSelection", () => {
       resolvePromptLinkModelSelection(providers, { provider: "claudeagent", model: "opus" }),
     ).toEqual({
       selection: { instanceId: "work", model: "big" },
+      exact: true,
+    });
+  });
+
+  it("defaults a local instance to a model its server serves, not the harness's own choice", () => {
+    const local = (
+      instanceId: string,
+      driver: string,
+      models: ReadonlyArray<{ slug: string; isDefault?: boolean }>,
+      link: { inference?: "local"; inferenceServerId?: InferenceServerId } = {},
+    ) => ({
+      ...provider(instanceId, driver),
+      ...link,
+      models: models.map((model) => ({ name: model.slug, ...model })),
+    });
+    const resolve = (instance: ReturnType<typeof local>, providerName: string) =>
+      resolvePromptLinkModelSelection([instance], { provider: providerName, model: null });
+    // "default" defers to Pi's own configured model, which need not be the linked server's.
+    const piModels = [{ slug: "default", isDefault: true }, { slug: "t3-mlx/qwen-0.5b" }];
+    expect(resolve(local("pi", "pi", piModels, { inference: "local" }), "pi")).toEqual({
+      selection: { instanceId: "pi", model: "t3-mlx/qwen-0.5b" },
+      exact: true,
+    });
+    expect(resolve(local("pi", "pi", piModels), "pi")).toEqual({
+      selection: { instanceId: "pi", model: "default" },
+      exact: true,
+    });
+    const link = {
+      inference: "local",
+      inferenceServerId: InferenceServerId.make("mlx-studio"),
+    } as const;
+    const openCodeModels = [
+      { slug: "opencode/beam-free", isDefault: true },
+      { slug: "t3-mlx-studio/qwen3-4b" },
+    ];
+    expect(resolve(local("opencode-mlx", "opencode", openCodeModels, link), "opencode")).toEqual({
+      selection: { instanceId: "opencode-mlx", model: "t3-mlx-studio/qwen3-4b" },
+      exact: true,
+    });
+    // Codex reaches its linked server under the server's bare model ids.
+    const codexModels = [{ slug: "default", isDefault: true }, { slug: "qwen3-4b" }];
+    expect(resolve(local("codex-mlx", "codex", codexModels, link), "codex")).toEqual({
+      selection: { instanceId: "codex-mlx", model: "qwen3-4b" },
       exact: true,
     });
   });

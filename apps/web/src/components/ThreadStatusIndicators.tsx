@@ -61,6 +61,7 @@ import {
 
 import type { SidebarThreadSummary } from "../types";
 import { SharedTooltipTrigger } from "./ui/shared-tooltip";
+import { InferenceWaitStatus } from "./chat/InferenceWaitStatus";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
@@ -860,13 +861,24 @@ export function ThreadTerminalStatusButton({
 
 function ThreadStatusLabel({
   status,
+  threadRef,
   compact = false,
 }: {
   status: ThreadStatusPill;
+  threadRef?: ScopedThreadRef;
   compact?: boolean;
 }) {
   const m = useMessages();
   const label = m(status.label);
+  // Mounted only while the tooltip is open, so idle rows never watch the gateway queue.
+  const tooltip = threadRef ? (
+    <span className="flex flex-col">
+      {label}
+      <InferenceWaitStatus threadRef={threadRef} className="text-muted-foreground" />
+    </span>
+  ) : (
+    label
+  );
   if (compact) {
     return (
       <SharedTooltipTrigger
@@ -877,7 +889,7 @@ function ThreadStatusLabel({
             className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
           />
         }
-        label={label}
+        label={tooltip}
       >
         <span
           className={`size-[9px] rounded-full ${status.dotClass} ${
@@ -897,7 +909,7 @@ function ThreadStatusLabel({
           className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
         />
       }
-      label={label}
+      label={tooltip}
     >
       <span
         className={`h-1.5 w-1.5 rounded-full ${status.dotClass} ${
@@ -1008,7 +1020,12 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
           )}
         />
       ) : null}
-      {threadStatus ? <ThreadStatusLabel status={threadStatus} /> : null}
+      {threadStatus ? (
+        <ThreadStatusLabel
+          status={threadStatus}
+          {...(threadStatus.label === "Working" ? { threadRef } : {})}
+        />
+      ) : null}
     </span>
   );
 }

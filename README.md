@@ -1,12 +1,16 @@
-<p align="center">
-  <a href="https://t3.codes">
-    <img src="./assets/prod/t3-black-web-icon-192x192.png" width="80" height="80" alt="T3 Code logo" />
-  </a>
-</p>
+<h1 align="center">mn3code</h1>
 
-<h1 align="center">T3 Code</h1>
+<p align="center">Local-first control plane &amp; in-app MLX fine-tuning interface for coding agents.<br/>
+<em>An unofficial fork based on the MIT-licensed <a href="https://github.com/pingdotgg/t3code">T3 Code</a> source code (not affiliated with or endorsed by T3 Tools, Inc.).</em></p>
 
-<p align="center">The open-source control plane for coding agents.</p>
+## What mn3code adds
+
+- **Local-first inference registry &amp; gateway** (`Settings → Inference`): supports `llama.cpp`, LM Studio, Ollama, TensorFold, and Apple Silicon **MLX (`mlx_lm.server`)** with per-server queues, queue position badges, TTFT &amp; decode tok/s stats, prompt cache health, probe freshness, vision detection/testing, bounded retries (never retrying cancellations), loop/rant/hang watchdog, fallback servers while primary is down, one-step `"Use a local model"` setup, `"Find server"` repair, and cross-machine server sharing.
+- **In-app MLX fine-tuning &amp; closed-loop evals** (`Settings → Training`): durable SQLite thread curation, 9-category secret/PII redaction (always-on key/token/credential passes plus configurable env/path/email/entropy passes and custom literal terms) with pre-export audit preview, SFT &amp; DPO dataset extraction, `mlx_lm.lora` / `mlx_lm.fuse` orchestration with exclusive GPU/Inference drain lock, live loss/tok-sec charts, one-click adapter serving into the Inference Gateway, and offline coding + held-out perplexity evals.
+- **Multi-account rotation &amp; SSH runtime resilience:** client-scoped account rotation for new threads (`Settings → Providers → Account rotation`, model-scoped quota windows, duplicate-login deduplication, and fallback model routing), SSH server runtime upload (`scripts/mvn-build-remote-runtime.sh`) with fallback to already-installed runtimes when a fork archive is unpublished, and Expo Modules 2.0 iOS updates.
+- **Local providers &amp; UI polish:** Pi managed provider + lean MCP tools, OpenCode &amp; Codex gateway routing, NoName ACP bridge + PATH auto-enable, Add Project machine picker + folder browser, Two-Tone Dark + OLED themes, and title-first sidebar cards with collapsible `Settled`.
+
+---
 
 <p align="center">
   <a href="https://t3.codes/download"><strong>Download</strong></a> ·

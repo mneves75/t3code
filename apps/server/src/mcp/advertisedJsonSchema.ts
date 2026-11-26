@@ -68,7 +68,33 @@ const mergeTaggedObjects = (branches: ReadonlyArray<Json>): JsonObject | undefin
   const requiredByAll = first.filter(
     (name) => name !== tag && others.every((required) => required.includes(name)),
   );
-  return { type: "object", properties, required: [tag, ...requiredByAll] };
+  // Merging drops each tag's own required fields, so the tag says which they are.
+  const perTag = objects.flatMap((object, index) => {
+    const own = (index === 0 ? first : others[index - 1]!).filter(
+      (name) => name !== tag && !requiredByAll.includes(name),
+    );
+    return own.length === 0
+      ? []
+      : [
+          `\`${String(tagOf(object, tag))}\` requires ${own.map((name) => `\`${name}\``).join(", ")}.`,
+        ];
+  });
+  if (perTag.length > 0) (properties[tag] as JsonObject).description = perTag.join(" ");
+  const conditionalRequired = objects.map((object, index) => {
+    const own = (index === 0 ? first : others[index - 1]!).filter(
+      (name) => name !== tag && !requiredByAll.includes(name),
+    );
+    return {
+      if: { properties: { [tag]: { const: tagOf(object, tag) } } },
+      required: [tag, ...own],
+    };
+  });
+  return {
+    type: "object",
+    properties,
+    required: [tag, ...requiredByAll],
+    allOf: conditionalRequired,
+  };
 };
 
 const compact = (schema: Json, optional: boolean): Json => {

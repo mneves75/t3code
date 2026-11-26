@@ -2,7 +2,20 @@ import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
-import type { McpProviderSessionConfig } from "@t3tools/provider-core/server/mcpSession";
+import type { ManagedInferenceServer } from "@t3tools/provider-core/server/inferenceGateway";
+import type {
+  InferenceGatewayCredential,
+  McpProviderSessionConfig,
+} from "@t3tools/provider-core/server/mcpSession";
+import type { McpToolProfile } from "@t3tools/provider-core/server/mcpToolProfile";
+import {
+  PI_T3_GATEWAY_EXTENSION_FILENAME,
+  PI_T3_GATEWAY_EXTENSION_SOURCE,
+  T3_GATEWAY_MODELS_ENV,
+  T3_GATEWAY_PROVIDER_ENV,
+  T3_GATEWAY_TOKEN_ENV,
+  T3_GATEWAY_URL_ENV,
+} from "./gatewayExtensionSource.ts";
 import {
   PI_T3_MCP_EXTENSION_FILENAME,
   PI_T3_MCP_EXTENSION_SOURCE,
@@ -10,7 +23,9 @@ import {
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
+  T3_PI_TOOL_PROFILE_ENV,
 } from "./mcpExtensionSource.ts";
+import type { PiSettings } from "../settings.ts";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
   "--continue",
@@ -220,31 +235,98 @@ function withoutToolSelectionArgs(args: ReadonlyArray<string>): ReadonlyArray<st
   return filtered;
 }
 
-function piT3McpExtensionDestPath(cacheDir: string): string {
-  return `${cacheDir.replace(/\\/g, "/")}/${PI_T3_MCP_EXTENSION_FILENAME}`;
-}
-
-export const materializePiT3McpExtension = Effect.fn("materializePiT3McpExtension")(function* (
+const materializeSourceAtomic = Effect.fnUntraced(function* (
   cacheDir: string,
+  filename: string,
+  source: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
   yield* fs.makeDirectory(cacheDir, { recursive: true });
-  const dest = piT3McpExtensionDestPath(cacheDir);
+  const dest = `${cacheDir.replace(/\\/g, "/")}/${filename}`;
   const existing = yield* fs.readFileString(dest).pipe(Effect.orElseSucceed(() => ""));
-  if (existing !== PI_T3_MCP_EXTENSION_SOURCE) {
+  if (existing !== source) {
     // Concurrent pi launches read this file: stage it in a per-call directory
     // and rename so readers and other writers never see a partial file.
     yield* Effect.scoped(
       Effect.gen(function* () {
         const stagingDir = yield* fs.makeTempDirectoryScoped({ directory: cacheDir });
-        const staging = `${stagingDir.replace(/\\/g, "/")}/${PI_T3_MCP_EXTENSION_FILENAME}`;
-        yield* fs.writeFileString(staging, PI_T3_MCP_EXTENSION_SOURCE);
+        const staging = `${stagingDir.replace(/\\/g, "/")}/${filename}`;
+        yield* fs.writeFileString(staging, source);
         yield* fs.rename(staging, dest).pipe(Effect.retry({ times: 3 }));
       }),
     );
   }
   return dest;
 });
+
+export const materializePiT3McpExtension = Effect.fn("materializePiT3McpExtension")(function* (
+  cacheDir: string,
+) {
+  return yield* materializeSourceAtomic(
+    cacheDir,
+    PI_T3_MCP_EXTENSION_FILENAME,
+    PI_T3_MCP_EXTENSION_SOURCE,
+  );
+});
+
+/** For discovery and text generation, which run without T3's full extension. */
+export const materializePiT3GatewayExtension = Effect.fn("materializePiT3GatewayExtension")(
+  function* (cacheDir: string) {
+    return yield* materializeSourceAtomic(
+      cacheDir,
+      PI_T3_GATEWAY_EXTENSION_FILENAME,
+      PI_T3_GATEWAY_EXTENSION_SOURCE,
+    );
+  },
+);
+
+export interface PiGatewayLaunch {
+  readonly server: ManagedInferenceServer;
+  readonly credential: InferenceGatewayCredential;
+}
+
+const piGatewayProviderName = (serverId: string) => `t3-${serverId}`;
+
+const PI_THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+// Pi's documented defaults for a model that does not say.
+const PI_DEFAULT_CONTEXT_WINDOW = 128_000;
+const PI_DEFAULT_MAX_TOKENS = 16_384;
+
+/** Pi model configs for registerProvider; a level the server does not advertise is unsupported. */
+function piGatewayModels(server: ManagedInferenceServer) {
+  return server.models.map((model) => {
+    const efforts = new Set(model.reasoningEfforts ?? []);
+    return {
+      id: model.id,
+      name: `${model.id} (${server.displayName})`,
+      reasoning: efforts.size > 0,
+      ...(efforts.size === 0
+        ? {}
+        : {
+            thinkingLevelMap: Object.fromEntries(
+              PI_THINKING_LEVELS.map((level) => [level, efforts.has(level) ? level : null]),
+            ),
+          }),
+      input: model.images === false ? ["text"] : ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: model.contextWindow ?? PI_DEFAULT_CONTEXT_WINDOW,
+      maxTokens: Math.min(
+        model.maxOutputTokens ?? PI_DEFAULT_MAX_TOKENS,
+        model.contextWindow ?? Number.POSITIVE_INFINITY,
+      ),
+    };
+  });
+}
+
+/** An explicit profile wins; "auto" follows the instance's link to an enabled inference server. */
+export function resolvePiToolProfile(
+  setting: PiSettings["toolProfile"],
+  linkedToInferenceServer: boolean,
+): McpToolProfile {
+  if (setting !== "auto") return setting;
+  // GLM-5.3-Flash passed as many mcp-tool-use cases with lean as with full (evals/mcp-tool-use).
+  return linkedToInferenceServer ? "lean" : "full";
+}
 
 export function buildPiRpcLaunch(input: {
   readonly launchArgs: ReadonlyArray<string>;
@@ -258,7 +340,12 @@ export function buildPiRpcLaunch(input: {
   readonly shortLived?: boolean;
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
+  /** A managed inference server: registered in Pi as `t3-<serverId>` through T3's gateway. */
+  readonly gateway?: PiGatewayLaunch | undefined;
+  /** Loaded alone, even under --no-extensions, when T3's full extension is not. */
+  readonly gatewayExtensionPath?: string | undefined;
   readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+  readonly toolProfile?: McpToolProfile;
 }): {
   readonly args: ReadonlyArray<string>;
   readonly env: NodeJS.ProcessEnv;
@@ -292,11 +379,28 @@ export function buildPiRpcLaunch(input: {
   ) {
     args.push("--extension", input.extensionPath);
   }
+  const gatewayCarrier = hasT3Extension
+    ? "full"
+    : input.gateway !== undefined && input.gatewayExtensionPath !== undefined
+      ? "gateway-only"
+      : undefined;
+  if (gatewayCarrier === "gateway-only" && input.gatewayExtensionPath !== undefined) {
+    args.push("--extension", input.gatewayExtensionPath);
+  }
   const environment = { ...input.environment };
   // MCP credentials belong to this T3 session; discard inherited server/parent credentials.
+  for (const name of [
+    T3_GATEWAY_URL_ENV,
+    T3_GATEWAY_TOKEN_ENV,
+    T3_GATEWAY_PROVIDER_ENV,
+    T3_GATEWAY_MODELS_ENV,
+  ]) {
+    delete environment[name];
+  }
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
+  delete environment[T3_PI_TOOL_PROFILE_ENV];
 
   return {
     args,
@@ -311,12 +415,23 @@ export function buildPiRpcLaunch(input: {
               input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
           }
         : {}),
+      ...(hasT3Mcp && input.toolProfile !== undefined
+        ? { [T3_PI_TOOL_PROFILE_ENV]: input.toolProfile }
+        : {}),
       ...(hasT3Mcp && input.mcpSession !== undefined
         ? {
             [T3_MCP_URL_ENV]: input.mcpSession.endpoint,
             [T3_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
               input.mcpSession.authorizationHeader,
             ),
+          }
+        : {}),
+      ...(gatewayCarrier !== undefined && input.gateway !== undefined
+        ? {
+            [T3_GATEWAY_URL_ENV]: input.gateway.credential.baseUrl,
+            [T3_GATEWAY_TOKEN_ENV]: input.gateway.credential.token,
+            [T3_GATEWAY_PROVIDER_ENV]: piGatewayProviderName(input.gateway.server.serverId),
+            [T3_GATEWAY_MODELS_ENV]: JSON.stringify(piGatewayModels(input.gateway.server)),
           }
         : {}),
     },

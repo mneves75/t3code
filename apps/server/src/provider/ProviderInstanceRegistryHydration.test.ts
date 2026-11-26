@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  InferenceServerId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -28,6 +29,7 @@ import {
   layerSettingsWatcher,
   providerHostLayer,
   seedDevReplayInstance,
+  seedLocalAgentInstances,
 } from "./ProviderInstanceRegistryHydration.ts";
 import * as ProviderHostLive from "./ProviderHostLive.ts";
 import { ProviderInstanceRegistryMutator } from "./ProviderInstanceRegistryMutator.ts";
@@ -104,6 +106,68 @@ describe("deriveProviderInstanceConfigMap", () => {
 
     expect(merged[instanceId]).toBe(settings.providerInstances[instanceId]);
   });
+
+  it("marks an instance local only while its linked inference server is enabled", () => {
+    const rtx = InferenceServerId.make("rtx");
+    const pi = ProviderDriverKind.make("pi");
+    const derive = (inferenceServers: ServerSettings["inferenceServers"]) =>
+      deriveProviderInstanceConfigMap(
+        settingsWith({
+          providerInstances: {
+            [instanceId]: { driver: pi, inference: "local", inferenceServerId: rtx },
+          },
+          inferenceServers,
+        }),
+      )[instanceId];
+    const server = { baseUrl: "http://rtx:8888/v1", apiKey: "" };
+
+    expect(derive({ [rtx]: { ...server, enabled: true } })).toEqual({
+      driver: pi,
+      inference: "local",
+      inferenceServerId: rtx,
+    });
+    // The link stays visible, but a server that is off or gone does not vouch for locality.
+    expect(derive({ [rtx]: { ...server, enabled: false } })).toEqual({
+      driver: pi,
+      inferenceServerId: rtx,
+    });
+    expect(derive({})).toEqual({ driver: pi, inferenceServerId: rtx });
+  });
+});
+
+describe("seedLocalAgentInstances", () => {
+  effectIt.effect("switches on found local agents and leaves configured ones alone", () =>
+    Effect.gen(function* () {
+      const driver = (name: string) => ProviderDriverKind.make(name);
+      yield* seedLocalAgentInstances([
+        { driver: driver("pi"), found: Effect.succeed(true) },
+        { driver: driver("opencode"), found: Effect.succeed(false) },
+        { driver: driver("noname"), found: Effect.succeed(true) },
+      ]);
+      const settings = yield* ServerSettingsService;
+      const instances = (yield* settings.getSettings).providerInstances;
+      expect(instances[ProviderInstanceId.make("pi")]).toEqual({
+        driver: driver("pi"),
+        enabled: false,
+      });
+      expect(instances[ProviderInstanceId.make("opencode")]).toBeUndefined();
+      expect(instances[ProviderInstanceId.make("noname")]).toEqual({
+        driver: driver("noname"),
+        enabled: true,
+      });
+    }).pipe(
+      Effect.provide(
+        ServerSettingsService.layerTest({
+          providerInstances: {
+            [ProviderInstanceId.make("pi")]: {
+              driver: ProviderDriverKind.make("pi"),
+              enabled: false,
+            },
+          },
+        }).pipe(Layer.provideMerge(NodeServices.layer)),
+      ),
+    ),
+  );
 });
 
 describe("seedDevReplayInstance", () => {

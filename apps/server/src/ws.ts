@@ -49,6 +49,7 @@ import {
   type DiscoveredLocalServerList,
   type EditorId,
   type FileManagerRevealKind,
+  type InferenceServerSnapshot,
   type OrchestrationV2Command,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -302,9 +303,16 @@ import {
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
 } from "@t3tools/shared/usageLimits";
+import { collectLocalUsageModels } from "@t3tools/shared/usageMerge";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
+import * as InferenceDiscovery from "./inference/InferenceDiscovery.ts";
+import * as InferenceImageChecks from "./inference/InferenceImageChecks.ts";
+import * as InferenceStops from "./inference/InferenceStops.ts";
+import * as InferenceServerRegistry from "./inference/InferenceServerRegistry.ts";
+import * as InferenceRequests from "./persistence/InferenceRequests.ts";
+import * as TrainingService from "./training/TrainingService.ts";
 import { requestUrl } from "./requestUrl.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
@@ -420,7 +428,16 @@ export const withLateConfigDiscovery = <E, R>(
           case "keybindingsUpdated":
             return [{ ...current, ...event.payload }, [event]];
           case "providerStatuses":
-            return [{ ...current, providers: event.payload.providers }, [event]];
+            return [
+              {
+                ...current,
+                providers: event.payload.providers,
+                ...(event.payload.inferenceServers === undefined
+                  ? {}
+                  : { inferenceServers: event.payload.inferenceServers }),
+              },
+              [event],
+            ];
           case "settingsUpdated":
             return [{ ...current, settings: event.payload.settings }, [event]];
           // Themes and usage-limit sources survive snapshots because snapshots never include them.
@@ -515,23 +532,47 @@ function withoutWorkspaceSnapshots(
 }
 
 // Deltas are taken from the list this client last received, which a late snapshot replaces.
-const withProviderStatusDeltas = (sent: ReadonlyArray<ServerProvider>) =>
+const withProviderStatusDeltas = (
+  sent: ReadonlyArray<ServerProvider>,
+  sentInferenceServers: ReadonlyArray<InferenceServerSnapshot> = [],
+) =>
   Stream.mapAccum(
-    () => sent,
+    () => ({
+      providers: sent,
+      inferenceServersJson: JSON.stringify(sentInferenceServers),
+    }),
     (
       previous,
       event: ServerConfigStreamEvent,
-    ): readonly [ReadonlyArray<ServerProvider>, ReadonlyArray<ServerConfigStreamEvent>] => {
-      if (event.type === "snapshot") return [event.config.providers, [event]];
+    ): readonly [
+      { readonly providers: ReadonlyArray<ServerProvider>; readonly inferenceServersJson: string },
+      ReadonlyArray<ServerConfigStreamEvent>,
+    ] => {
+      if (event.type === "snapshot") {
+        return [
+          {
+            providers: event.config.providers,
+            inferenceServersJson: JSON.stringify(event.config.inferenceServers ?? []),
+          },
+          [event],
+        ];
+      }
       if (event.type !== "providerStatuses") return [previous, [event]];
-      const { providers } = event.payload;
+      const { providers, inferenceServers } = event.payload;
+      const nextInferenceServersJson =
+        inferenceServers === undefined
+          ? previous.inferenceServersJson
+          : JSON.stringify(inferenceServers);
+      if (nextInferenceServersJson !== previous.inferenceServersJson) {
+        return [{ providers, inferenceServersJson: nextInferenceServersJson }, [event]];
+      }
       return [
-        providers,
+        { providers, inferenceServersJson: previous.inferenceServersJson },
         [
           {
             version: 1,
             type: "providerStatusDeltas",
-            payload: { providers: serverProviderDeltas(previous, providers) },
+            payload: { providers: serverProviderDeltas(previous.providers, providers) },
           },
         ],
       ];
@@ -737,7 +778,7 @@ const ServerWsRpcGroup = WsRpcGroup.middleware(RpcInstrumentation);
 // RpcGroup.toLayer derives each handler's requirements by scanning every RPC in
 // the group, so its type cost grows with handlers × RPCs. Near 200 methods that
 // crosses TypeScript's instantiation limit and the layer's requirements degrade to
-// `any`, so the handlers are registered as two disjoint, smaller groups.
+// `any`, so the handlers are registered as disjoint, smaller groups.
 type ServerWsRpc = RpcGroup.Rpcs<typeof ServerWsRpcGroup>;
 const SPLIT_WS_RPC_PREFIXES = [
   "server",
@@ -751,12 +792,17 @@ type SplitWsRpc = Extract<
   ServerWsRpc,
   { readonly _tag: `${(typeof SPLIT_WS_RPC_PREFIXES)[number]}.${string}` }
 >;
+type TrainingWsRpc = Extract<ServerWsRpc, { readonly _tag: `training.${string}` }>;
+type OtherWsRpc = Exclude<ServerWsRpc, SplitWsRpc | TrainingWsRpc>;
 const isSplitWsRpc = (rpc: ServerWsRpc): rpc is SplitWsRpc =>
   SPLIT_WS_RPC_PREFIXES.some((prefix) => rpc._tag.startsWith(`${prefix}.`));
-const isOtherWsRpc = (rpc: ServerWsRpc): rpc is Exclude<ServerWsRpc, SplitWsRpc> =>
-  !isSplitWsRpc(rpc);
+const isTrainingWsRpc = (rpc: ServerWsRpc): rpc is TrainingWsRpc =>
+  rpc._tag.startsWith("training.");
+const isOtherWsRpc = (rpc: ServerWsRpc): rpc is OtherWsRpc =>
+  !isSplitWsRpc(rpc) && !isTrainingWsRpc(rpc);
 const serverWsRpcs = Array.from(ServerWsRpcGroup.requests.values());
 const SplitWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isSplitWsRpc));
+const TrainingWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isTrainingWsRpc));
 const OtherWsRpcGroup = RpcGroup.make(...serverWsRpcs.filter(isOtherWsRpc));
 function toAuthAccessStreamEvent(
   change: Exclude<
@@ -1549,6 +1595,12 @@ export const layerWsRpc = (
             );
       const usage = yield* UsageService.UsageService;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
+      const inferenceServers = yield* InferenceServerRegistry.InferenceServerRegistry;
+      const inferenceDiscovery = yield* InferenceDiscovery.InferenceDiscovery;
+      const inferenceStops = yield* InferenceStops.InferenceStops;
+      const inferenceImageChecks = yield* InferenceImageChecks.InferenceImageChecks;
+      const inferenceRequests = yield* InferenceRequests.InferenceRequestLog;
+      const trainingService = yield* TrainingService.TrainingService;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
       const repositoryIdentityResolver =
@@ -1921,6 +1973,7 @@ export const layerWsRpc = (
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,
           providers,
+          inferenceServers: yield* inferenceServers.current,
           ...discovery,
           observability: {
             logsDirectoryPath: config.logsDir,
@@ -2599,6 +2652,17 @@ export const layerWsRpc = (
               }),
             ),
           ),
+        [WS_METHODS.serverGetInferenceUsage]: (input) => inferenceRequests.summarize(input.window),
+        [WS_METHODS.serverGetThreadInferenceRequest]: (input) =>
+          inferenceRequests.latestForThread(input.threadId).pipe(Effect.map((last) => ({ last }))),
+        [WS_METHODS.serverRefreshInferenceServers]: (input) =>
+          inferenceServers
+            .refresh(input.id)
+            .pipe(Effect.map((snapshots) => ({ inferenceServers: snapshots }))),
+        [WS_METHODS.serverDiscoverInferenceServers]: (input) => inferenceDiscovery.discover(input),
+        [WS_METHODS.serverGetThreadInferenceStop]: (input) =>
+          inferenceStops.latest(input.threadId).pipe(Effect.map((stop) => ({ stop }))),
+        [WS_METHODS.serverCheckInferenceModelImages]: (input) => inferenceImageChecks.check(input),
         [WS_METHODS.serverRefreshProviders]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(function* (input) {
@@ -2886,7 +2950,12 @@ export const layerWsRpc = (
           processResourceMonitor.readHistory(input),
         [WS_METHODS.serverGetResourceTelemetryHistory]: (input) =>
           resourceTelemetry.readHistory(input),
-        [WS_METHODS.serverGetUsageSummary]: (input) => usage.readSummary(input),
+        [WS_METHODS.serverGetUsageSummary]: (input) =>
+          Effect.all([providerRegistry.getProviders, inferenceServers.current]).pipe(
+            Effect.flatMap(([providers, servers]) =>
+              usage.readSummary(input, collectLocalUsageModels(providers, servers)),
+            ),
+          ),
         [WS_METHODS.serverRefreshUsageRates]: (_input) => usage.refreshRates,
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
@@ -3628,16 +3697,31 @@ export const layerWsRpc = (
                       )
                     : Effect.succeed(commandProviders),
                 ),
+                (providerUpdates) =>
+                  Stream.zipLatestWith(
+                    providerUpdates,
+                    inferenceServers.streamChanges,
+                    (providers, servers) => ({ providers, inferenceServers: servers }),
+                  ),
                 // Compare initial paired values with the snapshot; blindly dropping them loses changes between snapshot and subscription.
-                (updates) => Stream.concat(rpcInitialItems([config.providers]), updates),
+                (updates) =>
+                  Stream.concat(
+                    rpcInitialItems([
+                      {
+                        providers: config.providers,
+                        inferenceServers: config.inferenceServers ?? [],
+                      },
+                    ]),
+                    updates,
+                  ),
                 Stream.changesWith(
                   (previous, next) => JSON.stringify(previous) === JSON.stringify(next),
                 ),
                 Stream.drop(1),
-                Stream.map((providers) => ({
+                Stream.map((payload) => ({
                   version: 1 as const,
                   type: "providerStatuses" as const,
-                  payload: { providers },
+                  payload,
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
@@ -3703,7 +3787,12 @@ export const layerWsRpc = (
                   { version: 1 as const, type: "snapshot" as const, config: initialConfig },
                 ]),
                 input.providerStatusDeltas === true
-                  ? updates.pipe(withProviderStatusDeltas(initialConfig.providers))
+                  ? updates.pipe(
+                      withProviderStatusDeltas(
+                        initialConfig.providers,
+                        initialConfig.inferenceServers ?? [],
+                      ),
+                    )
                   : updates,
               );
             }),
@@ -3792,12 +3881,42 @@ export const layerWsRpc = (
               Stream.concat(Stream.make(latest), changes),
             ),
           ),
+        [WS_METHODS.trainingListCuratedThreads]: (input) =>
+          trainingService.listCuratedThreads(input),
+        [WS_METHODS.trainingSetCuratedThread]: (input) => trainingService.setCuratedThread(input),
+        [WS_METHODS.trainingGetCapabilities]: (_input) => trainingService.getCapabilities,
+        [WS_METHODS.trainingListDatasets]: (_input) => trainingService.listDatasets,
+        [WS_METHODS.trainingGetDataset]: (input) => trainingService.getDataset(input),
+        [WS_METHODS.trainingPreviewDataset]: (input) => trainingService.previewDataset(input),
+        [WS_METHODS.trainingCreateDataset]: (input) => trainingService.createDataset(input),
+        [WS_METHODS.trainingConvertDpoDatasetToSft]: (input) =>
+          trainingService.convertDpoDatasetToSft(input),
+        [WS_METHODS.trainingDeleteDataset]: (input) => trainingService.deleteDataset(input),
+        [WS_METHODS.trainingListJobs]: (_input) => trainingService.listJobs,
+        [WS_METHODS.trainingGetJob]: (input) => trainingService.getJob(input),
+        [WS_METHODS.trainingGetJobLogs]: (input) => trainingService.getJobLogs(input),
+        [WS_METHODS.trainingSubscribe]: (_input) => trainingService.subscribe,
+        [WS_METHODS.trainingStartJob]: (input) => trainingService.startJob(input),
+        [WS_METHODS.trainingCancelJob]: (input) => trainingService.cancelJob(input),
+        [WS_METHODS.trainingFuseArtifact]: (input) => trainingService.fuseArtifact(input),
+        [WS_METHODS.trainingServeArtifact]: (input) => trainingService.serveArtifact(input),
+        [WS_METHODS.trainingStopServedArtifact]: (input) =>
+          trainingService.stopServedArtifact(input),
+        [WS_METHODS.trainingRegisterArtifactInInference]: (input) =>
+          trainingService.registerArtifactInInference(input),
+        [WS_METHODS.trainingRunEval]: (input) => trainingService.runEval(input),
+        [WS_METHODS.trainingGetEval]: (input) => trainingService.getEval(input),
+        [WS_METHODS.trainingListArtifacts]: (_input) => trainingService.listArtifacts,
+        [WS_METHODS.trainingListEvals]: (input) => trainingService.listEvals(input),
       });
       const splitHandlers: Pick<typeof handlers, SplitWsRpc["_tag"]> = handlers;
-      const otherHandlers: Pick<typeof handlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =
-        handlers;
+      const trainingHandlers: Pick<typeof handlers, TrainingWsRpc["_tag"]> = handlers;
+      const otherHandlers: Pick<typeof handlers, OtherWsRpc["_tag"]> = handlers;
       return Context.merge(
-        yield* SplitWsRpcGroup.toHandlers(splitHandlers),
+        Context.merge(
+          yield* SplitWsRpcGroup.toHandlers(splitHandlers),
+          yield* TrainingWsRpcGroup.toHandlers(trainingHandlers),
+        ),
         yield* OtherWsRpcGroup.toHandlers(otherHandlers),
       );
     }),

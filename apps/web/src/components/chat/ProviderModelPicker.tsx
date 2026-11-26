@@ -1,12 +1,15 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
+  type InferenceServerId,
   type ProviderInstanceId,
   type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { RegistryContext } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 import { T, useGT } from "gt-react";
+import { CpuIcon } from "lucide-react";
 import {
   createContext,
   memo,
@@ -21,8 +24,12 @@ import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { cn } from "~/lib/utils";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
-import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
-import { retainedModelWhileProviderLocked } from "./ProviderModelPicker.logic";
+import {
+  ModelPickerContent,
+  resolveModelPickerSelectedModel,
+  useInferenceServerNames,
+} from "./ModelPickerContent";
+import { retainedModelWhileProviderLocked, serverSuffixOf } from "./ProviderModelPicker.logic";
 import { ChatGptSharingControl } from "./ChatGptSharingControl";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";
@@ -86,6 +93,41 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
 }
 
 /** What a docked effort column needs from its picker: the model it serves. */
+
+interface LinkedServerPlace {
+  /** The machine the server runs on: its host, or this environment's name for localhost. */
+  readonly place: string;
+}
+
+const NO_LINKED_SERVER = Atom.make<LinkedServerPlace | null>(null);
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/** Keyed by `[environmentId, serverId]` as JSON; only a change of the two strings re-renders. */
+const linkedServerPlaceAtom = Atom.family((key: string) => {
+  const [environmentId, serverId] = JSON.parse(key) as [EnvironmentId, InferenceServerId];
+  return Atom.make((get): LinkedServerPlace | null => {
+    const config = get(serverEnvironment.settingsValueAtom(environmentId))?.inferenceServers[
+      serverId
+    ];
+    if (config === undefined) return null;
+    let host: string;
+    try {
+      host = new URL(config.baseUrl).hostname;
+    } catch {
+      return null;
+    }
+    const place = LOOPBACK_HOSTS.has(host)
+      ? (get(serverEnvironment.configValueAtom(environmentId))?.environment.label ?? "this machine")
+      : host;
+    return { place };
+  }).pipe(
+    Atom.withEquality(
+      (left: LinkedServerPlace | null, right: LinkedServerPlace | null) =>
+        left?.place === right?.place,
+    ),
+  );
+});
+
 export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
@@ -184,6 +226,25 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     : triggerTitle;
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
+  const linkedServerId = activeEntry?.snapshot.inferenceServerId;
+  const linkedServer = useAtomValue(
+    props.environmentId === null || linkedServerId === undefined
+      ? NO_LINKED_SERVER
+      : linkedServerPlaceAtom(JSON.stringify([props.environmentId, linkedServerId])),
+  );
+  // Where a local model runs: the machine its linked server is on, else just that it is local.
+  const localPlace =
+    activeEntry?.snapshot.inference === "local" && props.triggerLabel === undefined
+      ? linkedServerId === undefined
+        ? gt("local")
+        : (linkedServer?.place ?? linkedServerId)
+      : null;
+  const serverNames = useInferenceServerNames(props.environmentId);
+  // A managed model's name ends with its server's name; the chip says where instead.
+  const repeatedPlace =
+    localPlace === null || linkedServerId === undefined
+      ? null
+      : serverSuffixOf(triggerTitle, serverNames[linkedServerId]);
 
   const setIsMenuOpen = (open: boolean) => {
     props.onOpenChange?.(open);
@@ -280,7 +341,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     .filter(Boolean)
     .join(" · ");
 
-  const triggerText = props.triggerLabel ?? multipleLabel ?? triggerTitle;
+  // The marker below names the server, so a "(server)" the model name ends with would repeat it.
+  const triggerText =
+    props.triggerLabel ??
+    multipleLabel ??
+    (repeatedPlace === null ? triggerTitle : triggerTitle.slice(0, -repeatedPlace.length));
   const triggerTextProps = {
     className: cn(
       "min-w-0 flex-1 overflow-hidden truncate",
@@ -353,6 +418,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             ref={triggerRef}
             aria-label={[
               props.triggerAriaLabel ?? props.triggerLabel ?? allModelNames ?? triggerLabel,
+              localPlace && !selectedEntries
+                ? gt("runs on {place}", { place: localPlace })
+                : undefined,
               props.triggerDetail,
             ]
               .filter(Boolean)
@@ -442,6 +510,15 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
               {triggerText}
             </SharedTooltipTrigger>
           )}
+          {localPlace && !selectedEntries ? (
+            <span
+              data-composer-control-label
+              className="flex max-w-20 shrink-0 items-center gap-1 truncate text-xs text-muted-foreground"
+            >
+              <CpuIcon aria-hidden className="size-3 shrink-0" />
+              <span className="truncate">{localPlace}</span>
+            </span>
+          ) : null}
           {props.triggerSuffix}
           {selectedModel?.isUnavailable && !selectedEntries && props.triggerLabel === undefined ? (
             <Badge variant="outline" size="sm">
