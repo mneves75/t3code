@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Executes the shipped Pi extension at its native JavaScript boundary.
 import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 import * as NodeVM from "node:vm";
@@ -61,7 +62,8 @@ export async function loadMcpBridge(
     // Pi activates direct and model-only tools when they are registered.
     readonly activatesOnRegistration?: boolean;
     readonly allowsTool?: (name: string) => boolean;
-    readonly runtimeMode?: string;
+    readonly runtimeMode?: string | undefined;
+    readonly extraRoots?: ReadonlyArray<string> | undefined;
     readonly toolProfile?: string;
     readonly inputSchema?: Record<string, unknown>;
   } = {},
@@ -108,11 +110,14 @@ export async function loadMcpBridge(
         T3_MCP_BEARER_TOKEN: "fixture-token",
         T3_PI_MCP_EXTENSION_PATH: "/fixture/pi-t3-extension.ts",
         T3_PI_RUNTIME_MODE: options.runtimeMode,
+        T3_PI_EXTRA_ROOTS:
+          options.extraRoots === undefined ? undefined : JSON.stringify(options.extraRoots),
         T3_PI_TOOL_PROFILE: options.toolProfile,
       },
     },
     AbortSignal,
     NodeCrypto,
+    NodeFS,
     NodePath,
     Type: { Unsafe: (schema: unknown) => schema },
     fetch: async (

@@ -16,7 +16,12 @@ vi.mock("expo-file-system", () => ({
   FileMode: { ReadOnly: "r" },
 }));
 
-import { isPdfPreviewUri, pdfLinkUrl, preparePdfPreview } from "./pdfPreview";
+import {
+  isAllowedLinkedPdfUri,
+  isPdfPreviewUri,
+  pdfLinkUrl,
+  preparePdfPreview,
+} from "./pdfPreview";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -52,6 +57,34 @@ describe("PDF navigation", () => {
     expect(isPdfPreviewUri("file:///local/document.pdf")).toBe(true);
     expect(isPdfPreviewUri("https://environment.test/index.html?file=syllabus.pdf")).toBe(false);
     expect(isPdfPreviewUri("invalid")).toBe(false);
+  });
+
+  it("allows linked PDFs only within the same signed asset prefix", () => {
+    const base = "https://environment.test/api/assets/token-1/docs/index.html";
+    expect(
+      isAllowedLinkedPdfUri(
+        "https://environment.test/api/assets/token-1/docs/guide.pdf#page=2",
+        base,
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedLinkedPdfUri("https://environment.test/api/assets/token-2/docs/guide.pdf", base),
+    ).toBe(false);
+    expect(
+      isAllowedLinkedPdfUri("https://other.test/api/assets/token-1/docs/guide.pdf", base),
+    ).toBe(false);
+    expect(
+      isAllowedLinkedPdfUri(
+        "https://environment.test/docs/guide.pdf",
+        "https://environment.test/docs/index.html",
+      ),
+    ).toBe(false);
+    expect(
+      isAllowedLinkedPdfUri(
+        "file:///api/assets/token-1/a.pdf",
+        "file:///api/assets/token-1/a.html",
+      ),
+    ).toBe(false);
   });
 });
 

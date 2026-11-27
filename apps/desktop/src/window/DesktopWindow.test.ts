@@ -21,6 +21,7 @@ vi.mock("electron", async (importOriginal) => ({
   session: {
     fromPartition: vi.fn(() => ({
       getUserAgent: vi.fn(() => "Mozilla/5.0 Electron/41.5.0 t3code/1.2.3"),
+      setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
       setUserAgent: vi.fn(),
     })),
@@ -76,6 +77,7 @@ function makeFakeBrowserWindow() {
   const webContents = {
     id: 1,
     session: {
+      setPermissionCheckHandler: vi.fn(),
       setPermissionRequestHandler: vi.fn(),
       webRequest: {
         onBeforeSendHeaders: vi.fn(),
@@ -1666,15 +1668,123 @@ describe("DesktopWindow", () => {
         if (!answerPermission) {
           return yield* Effect.die("permission request handler was not registered");
         }
-        const answers = (["openExternal", "media"] as const).map((permission) => {
+        const checkPermission = vi.mocked(
+          fakeWindow.window.webContents.session.setPermissionCheckHandler,
+        ).mock.lastCall?.[0];
+        if (!checkPermission) {
+          return yield* Effect.die("permission check handler was not registered");
+        }
+        const ask = (
+          permission: string,
+          details: {
+            readonly isMainFrame: boolean;
+            readonly requestingUrl: string;
+            readonly securityOrigin?: string;
+          },
+          contents: Electron.WebContents = fakeWindow.window.webContents,
+        ) => {
           const callback = vi.fn();
-          answerPermission(fakeWindow.window.webContents, permission, callback, {
-            isMainFrame: false,
-            requestingUrl: "http://127.0.0.1:3773/api/assets/token/page.html",
-          });
+          answerPermission(
+            contents,
+            permission as never,
+            callback,
+            details as Parameters<typeof answerPermission>[3],
+          );
           return callback.mock.lastCall?.[0];
-        });
-        assert.deepEqual(answers, [false, true]);
+        };
+
+        // Subframes are denied sensitive permissions and may only request fullscreen.
+        assert.deepEqual(
+          (["openExternal", "media", "geolocation", "fullscreen"] as const).map((permission) =>
+            ask(permission, {
+              isMainFrame: false,
+              requestingUrl: "http://127.0.0.1:3773/api/assets/token/page.html",
+            }),
+          ),
+          [false, false, false, true],
+        );
+        assert.deepEqual(
+          (["openExternal", "media", "geolocation", "fullscreen"] as const).map((permission) =>
+            checkPermission(fakeWindow.window.webContents, permission, "http://127.0.0.1:3773", {
+              isMainFrame: false,
+              requestingUrl: "http://127.0.0.1:3773/api/assets/token/page.html",
+            } as Electron.PermissionCheckHandlerHandlerDetails),
+          ),
+          [false, false, false, true],
+        );
+
+        // Main frame on the trusted app origin is allowed only the explicit allowlist.
+        const allowedMainFramePermissions = [
+          "clipboard-read",
+          "clipboard-sanitized-write",
+          "fullscreen",
+          "local-fonts",
+          "local-network",
+          "local-network-access",
+          "loopback-network",
+          "media",
+          "notifications",
+        ] as const;
+        for (const permission of allowedMainFramePermissions) {
+          assert.isTrue(
+            ask(permission, {
+              isMainFrame: true,
+              requestingUrl: "t3code-dev://app/thread/1",
+              securityOrigin: "t3code-dev://app",
+            }),
+            `request ${permission}`,
+          );
+          assert.isTrue(
+            checkPermission(fakeWindow.window.webContents, permission, "t3code-dev://app", {
+              isMainFrame: true,
+              requestingUrl: "t3code-dev://app/thread/1",
+              securityOrigin: "t3code-dev://app",
+            } as Electron.PermissionCheckHandlerHandlerDetails),
+            `check ${permission}`,
+          );
+        }
+        assert.isFalse(
+          ask("geolocation", {
+            isMainFrame: true,
+            requestingUrl: "t3code-dev://app/thread/1",
+          }),
+        );
+        assert.isFalse(
+          ask("media", {
+            isMainFrame: true,
+            requestingUrl: "http://127.0.0.1:3773/thread/1",
+          }),
+        );
+        assert.isFalse(
+          ask("media", {
+            isMainFrame: true,
+            requestingUrl: "t3code-dev://app/thread/1",
+            securityOrigin: "https://evil.example",
+          }),
+        );
+        assert.isFalse(
+          ask("media", {
+            isMainFrame: true,
+            requestingUrl: "t3code-dev://app/thread/1",
+            securityOrigin: "null",
+          }),
+        );
+        assert.isFalse(
+          ask(
+            "media",
+            {
+              isMainFrame: true,
+              requestingUrl: "t3code-dev://app/thread/1",
+            },
+            {} as Electron.WebContents,
+          ),
+        );
+        assert.isFalse(
+          checkPermission(fakeWindow.window.webContents, "media", "https://evil.example", {
+            isMainFrame: true,
+            requestingUrl: "t3code-dev://app/thread/1",
+          } as Electron.PermissionCheckHandlerHandlerDetails),
+        );
       }).pipe(Effect.provide(layer));
     }),
   );

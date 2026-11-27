@@ -2306,25 +2306,6 @@ export const layer = Layer.effect(
               ...(details.error === undefined ? {} : { error: details.error }),
             });
 
-          // Reject floods before signature work or rejection-log writes; valid
-          // deliveries give this reservation back once validation succeeds.
-          const rejectionReservation = { at: DateTime.toEpochMillis(now) };
-          const rejectionSlot = yield* takeRateSlot(
-            task.id,
-            DateTime.toEpochMillis(now),
-            webhookRejectedRateWindows,
-            rejectionReservation,
-          );
-          if (rejectionSlot !== "allowed") {
-            if (rejectionSlot === "first_rejected") yield* log("rate_limited");
-            yield* observe("rate_limited");
-            return yield* releaseClaim({ _tag: "rate_limited", outcome: "rate_limited" } as const);
-          }
-          if (!task.enabled) {
-            yield* log("disabled");
-            yield* observe("disabled");
-            return { _tag: "disabled" as const };
-          }
           const signature = schedule.signature;
           if (signature !== null) {
             const verified =
@@ -2336,10 +2317,25 @@ export const layer = Layer.effect(
                 body: request.body,
               }).pipe(Effect.provideService(Mac.Mac, mac)));
             if (!verified) {
-              yield* log("rejected_signature");
+              // Throttle rejection log writes without letting unsigned floods starve signed deliveries.
+              const rejectionSlot = yield* takeRateSlot(
+                task.id,
+                DateTime.toEpochMillis(now),
+                webhookRejectedRateWindows,
+              );
+              if (rejectionSlot === "allowed") {
+                yield* log("rejected_signature");
+              }
               yield* observe("rejected_signature");
               return { _tag: "rejected_signature" as const };
             }
+          }
+          if (!task.enabled) {
+            if (yield* takeFilteredLogSlot(task.id, DateTime.toEpochMillis(now))) {
+              yield* log("disabled");
+            }
+            yield* observe("disabled");
+            return { _tag: "disabled" as const };
           }
           const maxAgeMinutes = schedule.maxDeliveryAgeMinutes ?? null;
           if (
@@ -2347,19 +2343,12 @@ export const layer = Layer.effect(
             DateTime.toEpochMillis(now) - DateTime.toEpochMillis(receivedAt) >
               maxAgeMinutes * 60_000
           ) {
-            yield* log("expired", { signatureVerified: signature !== null });
+            if (yield* takeFilteredLogSlot(task.id, DateTime.toEpochMillis(now))) {
+              yield* log("expired", { signatureVerified: signature !== null });
+            }
             yield* observe("expired");
             return { _tag: "expired" as const };
           }
-
-          const refundRejectionSlot = Ref.update(webhookRejectedRateWindows, (windows) => {
-            const current = windows.get(task.id);
-            if (current === undefined) return windows;
-            return new Map(windows).set(task.id, {
-              ...current,
-              accepted: current.accepted.filter((entry) => entry !== rejectionReservation),
-            });
-          });
 
           const failedFilter = findFailedWebhookFilter(schedule.filters ?? [], request);
           if (failedFilter !== null) {
@@ -2369,7 +2358,6 @@ export const layer = Layer.effect(
                 error: describeFailedWebhookFilter(failedFilter),
               });
             }
-            yield* refundRejectionSlot;
             yield* observe("filtered");
             return yield* releaseClaim({
               _tag: "accepted" as const,
@@ -2448,14 +2436,11 @@ export const layer = Layer.effect(
                   }),
                 );
           if (typeof deduped !== "string") {
-            yield* refundRejectionSlot;
             if (deduped.log) yield* log("rate_limited");
             yield* observe(deduped.outcome);
             return yield* releaseClaim({ _tag: "rate_limited", outcome: deduped.outcome } as const);
           }
           if (deduped !== "run") {
-            if (deduped !== "coalesced" && deduped !== "coalesced_unlogged")
-              yield* refundRejectionSlot;
             const outcome =
               deduped === "pending"
                 ? "accepted"
@@ -2492,7 +2477,6 @@ export const layer = Layer.effect(
           }
           // Bound the deliveries one task holds, so steady traffic to a stuck
           // task cannot pile up parked fibers.
-          yield* refundRejectionSlot;
           let queueReserved = false;
           const release = Effect.suspend(() => {
             if (!queueReserved) return Effect.void;

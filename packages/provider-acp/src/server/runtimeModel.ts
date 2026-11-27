@@ -571,6 +571,25 @@ function extractCommandFromTitle(title: string | undefined, verbatim = false): s
   return verbatim ? command : command.trim();
 }
 
+function formatStructuredArgs(value: unknown, verbatim: boolean): string | undefined {
+  if (Array.isArray(value)) {
+    const parts: Array<string> = [];
+    for (const entry of value) {
+      if (typeof entry !== "string") continue;
+      if (verbatim) {
+        parts.push(entry.length === 0 || /[\s"'\\]/.test(entry) ? JSON.stringify(entry) : entry);
+      } else {
+        const trimmed = entry.trim();
+        if (trimmed.length > 0) {
+          parts.push(/[\s"'\\]/.test(trimmed) ? JSON.stringify(trimmed) : trimmed);
+        }
+      }
+    }
+    return parts.length > 0 ? parts.join(" ") : undefined;
+  }
+  return normalizeCommandValue(value, verbatim);
+}
+
 function extractToolCallCommand(
   rawInput: unknown,
   title: string | undefined,
@@ -579,11 +598,14 @@ function extractToolCallCommand(
 ): string | undefined {
   if (isRecord(rawInput)) {
     const directCommand = normalizeCommandValue(rawInput.command, verbatim);
+    const args = formatStructuredArgs(rawInput.args, verbatim);
     if (directCommand) {
+      if (typeof rawInput.command === "string" && args) {
+        return `${directCommand} ${args}`;
+      }
       return directCommand;
     }
     const executable = typeof rawInput.executable === "string" ? rawInput.executable.trim() : "";
-    const args = normalizeCommandValue(rawInput.args, verbatim);
     if (executable && args) {
       return `${executable} ${args}`;
     }
@@ -1427,7 +1449,13 @@ export function parsePermissionRequest(
   // The person approves the command or title as the agent sent it, so the card gets its edges too:
   // a trailing carriage return is part of what would run.
   const sentTitle = params.toolCall.title ?? undefined;
-  const detail =
+  const rawCwd =
+    isRecord(params.toolCall.rawInput) &&
+    typeof params.toolCall.rawInput.cwd === "string" &&
+    params.toolCall.rawInput.cwd.trim().length > 0
+      ? params.toolCall.rawInput.cwd
+      : undefined;
+  const baseDetail =
     (toolCall?.command === undefined
       ? undefined
       : (extractToolCallCommand(params.toolCall.rawInput, sentTitle, toolCall.kind, true) ??
@@ -1437,6 +1465,10 @@ export function parsePermissionRequest(
       : toolCall?.title) ??
     toolCall?.detail ??
     (typeof params.sessionId === "string" ? `Session ${params.sessionId}` : undefined);
+  const detail =
+    baseDetail !== undefined && rawCwd !== undefined
+      ? `${baseDetail} (cwd: ${rawCwd})`
+      : baseDetail;
   return {
     kind,
     ...(detail ? { detail } : {}),

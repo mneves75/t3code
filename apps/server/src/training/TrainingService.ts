@@ -919,7 +919,7 @@ const make = Effect.gen(function* () {
           ),
         catch: (cause) =>
           new TrainingOperationError({
-            code: "io_error",
+            code: "storage_failed",
             operation: "deleteDataset",
             resourceId: input.datasetId,
             reason: `Could not inspect dataset files before deletion: ${String(cause)}`,
@@ -928,7 +928,7 @@ const make = Effect.gen(function* () {
       });
       if (pathExists && !isContained) {
         return yield* new TrainingOperationError({
-          code: "io_error",
+          code: "storage_failed",
           operation: "deleteDataset",
           resourceId: input.datasetId,
           reason:
@@ -940,7 +940,7 @@ const make = Effect.gen(function* () {
           try: () => NodeFSP.rm(dataset.storagePath, { recursive: true, force: true }),
           catch: (cause) =>
             new TrainingOperationError({
-              code: "io_error",
+              code: "storage_failed",
               operation: "deleteDataset",
               resourceId: input.datasetId,
               reason: `Could not delete dataset files: ${String(cause)}`,

@@ -13,8 +13,9 @@ const HOOK_INBOX_TTL_MS = 24 * 60 * 60 * 1000;
 const HOOK_INBOX_MAX_REQUESTS = 1_000;
 
 export const HOOK_INBOX_MAX_BYTES = 50 * 1_048_576;
-// The relay cannot check tokens; isolate each hook's junk with its own cap.
+// The relay cannot check tokens; isolate each hook's junk with its own count and byte caps.
 export const HOOK_INBOX_MAX_PER_HOOK = 100;
+export const HOOK_INBOX_MAX_BYTES_PER_HOOK = 5 * 1_048_576;
 
 const DELIVERIES_PER_RUN = 20;
 
@@ -181,6 +182,8 @@ export const hold = Effect.fn("HookInboxStore.hold")(function* (hook: HeldHook, 
         < ${HOOK_INBOX_MAX_PER_HOOK}
       AND (SELECT coalesce(sum(length(body)), 0) FROM held_hooks) + ${hook.body.byteLength}
         <= ${HOOK_INBOX_MAX_BYTES}
+      AND (SELECT coalesce(sum(length(body)), 0) FROM held_hooks WHERE hook_key = ${hook.hookKey})
+        + ${hook.body.byteLength} <= ${HOOK_INBOX_MAX_BYTES_PER_HOOK}
     ON CONFLICT (id) DO NOTHING
     RETURNING id
   `;
@@ -215,7 +218,13 @@ const refusalReason = Effect.fn("HookInboxStore.refusalReason")(function* (hook:
   const backlog = yield* backlogSize;
   if (backlog.count >= HOOK_INBOX_MAX_REQUESTS) return "max_requests";
   if (backlog.bytes + hook.body.byteLength > HOOK_INBOX_MAX_BYTES) return "max_bytes";
-  return "max_per_hook";
+  const perHookRows = yield* sql<{ readonly count: number; readonly bytes: number }>`
+    SELECT count(*) AS count, coalesce(sum(length(body)), 0) AS bytes
+    FROM held_hooks WHERE hook_key = ${hook.hookKey}
+  `;
+  const perHook = perHookRows[0] ?? { count: 0, bytes: 0 };
+  if (perHook.count >= HOOK_INBOX_MAX_PER_HOOK) return "max_per_hook";
+  return "max_bytes_per_hook";
 });
 
 export const wake = Effect.fn("HookInboxStore.wake")(function* (baseUrl: string) {

@@ -11,7 +11,7 @@ import { LoadingStrip } from "../../components/ui/LoadingStrip";
 import { PdfPreview } from "../../components/PdfPreview";
 import { ControlPill } from "../../components/ui/ControlPill";
 import { useHardwareBack } from "../../lib/backHandler";
-import { isPdfPreviewUri } from "../../lib/pdfPreview";
+import { isAllowedLinkedPdfUri, isPdfPreviewUri } from "../../lib/pdfPreview";
 import { webViewDecelerationRate } from "../../lib/webViewDecelerationRate";
 import { useContentTopInset } from "../../components/ui/useBarInset";
 
@@ -69,11 +69,13 @@ function DocumentWebPreview(props: { readonly uri: string }) {
           allowsInlineMediaPlayback
           setSupportMultipleWindows={false}
           onShouldStartLoadWithRequest={(request) => {
-            if (request.isTopFrame !== false && isPdfPreviewUri(request.url)) {
-              setLinkedPdf(request.url);
-              return false;
+            if (request.url.split("#", 1)[0] === props.uri.split("#", 1)[0]) {
+              return true;
             }
-            return true;
+            if (request.isTopFrame !== false && isAllowedLinkedPdfUri(request.url, props.uri)) {
+              setLinkedPdf(request.url);
+            }
+            return false;
           }}
           startInLoadingState
           onLoadProgress={(event) => {

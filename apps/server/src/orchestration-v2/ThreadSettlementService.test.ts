@@ -2593,6 +2593,31 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       }).pipe(Effect.provide(fixture.layer));
     }),
   );
+
+  it.effect("skips the settle script for a thread below Full access", () =>
+    Effect.gen(function* () {
+      const restricted = {
+        ...appThread("restricted-thread", "settled", "/worktrees/restricted"),
+        runtimeMode: "auto" as const,
+      };
+      const allowed = appThread("allowed-thread", "settled", "/worktrees/allowed");
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([]),
+        currentThreads: [restricted, allowed],
+        existingWorktreePaths: ["/worktrees/restricted", "/worktrees/allowed"],
+      });
+
+      yield* Effect.gen(function* () {
+        const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        yield* fixture.publishEvent(settledEvent(restricted));
+        yield* fixture.publishEvent(settledEvent(allowed));
+        assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: restricted.id });
+        assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: allowed.id });
+        assert.strictEqual((yield* Queue.take(fixture.scriptRuns)).threadId, allowed.id);
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
 });
 
 describe("isSnoozed", () => {

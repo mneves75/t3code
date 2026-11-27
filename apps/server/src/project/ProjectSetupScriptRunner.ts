@@ -21,6 +21,7 @@ import * as Schema from "effect/Schema";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as ProjectService from "./ProjectService.ts";
 
 export interface ProjectSetupScriptRunnerResultNoScript {
@@ -445,6 +446,17 @@ export const make = Effect.gen(function* () {
     );
     if (thread?.linkOrigin !== undefined && linkOriginIsFenced(thread.linkOrigin))
       return { status: "skipped-for-link" } as const;
+    if (
+      thread !== null &&
+      input.trigger === "settle" &&
+      TaskFolders.projectCommandsForAgent(
+        thread.linkOrigin,
+        thread,
+        serverSettings.managedPolicy?.limits?.maxRuntimeMode,
+      ) !== "permitted"
+    ) {
+      return { status: "skipped-for-link" } as const;
+    }
     const suppliedProject = input.project;
     const projectById =
       suppliedProject ??

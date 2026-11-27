@@ -568,6 +568,105 @@ describe("Pi tool discovery permissions", () => {
     assert.match(first!, /\n\.\.\. \d+ more characters not shown \(sha256 [0-9a-f]{64}\)$/);
     assert.equal(short, JSON.stringify({ command: "ls" }, null, 2));
   });
+
+  it("fails closed to approval-required when T3_PI_RUNTIME_MODE is unset or invalid", async () => {
+    for (const runtimeMode of [undefined, "", "bogus"]) {
+      const bridge = await loadMcpBridge({ runtimeMode });
+      const hook = bridge.handlers.get("tool_call") as unknown as (
+        event: { toolName: string; input: unknown },
+        ctx: { cwd: string; ui: { confirm: (title: string) => Promise<boolean> } },
+      ) => Promise<{ block: true; reason: string } | undefined>;
+      const confirmations: string[] = [];
+      const ctx = {
+        cwd: process.cwd(),
+        ui: {
+          confirm: async (title: string) => {
+            confirmations.push(title);
+            return false;
+          },
+        },
+      };
+      assert.equal(
+        (await hook({ toolName: "write", input: { path: "inside.txt" } }, ctx))?.block,
+        true,
+      );
+      assert.deepEqual(confirmations, ["Allow write?"]);
+    }
+  });
+
+  it("auto-accepts edits strictly within cwd or T3_PI_EXTRA_ROOTS and asks for escapes, symlinks, and .git", async () => {
+    const tempBase = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-pi-contain-"));
+    try {
+      const workspace = NodePath.join(tempBase, "workspace");
+      const extraRoot = NodePath.join(tempBase, "extra-root");
+      const outside = NodePath.join(tempBase, "outside");
+      await NodeFSP.mkdir(NodePath.join(workspace, "src"), { recursive: true });
+      await NodeFSP.mkdir(NodePath.join(workspace, ".git", "hooks"), { recursive: true });
+      await NodeFSP.mkdir(extraRoot, { recursive: true });
+      await NodeFSP.mkdir(outside, { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(outside, "secret.txt"), "x");
+      await NodeFSP.symlink(
+        NodePath.join(outside, "secret.txt"),
+        NodePath.join(workspace, "escape-link.txt"),
+      );
+      await NodeFSP.symlink(
+        NodePath.join(outside, "dangling-target.txt"),
+        NodePath.join(workspace, "dangling-link.txt"),
+      );
+      await NodeFSP.symlink(outside, NodePath.join(workspace, "outside-dir-link"));
+
+      const bridge = await loadMcpBridge({
+        runtimeMode: "auto-accept-edits",
+        extraRoots: [extraRoot],
+      });
+      const hook = bridge.handlers.get("tool_call") as unknown as (
+        event: { toolName: string; input: unknown },
+        ctx: { cwd?: unknown; ui: { confirm: (title: string) => Promise<boolean> } },
+      ) => Promise<{ block: true; reason: string } | undefined>;
+      const confirmations: string[] = [];
+      const ctx = {
+        cwd: workspace,
+        ui: {
+          confirm: async (title: string) => {
+            confirmations.push(title);
+            return false;
+          },
+        },
+      };
+
+      for (const allowed of [
+        { toolName: "edit", input: { path: "src/app.ts" } },
+        { toolName: "write", input: { file_path: NodePath.join(workspace, "src", "new.ts") } },
+        { toolName: "write", input: { filePath: NodePath.join(extraRoot, "shared.ts") } },
+        { toolName: "edit", input: { path: ".gitignore" } },
+      ]) {
+        assert.isUndefined(await hook(allowed, ctx));
+      }
+      assert.equal(confirmations.length, 0);
+
+      for (const mustConfirm of [
+        { toolName: "write", input: { path: "../outside/new.txt" } },
+        { toolName: "write", input: { path: NodePath.join(outside, "secret.txt") } },
+        { toolName: "edit", input: { path: "escape-link.txt" } },
+        { toolName: "write", input: { path: "dangling-link.txt" } },
+        { toolName: "write", input: { path: "outside-dir-link/nested.txt" } },
+        { toolName: "edit", input: { path: ".git/config" } },
+        { toolName: "write", input: { path: ".git/hooks/pre-commit" } },
+        { toolName: "write", input: { path: "sub/.GIT/config" } },
+        { toolName: "write", input: { path: workspace } },
+        { toolName: "write", input: { path: "src/a\0b.ts" } },
+        { toolName: "write", input: { path: "~/outside.txt" } },
+        { toolName: "write", input: { path: 123 } },
+        { toolName: "edit", input: {} },
+        { toolName: "bash", input: { command: "echo hi" } },
+      ]) {
+        assert.equal((await hook(mustConfirm, ctx))?.block, true);
+      }
+      assert.equal(confirmations.length, 14);
+    } finally {
+      await NodeFSP.rm(tempBase, { recursive: true, force: true });
+    }
+  });
 });
 
 async function loadRequestHook() {

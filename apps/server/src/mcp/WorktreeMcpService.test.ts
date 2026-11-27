@@ -59,6 +59,8 @@ const makeScope = (
 });
 
 interface ThreadFixture {
+  readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+  readonly interactionMode?: "default" | "plan";
   readonly branch?: string | null;
   readonly worktreePath?: string | null;
   readonly archivedAt?: string | null;
@@ -737,4 +739,34 @@ describe("t3_worktree_list", () => {
       expect(harness.listRefs).not.toHaveBeenCalled();
     });
   });
+
+  it.effect(
+    "disables repository hooks during worktree creation for below-Full-access threads",
+    () =>
+      Effect.gen(function* () {
+        const seenHooks: Array<GitVcsDriver.RepositoryHooksPolicy> = [];
+        const harness = makeHarness({
+          thread: { runtimeMode: "auto" },
+          git: {
+            createWorktree: (input) =>
+              Effect.gen(function* () {
+                seenHooks.push(yield* GitVcsDriver.RepositoryHooks);
+                return {
+                  worktree: {
+                    path: input.path ?? `/worktrees/project/${input.newRefName}`,
+                    refName: input.newRefName ?? "detached",
+                  },
+                };
+              }),
+          },
+        });
+        const service = yield* WorktreeMcpService.WorktreeMcpService.pipe(
+          Effect.provide(harness.layer),
+        );
+        yield* service
+          .handoff(harness.scope, { branch: "feat/hooks-disabled" })
+          .pipe(Effect.provide(harness.layer));
+        expect(seenHooks).toEqual([{ _tag: "none" }]);
+      }),
+  );
 });

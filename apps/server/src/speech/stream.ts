@@ -15,6 +15,7 @@ import * as Scope from "effect/Scope";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as Socket from "effect/socket/Socket";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
 import * as SpeechService from "./SpeechService.ts";
 
 // A recording client streams audio continuously; behind a proxy a vanished
@@ -117,6 +118,7 @@ export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
 export const speechStreamRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth.EnvironmentAuth;
+    const sessions = yield* SessionStore.SessionStore;
     const speech = yield* SpeechService.SpeechService;
     return HttpRouter.add(
       "GET",
@@ -130,7 +132,21 @@ export const speechStreamRouteLayer = Layer.unwrap(
         if (!session.success.scopes.includes(AuthOrchestrationOperateScope))
           return HttpServerResponse.empty({ status: 403 });
         const socket = yield* request.upgrade;
-        yield* runSpeechSocket(socket, speech).pipe(Effect.scoped);
+        const revoked = sessions
+          .awaitInvalidation(session.success.sessionId, session.success.proofKeyThumbprint)
+          .pipe(
+            Effect.ignore,
+            Effect.andThen(
+              socket.writer.pipe(
+                Effect.flatMap((writer) =>
+                  writer.write(new Socket.CloseEvent(4401, "Session revoked")),
+                ),
+                Effect.scoped,
+                Effect.ignore,
+              ),
+            ),
+          );
+        yield* Effect.raceFirst(runSpeechSocket(socket, speech).pipe(Effect.scoped), revoked);
         return HttpServerResponse.empty();
       }),
     );

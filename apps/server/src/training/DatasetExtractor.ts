@@ -2,6 +2,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import {
+  type RedactionAuditSourceKind,
   type RedactionOptions,
   ThreadId,
   type TrainingChatMessage,
@@ -181,27 +182,112 @@ function stripSyntheticSenderWrapper(text: string): string {
   return text.replace(SYNTHETIC_SENDER_PREFIX, "");
 }
 
-function sanitizeDynamicToolOutput(value: unknown, maxChars: number): string {
-  const stripImages = (node: unknown): unknown => {
-    if (Array.isArray(node)) return node.map(stripImages);
-    if (node !== null && typeof node === "object") {
-      const record = node as Record<string, unknown>;
-      if (
-        record.type === "image" ||
-        record.type === "image_url" ||
-        typeof record.dataUrl === "string"
-      ) {
-        return "[image omitted]";
-      }
-      const next: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(record)) {
-        next[k] = stripImages(v);
-      }
-      return next;
-    }
-    return node;
+type FieldRedactor = (text: string, sourceKind: RedactionAuditSourceKind) => string;
+
+interface BufferedAudit {
+  readonly collector: SecretRedactor.RedactionAuditCollector;
+  readonly commitTo: (target: SecretRedactor.RedactionAuditCollector) => void;
+}
+
+function createBufferedAudit(): BufferedAudit {
+  const entries: Array<Parameters<SecretRedactor.RedactionAuditCollector["recordMatch"]>[0]> = [];
+  const collector: SecretRedactor.RedactionAuditCollector = {
+    recordMatch(entry) {
+      entries.push(entry);
+    },
+    toReport() {
+      const temp = SecretRedactor.createRedactionAuditCollector();
+      for (const entry of entries) temp.recordMatch(entry);
+      return temp.toReport();
+    },
   };
-  const cleaned = stripImages(value);
+  return {
+    collector,
+    commitTo(target) {
+      for (const entry of entries) target.recordMatch(entry);
+    },
+  };
+}
+
+const SECRET_KEY_NAME_PATTERN =
+  /^[A-Z0-9_]*(?:API_?KEY|SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_?KEY|ACCESS_?KEY|AUTH_?KEY|CLIENT_?SECRET|WEBHOOK_?SECRET|DATABASE_?URL|SIGNING_?KEY)[A-Z0-9_]*$/i;
+const AUTH_HEADER_VALUE_PATTERN = /^(?:Bearer|Basic|Token)\s+[A-Za-z0-9._~+/=-]{12,}$/i;
+
+function redactStructuredStringEntry(
+  key: string,
+  value: string,
+  redact: (text: string) => string,
+  redactEnvAssignments: boolean,
+): string {
+  const redactedLeaf = redact(value);
+  if (redactedLeaf !== value || value === WITHHELD) return redactedLeaf;
+  if (key.toLowerCase() === "authorization" && AUTH_HEADER_VALUE_PATTERN.test(value)) {
+    const prefix = `${key}: `;
+    const paired = redact(`${prefix}${value}`);
+    return paired.startsWith(prefix) ? paired.slice(prefix.length) : redactedLeaf;
+  }
+  if (
+    redactEnvAssignments &&
+    value.length >= 8 &&
+    !/[\s"'`]/.test(value) &&
+    SECRET_KEY_NAME_PATTERN.test(key)
+  ) {
+    const prefix = `${key}=`;
+    const paired = redact(`${prefix}${value}`);
+    return paired.startsWith(prefix) ? paired.slice(prefix.length) : redactedLeaf;
+  }
+  return redactedLeaf;
+}
+
+function redactRawValue(
+  value: unknown,
+  redact: (text: string) => string,
+  stripImages: boolean,
+  redactEnvAssignments: boolean,
+): unknown {
+  if (typeof value === "string") return redact(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => redactRawValue(item, redact, stripImages, redactEnvAssignments));
+  }
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    if (
+      stripImages &&
+      (record.type === "image" || record.type === "image_url" || typeof record.dataUrl === "string")
+    ) {
+      return "[image omitted]";
+    }
+    const next: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(record)) {
+      const redactedKey = redact(k);
+      let targetKey = redactedKey;
+      let suffix = 1;
+      while (Object.hasOwn(next, targetKey)) {
+        targetKey = `${redactedKey}_${suffix}`;
+        suffix += 1;
+      }
+      next[targetKey] =
+        typeof v === "string"
+          ? redactStructuredStringEntry(k, v, redact, redactEnvAssignments)
+          : redactRawValue(v, redact, stripImages, redactEnvAssignments);
+    }
+    return next;
+  }
+  return value;
+}
+
+function sanitizeDynamicToolOutput(
+  value: unknown,
+  maxChars: number,
+  redact: FieldRedactor,
+  redactionOptions: RedactionOptions,
+): string {
+  const cleaned = redactRawValue(
+    value,
+    (text) => redact(text, "tool_output"),
+    true,
+    redactionOptions.redactEnvAssignments,
+  );
   const serialized = typeof cleaned === "string" ? cleaned : JSON.stringify(cleaned ?? null);
   return deterministicClip(serialized, maxChars);
 }
@@ -299,13 +385,18 @@ function buildToolTurnFromItem(
   checkpointsById: ReadonlyMap<string, ReadonlyArray<CheckpointFileSummary>>,
   filter: TrainingDatasetFilter,
   callId: string,
+  redact: FieldRedactor,
+  redactionOptions: RedactionOptions,
 ): BuiltToolTurn | null {
   if (!filter.includeToolCalls) return null;
 
   switch (rowType) {
     case "command_execution": {
-      const command = typeof payload.input === "string" ? payload.input : "";
-      const output = typeof payload.output === "string" ? payload.output : "";
+      const command = redact(typeof payload.input === "string" ? payload.input : "", "tool_input");
+      const output = redact(
+        typeof payload.output === "string" ? payload.output : "",
+        "tool_output",
+      );
       const exitCode = typeof payload.exitCode === "number" ? payload.exitCode : null;
       return {
         toolName: "shell",
@@ -327,15 +418,24 @@ function buildToolTurnFromItem(
     }
 
     case "file_change": {
-      const fileName = typeof payload.fileName === "string" ? payload.fileName : "unknown";
+      const fileName = redact(
+        typeof payload.fileName === "string" ? payload.fileName : "unknown",
+        "tool_input",
+      );
       const additions = typeof payload.additions === "number" ? payload.additions : undefined;
       const deletions = typeof payload.deletions === "number" ? payload.deletions : undefined;
       const diffBody =
         typeof payload.diffStr === "string" && payload.diffStr.length > 0
-          ? payload.diffStr
+          ? redact(payload.diffStr, "tool_output")
           : JSON.stringify({
-              oldStr: typeof payload.oldStr === "string" ? payload.oldStr : undefined,
-              newStr: typeof payload.newStr === "string" ? payload.newStr : undefined,
+              oldStr:
+                typeof payload.oldStr === "string"
+                  ? redact(payload.oldStr, "tool_output")
+                  : undefined,
+              newStr:
+                typeof payload.newStr === "string"
+                  ? redact(payload.newStr, "tool_output")
+                  : undefined,
             });
       return {
         toolName: "edit_file",
@@ -361,12 +461,18 @@ function buildToolTurnFromItem(
     }
 
     case "file_search": {
-      const pattern = typeof payload.pattern === "string" ? payload.pattern : "";
+      const pattern = redact(
+        typeof payload.pattern === "string" ? payload.pattern : "",
+        "tool_input",
+      );
       const results = Array.isArray(payload.results) ? payload.results : [];
-      const compactResults = results
-        .map(formatFileSearchEntry)
-        .filter((line) => line.length > 0)
-        .join("\n");
+      const compactResults = redact(
+        results
+          .map(formatFileSearchEntry)
+          .filter((line) => line.length > 0)
+          .join("\n"),
+        "tool_output",
+      );
       return {
         toolName: "search_files",
         call: {
@@ -388,7 +494,12 @@ function buildToolTurnFromItem(
         typeof payload.toolName === "string" && payload.toolName.trim().length > 0
           ? payload.toolName.trim()
           : "tool";
-      const sanitizedInput = withoutWebhookSigningSecret(payload.input ?? {});
+      const sanitizedInput = redactRawValue(
+        withoutWebhookSigningSecret(payload.input ?? {}),
+        (text) => redact(text, "tool_input"),
+        false,
+        redactionOptions.redactEnvAssignments,
+      );
       return {
         toolName,
         call: {
@@ -400,21 +511,31 @@ function buildToolTurnFromItem(
           role: "tool",
           tool_call_id: callId,
           name: toolName,
-          content: sanitizeDynamicToolOutput(payload.output, filter.maxToolOutputChars),
+          content: sanitizeDynamicToolOutput(
+            payload.output,
+            filter.maxToolOutputChars,
+            redact,
+            redactionOptions,
+          ),
         },
       };
     }
 
     case "checkpoint": {
       if (!filter.includeCheckpointDiffs) return null;
-      const checkpointId = typeof payload.checkpointId === "string" ? payload.checkpointId : "";
+      const rawCheckpointId = typeof payload.checkpointId === "string" ? payload.checkpointId : "";
       const files =
-        payload.filesOmitted === true && checkpointId.length > 0
-          ? (checkpointsById.get(checkpointId) ?? [])
+        payload.filesOmitted === true && rawCheckpointId.length > 0
+          ? (checkpointsById.get(rawCheckpointId) ?? [])
           : Array.isArray(payload.files)
             ? (payload.files as ReadonlyArray<CheckpointFileSummary>)
             : [];
       if (files.length === 0) return null;
+      const checkpointId = redact(rawCheckpointId, "tool_input");
+      const redactedFiles = files.slice(0, 200).map((file) => ({
+        ...file,
+        path: typeof file.path === "string" ? redact(file.path, "tool_output") : file.path,
+      }));
       return {
         toolName: "checkpoint_summary",
         call: {
@@ -426,10 +547,7 @@ function buildToolTurnFromItem(
           role: "tool",
           tool_call_id: callId,
           name: "checkpoint_summary",
-          content: deterministicClip(
-            JSON.stringify(files.slice(0, 200)),
-            filter.maxToolOutputChars,
-          ),
+          content: deterministicClip(JSON.stringify(redactedFiles), filter.maxToolOutputChars),
         },
       };
     }
@@ -440,11 +558,19 @@ function buildToolTurnFromItem(
 }
 
 function buildMessagesForItems(input: {
+  readonly threadId: ThreadId;
   readonly items: ReadonlyArray<TurnItemProjectionRow>;
   readonly messagesById: ReadonlyMap<string, string>;
   readonly checkpointsById: ReadonlyMap<string, ReadonlyArray<CheckpointFileSummary>>;
   readonly filter: TrainingDatasetFilter;
+  readonly redactionOptions: RedactionOptions;
+  readonly collector: SecretRedactor.RedactionAuditCollector;
 }): { readonly messages: Array<TrainingChatMessage>; readonly usedTools: Set<string> } {
+  const redact: FieldRedactor = (text, sourceKind) =>
+    SecretRedactor.redactText(text, input.redactionOptions, input.collector, {
+      threadId: input.threadId,
+      sourceKind,
+    });
   const messages: Array<TrainingChatMessage> = [];
   const usedTools = new Set<string>();
   let pendingReasoning: Array<string> = [];
@@ -475,7 +601,7 @@ function buildMessagesForItems(input: {
         ? `<think>\n${pendingReasoning.join("\n")}\n</think>\n\n`
         : "";
     pendingReasoning = [];
-    const content = `${reasoningPrefix}${trimmed}`;
+    const content = `${reasoningPrefix}${redact(trimmed, "assistant_message")}`;
 
     const last = messages.at(-1);
     if (last !== undefined && last.role === "assistant" && last.tool_calls === undefined) {
@@ -503,14 +629,14 @@ function buildMessagesForItems(input: {
       if (cleaned.length === 0 || cleaned.toLowerCase() === "/compact") continue;
       flushToolBatch();
       pendingReasoning = [];
-      messages.push({ role: "user", content: cleaned });
+      messages.push({ role: "user", content: redact(cleaned, "user_message") });
       continue;
     }
 
     if (row.type === "reasoning") {
       if (!input.filter.includeReasoning || payload.streaming === true) continue;
       const text = typeof payload.text === "string" ? payload.text.trim() : "";
-      if (text.length > 0) pendingReasoning.push(text);
+      if (text.length > 0) pendingReasoning.push(redact(text, "assistant_message"));
       continue;
     }
 
@@ -533,6 +659,8 @@ function buildMessagesForItems(input: {
       input.checkpointsById,
       input.filter,
       `call_${toolCounter + 1}`,
+      redact,
+      input.redactionOptions,
     );
     if (toolTurn !== null) {
       toolCounter += 1;
@@ -744,6 +872,8 @@ function collectRollbackDpoRecords(
   bundle: ThreadBundleData,
   itemsByRun: ReadonlyMap<string, ReadonlyArray<TurnItemProjectionRow>>,
   filter: TrainingDatasetFilter,
+  redactionOptions: RedactionOptions,
+  collector: SecretRedactor.RedactionAuditCollector,
 ): Array<TrainingDpoRecord> {
   const records: Array<TrainingDpoRecord> = [];
   let index = 0;
@@ -768,23 +898,33 @@ function collectRollbackDpoRecords(
     const rejectedItems = rolledBackRuns.flatMap((run) => itemsByRun.get(run.run_id) ?? []);
     const chosenItems = itemsByRun.get(replacement.run_id) ?? [];
 
+    const pairAudit = createBufferedAudit();
     const prefixMessages = buildMessagesForItems({
+      threadId,
       items: prefixItems,
       messagesById: bundle.messagesById,
       checkpointsById: bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: pairAudit.collector,
     }).messages;
     const rejectedAll = buildMessagesForItems({
+      threadId,
       items: rejectedItems,
       messagesById: bundle.messagesById,
       checkpointsById: bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: pairAudit.collector,
     }).messages;
     const chosenAll = buildMessagesForItems({
+      threadId,
       items: chosenItems,
       messagesById: bundle.messagesById,
       checkpointsById: bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: pairAudit.collector,
     }).messages;
 
     const similarity = normalizePromptSimilarity(
@@ -801,6 +941,7 @@ function collectRollbackDpoRecords(
     const rejectedResponse = rejectedAll[0]?.role === "user" ? rejectedAll.slice(1) : rejectedAll;
 
     if (hasAssistantOutput(chosenResponse) && hasAssistantOutput(rejectedResponse)) {
+      pairAudit.commitTo(collector);
       records.push({
         prompt: promptMessages,
         chosen: chosenResponse,
@@ -825,6 +966,8 @@ function collectRetryAttemptDpoRecords(
   bundle: ThreadBundleData,
   itemsByRun: ReadonlyMap<string, ReadonlyArray<TurnItemProjectionRow>>,
   filter: TrainingDatasetFilter,
+  redactionOptions: RedactionOptions,
+  collector: SecretRedactor.RedactionAuditCollector,
 ): Array<TrainingDpoRecord> {
   const records: Array<TrainingDpoRecord> = [];
   const attemptsByRun = groupByRunId(bundle.attempts);
@@ -861,11 +1004,15 @@ function collectRetryAttemptDpoRecords(
               item.provider_turn_id === attempt.provider_turn_id)),
       );
 
+    const chosenAudit = createBufferedAudit();
     const chosenMsgs = buildMessagesForItems({
+      threadId,
       items: itemsForAttempt(winning),
       messagesById: bundle.messagesById,
       checkpointsById: bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: chosenAudit.collector,
     }).messages;
     if (!hasAssistantOutput(chosenMsgs)) continue;
 
@@ -874,22 +1021,33 @@ function collectRetryAttemptDpoRecords(
       .filter((r) => r.status === "completed")
       .flatMap((r) => itemsByRun.get(r.run_id) ?? []);
     const runUserItems = runItems.filter((item) => item.type === "user_message");
+    const promptAudit = createBufferedAudit();
     const promptMessages = buildMessagesForItems({
+      threadId,
       items: [...prefixItems, ...runUserItems],
       messagesById: bundle.messagesById,
       checkpointsById: bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: promptAudit.collector,
     }).messages;
 
     for (const losing of failedAttempts) {
+      const rejectedAudit = createBufferedAudit();
       const rejectedMsgs = buildMessagesForItems({
+        threadId,
         items: itemsForAttempt(losing),
         messagesById: bundle.messagesById,
         checkpointsById: bundle.checkpointsById,
         filter,
+        redactionOptions,
+        collector: rejectedAudit.collector,
       }).messages;
       if (!hasAssistantOutput(rejectedMsgs)) continue;
 
+      promptAudit.commitTo(collector);
+      chosenAudit.commitTo(collector);
+      rejectedAudit.commitTo(collector);
       records.push({
         prompt: promptMessages,
         chosen: chosenMsgs,
@@ -970,6 +1128,8 @@ function collectForkDpoRecords(
   bundlesByThreadId: ReadonlyMap<string, ThreadBundleEntry>,
   forkLinks: ReadonlyArray<ForkLink>,
   filter: TrainingDatasetFilter,
+  redactionOptions: RedactionOptions,
+  collector: SecretRedactor.RedactionAuditCollector,
 ): Array<TrainingDpoRecord> {
   const records: Array<TrainingDpoRecord> = [];
   const itemsForRuns = (entry: ThreadBundleEntry, runs: ReadonlyArray<RunProjectionRow>) => {
@@ -994,17 +1154,26 @@ function collectForkDpoRecords(
         : parentEntry.bundle.runs;
     const forkPostRuns = forkEntry.bundle.runs;
 
+    const parentThreadId = ThreadId.make(link.parentThreadId);
+    const forkThreadId = ThreadId.make(link.forkThreadId);
+    const pairAudit = createBufferedAudit();
     const parentPostMsgs = buildMessagesForItems({
+      threadId: parentThreadId,
       items: itemsForRuns(parentEntry, parentPostRuns),
       messagesById: parentEntry.bundle.messagesById,
       checkpointsById: parentEntry.bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: pairAudit.collector,
     }).messages;
     const forkPostMsgs = buildMessagesForItems({
+      threadId: forkThreadId,
       items: itemsForRuns(forkEntry, forkPostRuns),
       messagesById: forkEntry.bundle.messagesById,
       checkpointsById: forkEntry.bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: pairAudit.collector,
     }).messages;
 
     if (!hasAssistantOutput(parentPostMsgs) || !hasAssistantOutput(forkPostMsgs)) continue;
@@ -1015,21 +1184,25 @@ function collectForkDpoRecords(
 
     const forkPreferred = forkScore > parentScore;
     const promptMessages = buildMessagesForItems({
+      threadId: parentThreadId,
       items: itemsForRuns(parentEntry, prefixRuns),
       messagesById: parentEntry.bundle.messagesById,
       checkpointsById: parentEntry.bundle.checkpointsById,
       filter,
+      redactionOptions,
+      collector: pairAudit.collector,
     }).messages;
 
+    pairAudit.commitTo(collector);
     records.push({
       prompt: promptMessages,
       chosen: forkPreferred ? forkPostMsgs : parentPostMsgs,
       rejected: forkPreferred ? parentPostMsgs : forkPostMsgs,
       metadata: {
         source: "fork",
-        sourceThreadId: ThreadId.make(link.parentThreadId),
-        chosenThreadId: ThreadId.make(forkPreferred ? link.forkThreadId : link.parentThreadId),
-        rejectedThreadId: ThreadId.make(forkPreferred ? link.parentThreadId : link.forkThreadId),
+        sourceThreadId: parentThreadId,
+        chosenThreadId: forkPreferred ? forkThreadId : parentThreadId,
+        rejectedThreadId: forkPreferred ? parentThreadId : forkThreadId,
         divergenceRunOrdinal:
           divergenceIdx >= 0 ? Number(parentEntry.bundle.runs[divergenceIdx]!.ordinal) : 0,
         confidence: Math.abs(parentScore - forkScore) >= 3 ? "high" : "medium",
@@ -1260,11 +1433,16 @@ const make = Effect.gen(function* () {
         const relevantItems = bundle.items.filter(
           (item) => item.run_id !== null && completedRunIds.has(item.run_id),
         );
+        const threadId = ThreadId.make(row.thread_id);
+        const threadAudit = createBufferedAudit();
         const { messages, usedTools } = buildMessagesForItems({
+          threadId,
           items: relevantItems,
           messagesById: bundle.messagesById,
           checkpointsById: bundle.checkpointsById,
           filter: input.filter,
+          redactionOptions: input.redactionOptions,
+          collector: threadAudit.collector,
         });
 
         if (!messages.some((m) => m.role === "user") || !hasAssistantOutput(messages)) {
@@ -1272,14 +1450,12 @@ const make = Effect.gen(function* () {
           continue;
         }
 
+        threadAudit.commitTo(collector);
         const tools = input.filter.includeToolCalls ? buildToolDefinitions(usedTools) : [];
-        const threadId = ThreadId.make(row.thread_id);
-        const redactedRecord = yield* redactor.redactSftRecord({
-          record: { messages, ...(tools.length > 0 ? { tools } : {}) },
-          options: input.redactionOptions,
-          collector,
-          threadId,
-        });
+        const redactedRecord: TrainingSftRecord = {
+          messages,
+          ...(tools.length > 0 ? { tools } : {}),
+        };
 
         matchedThreadIds.add(threadId);
         estimatedTokens += estimateTokens(redactedRecord);
@@ -1299,19 +1475,33 @@ const make = Effect.gen(function* () {
         fromRollbacks: true,
         fromRetryAttempts: true,
       };
-      const rawDpoRecords: Array<TrainingDpoRecord> = [];
+      const redactedDpoRecords: Array<TrainingDpoRecord> = [];
 
       for (const { row, bundle } of bundlesByThreadId.values()) {
         const threadId = ThreadId.make(row.thread_id);
         const itemsByRun = groupByRunId(bundle.items);
         if (dpoSources.fromRollbacks) {
-          rawDpoRecords.push(
-            ...collectRollbackDpoRecords(threadId, bundle, itemsByRun, input.filter),
+          redactedDpoRecords.push(
+            ...collectRollbackDpoRecords(
+              threadId,
+              bundle,
+              itemsByRun,
+              input.filter,
+              input.redactionOptions,
+              collector,
+            ),
           );
         }
         if (dpoSources.fromRetryAttempts) {
-          rawDpoRecords.push(
-            ...collectRetryAttemptDpoRecords(threadId, bundle, itemsByRun, input.filter),
+          redactedDpoRecords.push(
+            ...collectRetryAttemptDpoRecords(
+              threadId,
+              bundle,
+              itemsByRun,
+              input.filter,
+              input.redactionOptions,
+              collector,
+            ),
           );
         }
       }
@@ -1332,15 +1522,18 @@ const make = Effect.gen(function* () {
           ),
         );
         const forkLinks = collectForkLinks(bundlesByThreadId, transferRows);
-        rawDpoRecords.push(...collectForkDpoRecords(bundlesByThreadId, forkLinks, input.filter));
+        redactedDpoRecords.push(
+          ...collectForkDpoRecords(
+            bundlesByThreadId,
+            forkLinks,
+            input.filter,
+            input.redactionOptions,
+            collector,
+          ),
+        );
       }
 
-      for (const rawRecord of rawDpoRecords) {
-        const redacted = yield* redactor.redactDpoRecord({
-          record: rawRecord,
-          options: input.redactionOptions,
-          collector,
-        });
+      for (const redacted of redactedDpoRecords) {
         matchedThreadIds.add(redacted.metadata.sourceThreadId);
         estimatedTokens += estimateTokens(redacted);
         const bucket = threadSplitBucket(

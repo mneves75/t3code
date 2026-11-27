@@ -128,4 +128,18 @@ describe("makeResponseRestorer", () => {
     const stream = `data: {"type":"response.output_item.done","item":{"type":"function_call","name":"exec_command"}}\n\ndata: [DONE]`;
     expect(run(true, [stream.slice(0, 30), stream.slice(30)])).toBe(stream);
   });
+
+  it("restores multi-megabyte SSE tool events and rejects unbounded lines past the 16 MiB cap", () => {
+    const largeArgs = JSON.stringify({ content: "x".repeat(2 * 1024 * 1024) });
+    const largeEvent = `data: ${JSON.stringify({ type: "response.output_item.done", item: { ...flatCall, arguments: largeArgs } })}\n`;
+    const restoredLarge = run(true, [largeEvent.slice(0, 1024), largeEvent.slice(1024)]);
+    expect(restoredLarge).toBe(
+      `data: ${JSON.stringify({ type: "response.output_item.done", item: { ...restoredCall, arguments: largeArgs } })}\n`,
+    );
+
+    const restorer = makeResponseRestorer(names, true);
+    const chunk = encoder.encode("a".repeat(9 * 1024 * 1024));
+    expect(restorer.push(chunk).length).toBe(0);
+    expect(() => restorer.push(chunk)).toThrow(RangeError);
+  });
 });

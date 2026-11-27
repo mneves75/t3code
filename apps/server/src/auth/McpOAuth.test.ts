@@ -955,6 +955,31 @@ it.live("one-click approves only access the browser session holds the scopes for
         dpopHeaders(otherKey, yield* dpopSession(otherKey.thumbprint), "/oauth/mcp/decision"),
       );
       expect(elsewhere.status).toBe(400);
+
+      // A self-declared peer-link client never gets one-click approval and must use a pairing code.
+      const peerReg = yield* handler(
+        postJson("/oauth/mcp/register", {
+          client_name: "Peer Link",
+          redirect_uris: ["https://peer.example/cb"],
+          software_id: MCP_PEER_LINK_SOFTWARE_ID,
+        }),
+      ).pipe(Effect.flatMap(json<{ client_id: string }>));
+      const peerParams = {
+        ...authorizeParams(peerReg.client_id),
+        redirect_uri: "https://peer.example/cb",
+      };
+      const peerDetails = yield* handler(postJson("/oauth/mcp/approval", peerParams, admin)).pipe(
+        Effect.flatMap(json<{ csrfToken?: string; oneClickAccess?: ReadonlyArray<string> }>),
+      );
+      expect(peerDetails.csrfToken).toBeUndefined();
+      expect(peerDetails.oneClickAccess).toBeUndefined();
+      const peerOneClick = yield* decide(
+        handler,
+        peerParams,
+        { _tag: "browser-session", access: "full-access", csrfToken: adminDetails.csrfToken! },
+        admin,
+      );
+      expect(peerOneClick.status).toBe(400);
     }),
   ),
 );

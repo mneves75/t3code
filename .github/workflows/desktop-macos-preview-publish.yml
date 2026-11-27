@@ -32,8 +32,7 @@ jobs:
     name: Verify preview eligibility
     if: >-
       github.event_name == 'workflow_run' &&
-      github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.conclusion == 'success'
+      github.event.workflow_run.event == 'pull_request'
     # The build workflow completes for every PR push (its label gate is on the
     # job), so this runs often and usually finds nothing. Keep it cheap.
     runs-on: ubuntu-24.04
@@ -61,20 +60,32 @@ jobs:
             const run = context.payload.workflow_run;
             const { owner, repo } = context.repo;
 
-            // The build workflow also completes (with every job skipped) for
-            // label events that are not the preview label. Only a run that
-            // produced a bundle is worth resolving.
-            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
-              owner,
-              repo,
-              run_id: run.id,
-              per_page: 100,
-            });
-            const bundles = artifacts.filter((artifact) => artifact.name === "js-bundle" && !artifact.expired);
-            if (bundles.length !== 1) {
-              core.info(`Expected one js-bundle artifact; found ${bundles.length}. Skipping.`);
+            if (run.conclusion === "skipped") {
+              core.info("Build workflow was skipped. Skipping.");
               core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
               return;
+            }
+
+            let bundleArtifactId = "";
+            if (run.conclusion === "success") {
+              // The build workflow also completes (with every job skipped) for
+              // label events that are not the preview label. Only a run that
+              // produced a bundle is worth resolving.
+              const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                owner,
+                repo,
+                run_id: run.id,
+                per_page: 100,
+              });
+              const bundles = artifacts.filter((artifact) => artifact.name === "js-bundle" && !artifact.expired);
+              if (bundles.length !== 1) {
+                core.info(`Expected one js-bundle artifact; found ${bundles.length}. Skipping.`);
+                core.setOutput("eligible", "false");
+                core.setOutput("consume_label", "false");
+                return;
+              }
+              bundleArtifactId = String(bundles[0].id);
             }
 
             // workflow_run.pull_requests and the commit-to-PR lookup are both
@@ -99,6 +110,7 @@ jobs:
             if (matching.length !== 1) {
               core.info(`Expected one open PR for ${run.head_sha}; found ${matching.length}. Skipping.`);
               core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
               return;
             }
             const { data: pull } = await github.rest.pulls.get({
@@ -110,22 +122,109 @@ jobs:
             if (pull.state !== "open") {
               core.info(`PR #${pull.number} is not open. Skipping.`);
               core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
               return;
             }
             if (pull.head.sha !== run.head_sha) {
               core.info(`PR #${pull.number} moved to ${pull.head.sha} after ${run.head_sha} was built. Skipping.`);
               core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
               return;
             }
             if (!pull.labels.some((label) => label.name === "preview:mac")) {
               core.info(`PR #${pull.number} no longer carries the preview:mac label. Skipping.`);
               core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
               return;
             }
 
-            core.setOutput("artifact_id", String(bundles[0].id));
-            core.setOutput("eligible", "true");
             core.setOutput("pr_number", String(pull.number));
+
+            // Require the latest preview:mac labeler to hold write access, and bind
+            // that approval to this exact run and head commit.
+            const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+              owner,
+              repo,
+              issue_number: pull.number,
+              per_page: 100,
+            });
+            let labeledIndex = -1;
+            for (let index = timeline.length - 1; index >= 0; index -= 1) {
+              const event = timeline[index];
+              if (event.event === "labeled" && event.label?.name === "preview:mac") {
+                labeledIndex = index;
+                break;
+              }
+            }
+            const labeledEvent = labeledIndex >= 0 ? timeline[labeledIndex] : undefined;
+            const labeledAtMs = labeledEvent?.created_at ? Date.parse(labeledEvent.created_at) : Number.NaN;
+            const runCreatedAtMs = run.created_at ? Date.parse(run.created_at) : Number.NaN;
+            const labeledAfterRunStarted =
+              Number.isFinite(labeledAtMs) &&
+              Number.isFinite(runCreatedAtMs) &&
+              labeledAtMs > runCreatedAtMs;
+            if (labeledAfterRunStarted) {
+              core.info(
+                `PR #${pull.number} received a newer preview:mac label after run ${run.id} started. Skipping without consuming it.`,
+              );
+              core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
+              return;
+            }
+            if (run.conclusion === "cancelled") {
+              core.info(`Build run ${run.id} was cancelled. Leaving preview:mac label untouched.`);
+              core.setOutput("eligible", "false");
+              core.setOutput("consume_label", "false");
+              return;
+            }
+
+            // Remove the one-shot label when this run failed, or when it succeeded
+            // for this approval (or was applied without write access / superseded by commits).
+            core.setOutput("consume_label", "true");
+
+            if (run.conclusion !== "success") {
+              core.info(`Build run concluded with ${run.conclusion}. Removing stale preview:mac label.`);
+              core.setOutput("eligible", "false");
+              return;
+            }
+
+            const mutatedAfterLabel =
+              labeledIndex >= 0 &&
+              timeline.slice(labeledIndex + 1).some((event) => {
+                if (event.event === "head_ref_force_pushed") return true;
+                if (event.event === "committed") return true;
+                return false;
+              });
+            if (mutatedAfterLabel) {
+              core.info(
+                `PR #${pull.number} changed commits after preview:mac was applied. Skipping.`,
+              );
+              core.setOutput("eligible", "false");
+              return;
+            }
+
+            const labeler = labeledEvent?.actor?.login;
+            if (!labeler) {
+              core.info(`Could not identify who applied preview:mac on PR #${pull.number}. Skipping.`);
+              core.setOutput("eligible", "false");
+              return;
+            }
+            const allowedPermissions = new Set(["admin", "maintain", "write"]);
+            const { data: access } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner,
+              repo,
+              username: labeler,
+            });
+            if (!allowedPermissions.has(access.permission)) {
+              core.info(
+                `Labeler ${labeler} has ${access.permission} access, not write access. Skipping.`,
+              );
+              core.setOutput("eligible", "false");
+              return;
+            }
+
+            core.setOutput("artifact_id", bundleArtifactId);
+            core.setOutput("eligible", "true");
             core.setOutput("head_sha", pull.head.sha);
             core.setOutput("author", pull.user.login);
 
@@ -142,23 +241,48 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # The label authorized exactly this build, so take it now, before the
-      # long signing job. Removing it with GITHUB_TOKEN does not fire the
-      # unlabeled cleanup below (workflow-token events never start runs), so
-      # the download this run publishes survives. If a maintainer removed the
-      # label first, that removal wins: the 404 makes this run ineligible.
+      # long signing job (and also clear it after failed/cancelled/unauthorized
+      # runs). Removing it with GITHUB_TOKEN does not fire the unlabeled
+      # cleanup below (workflow-token events never start runs), so the download
+      # this run publishes survives. If a maintainer removed the label first,
+      # that removal wins: the 404 makes this run ineligible.
       - id: consume
         name: Consume the preview label
-        if: steps.pr.outputs.eligible == 'true'
+        if: steps.pr.outputs.consume_label == 'true'
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           PR_NUMBER: ${{ steps.pr.outputs.pr_number }}
+          RUN_CREATED_AT: ${{ github.event.workflow_run.created_at }}
         with:
           script: |
+            const prNumber = Number(process.env.PR_NUMBER);
+            const runCreatedAtMs = process.env.RUN_CREATED_AT
+              ? Date.parse(process.env.RUN_CREATED_AT)
+              : Number.NaN;
+            if (Number.isFinite(runCreatedAtMs)) {
+              const timeline = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                per_page: 100,
+              });
+              const latestLabel = [...timeline]
+                .reverse()
+                .find((event) => event.event === "labeled" && event.label?.name === "preview:mac");
+              const latestLabeledAtMs = latestLabel?.created_at
+                ? Date.parse(latestLabel.created_at)
+                : Number.NaN;
+              if (Number.isFinite(latestLabeledAtMs) && latestLabeledAtMs > runCreatedAtMs) {
+                core.info("A newer preview:mac approval was applied after this run started. Leaving it intact.");
+                core.setOutput("consumed", "false");
+                return;
+              }
+            }
             try {
               await github.rest.issues.removeLabel({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: Number(process.env.PR_NUMBER),
+                issue_number: prNumber,
                 name: "preview:mac",
               });
               core.setOutput("consumed", "true");

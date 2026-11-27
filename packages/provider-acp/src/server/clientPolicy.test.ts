@@ -12,6 +12,7 @@ import {
   acpClientExecuteDisposition,
   acpMcpToolApprovalElicitationDisposition,
   acpPermissionDisposition,
+  extractAcpExecuteApprovalTarget,
   makeAcpClientPolicyGrants,
   mergeAcpChangedPaths,
   type AcpRuntimePolicy,
@@ -538,8 +539,37 @@ describe("acpMcpToolApprovalElicitationDisposition", () => {
         },
         tagged,
       ),
-      "allow",
+      "ask",
     );
+    assert.equal(
+      acpMcpToolApprovalElicitationDisposition(
+        { runtimeMode: "auto-accept-edits", cwd: process.cwd() },
+        tagged,
+      ),
+      "ask",
+    );
+    for (const sandboxPolicy of [
+      { type: "readOnly" },
+      { type: "workspaceWrite", writableRoots: [], networkAccess: false },
+      { type: "customSandbox" },
+    ]) {
+      assert.equal(
+        acpMcpToolApprovalElicitationDisposition(
+          { ...fullAccess, approvalPolicy: "never", sandboxPolicy },
+          tagged,
+        ),
+        "ask",
+      );
+    }
+    for (const sandboxPolicy of [{ type: "dangerFullAccess" }, { type: "externalSandbox" }]) {
+      assert.equal(
+        acpMcpToolApprovalElicitationDisposition(
+          { ...fullAccess, approvalPolicy: "never", sandboxPolicy },
+          tagged,
+        ),
+        "allow",
+      );
+    }
     const { _meta: _tag, ...untagged } = tagged;
     assert.equal(
       acpMcpToolApprovalElicitationDisposition(
@@ -596,31 +626,136 @@ describe("client terminal disposition", () => {
   });
 });
 
+describe("extractAcpExecuteApprovalTarget", () => {
+  it("extracts command, args, and cwd from structured rawInput and fails closed on malformed fields", () => {
+    assert.deepEqual(
+      extractAcpExecuteApprovalTarget({ command: "git", args: ["status"], cwd: "/repo" }),
+      { command: "git", args: ["status"], cwd: "/repo" },
+    );
+    assert.deepEqual(extractAcpExecuteApprovalTarget({ command: ["git", "diff", "--stat"] }), {
+      command: "git",
+      args: ["diff", "--stat"],
+    });
+    assert.deepEqual(extractAcpExecuteApprovalTarget({ executable: "npm", args: ["test"] }), {
+      command: "npm",
+      args: ["test"],
+    });
+    assert.deepEqual(extractAcpExecuteApprovalTarget(undefined, "git status", "/repo"), {
+      command: "git status",
+      cwd: "/repo",
+    });
+    assert.deepEqual(
+      extractAcpExecuteApprovalTarget({ command: "git", args: [123] }, "git status"),
+      {},
+    );
+    assert.deepEqual(
+      extractAcpExecuteApprovalTarget({ command: "git", cwd: 42 }, "git status"),
+      {},
+    );
+  });
+});
+
 describe("makeAcpClientPolicyGrants", () => {
-  it("grants terminals only from execute approvals, never from any other approved kind", () => {
+  const defaultCwd = NodePath.resolve(process.cwd(), "acp-grants-workspace");
+  const baseCheck = {
+    turnKey: "turn-1",
+    sessionId: "session-1",
+    command: "git",
+    args: ["status"],
+    defaultCwd,
+  } as const;
+
+  it("grants a single-use terminal only for the exact approved execute command", () => {
     const grants = makeAcpClientPolicyGrants();
     for (const toolKind of ["read", "edit", "switch_mode", "other", "unknown", "browse"]) {
-      grants.recordApproval({ toolKind, scope: "session", turnKey: "turn-1" });
+      grants.recordApproval({
+        toolKind,
+        scope: "session",
+        turnKey: "turn-1",
+        sessionId: "session-1",
+        command: "git",
+        args: ["status"],
+        defaultCwd,
+      });
     }
-    assert.isFalse(grants.allowsExecute("turn-1"));
-    grants.recordApproval({ toolKind: "execute", scope: "turn", turnKey: "turn-1" });
-    assert.isTrue(grants.allowsExecute("turn-1"));
-    assert.isFalse(grants.allowsExecute("turn-2"));
-    assert.isFalse(grants.allowsExecute(null));
+    assert.isFalse(grants.consumeExecute(baseCheck));
+
+    grants.recordApproval({
+      toolKind: "execute",
+      scope: "turn",
+      turnKey: "turn-1",
+      sessionId: "session-1",
+      command: "git",
+      args: ["status"],
+      defaultCwd,
+    });
+    assert.isFalse(grants.consumeExecute({ ...baseCheck, turnKey: "turn-2" }));
+    assert.isFalse(grants.consumeExecute({ ...baseCheck, turnKey: null }));
+    assert.isFalse(grants.consumeExecute({ ...baseCheck, sessionId: "session-2" }));
+    assert.isFalse(grants.consumeExecute({ ...baseCheck, command: "rm" }));
+    assert.isFalse(grants.consumeExecute({ ...baseCheck, args: ["status", "--short"] }));
+    assert.isFalse(
+      grants.consumeExecute({ ...baseCheck, cwd: NodePath.resolve(defaultCwd, "..") }),
+    );
+    assert.isFalse(
+      grants.consumeExecute({
+        ...baseCheck,
+        env: [{ name: "NODE_OPTIONS", value: "--require=/tmp/evil.js" }],
+      }),
+    );
+
+    // Exact match succeeds once (single-use), then fails on replay.
+    assert.isTrue(grants.consumeExecute({ ...baseCheck, cwd: defaultCwd }));
+    assert.isFalse(grants.consumeExecute(baseCheck));
   });
 
-  it("keeps accept-for-session command grants across turns", () => {
+  it("keeps accept-for-session command grants bound to the approved sessionId and rejects unapproved env overrides", () => {
     const grants = makeAcpClientPolicyGrants();
-    grants.recordApproval({ toolKind: "execute", scope: "session", turnKey: "turn-1" });
-    assert.isTrue(grants.allowsExecute("turn-9"));
-    assert.isTrue(grants.allowsExecute(null));
+    grants.recordApproval({
+      toolKind: "execute",
+      scope: "session",
+      turnKey: "turn-1",
+      sessionId: "session-1",
+      command: "git",
+      args: ["status"],
+      defaultCwd,
+    });
+    assert.isTrue(grants.consumeExecute({ ...baseCheck, turnKey: "turn-9" }));
+    assert.isTrue(grants.consumeExecute({ ...baseCheck, turnKey: null, command: "npm" }));
+    // Forking or switching to a new native session must NOT inherit the old session grant.
+    assert.isFalse(
+      grants.consumeExecute({ ...baseCheck, sessionId: "session-forked", turnKey: "turn-9" }),
+    );
+    assert.isFalse(
+      grants.consumeExecute({
+        ...baseCheck,
+        turnKey: "turn-9",
+        env: [{ name: "LD_PRELOAD", value: "/tmp/pwn.so" }],
+      }),
+    );
   });
 
   it("drops a turn's command grant when a later turn approves one", () => {
     const grants = makeAcpClientPolicyGrants();
-    grants.recordApproval({ toolKind: "execute", scope: "turn", turnKey: "turn-1" });
-    grants.recordApproval({ toolKind: "execute", scope: "turn", turnKey: "turn-2" });
-    assert.isFalse(grants.allowsExecute("turn-1"));
-    assert.isTrue(grants.allowsExecute("turn-2"));
+    grants.recordApproval({
+      toolKind: "execute",
+      scope: "turn",
+      turnKey: "turn-1",
+      sessionId: "session-1",
+      command: "git",
+      args: ["status"],
+      defaultCwd,
+    });
+    grants.recordApproval({
+      toolKind: "execute",
+      scope: "turn",
+      turnKey: "turn-2",
+      sessionId: "session-1",
+      command: "git",
+      args: ["diff"],
+      defaultCwd,
+    });
+    assert.isFalse(grants.consumeExecute(baseCheck));
+    assert.isTrue(grants.consumeExecute({ ...baseCheck, turnKey: "turn-2", args: ["diff"] }));
   });
 });

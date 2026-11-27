@@ -421,4 +421,55 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("POSIX setup co
       assert.equal(result.exitCode, exitCode);
     }),
   );
+
+  it.effect("skips settle scripts for threads below Full access", () =>
+    Effect.gen(function* () {
+      const opens: TerminalOpenInput[] = [];
+      const runner = yield* ProjectSetupScriptRunner.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            Layer.mock(TerminalManager.TerminalManager)({
+              open: (input) =>
+                Effect.sync(() => {
+                  opens.push(input);
+                  return openSnapshot("");
+                }),
+            }),
+            Layer.mock(ProjectService.ProjectService)({}),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getThreadShell: () =>
+                Effect.succeed({
+                  id: threadId,
+                  runtimeMode: "auto",
+                  interactionMode: "default",
+                } as never),
+            }),
+            ServerSettings.layerTest(),
+            NodeCrypto.layer,
+          ),
+        ),
+      );
+      const result = yield* runner.runForThread({
+        threadId,
+        worktreePath: "/repo/.t3/worktrees/feature",
+        trigger: "settle",
+        project: {
+          id: ProjectId.make("project-1"),
+          workspaceRoot: "/repo",
+          scripts: [
+            {
+              id: "settle",
+              name: "Settle",
+              command: "echo settle",
+              icon: "configure",
+              runOnWorktreeCreate: false,
+              runOnSettle: true,
+            },
+          ],
+        },
+      });
+      assert.equal(result.status, "skipped-for-link");
+      assert.deepEqual(opens, []);
+    }),
+  );
 });

@@ -566,6 +566,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             gateway,
             sessionPath,
             runtimeMode: input.runtimePolicy.runtimeMode,
+            extraRoots: input.runtimePolicy.workspace?.extraRoots,
             toolProfile: resolvedToolProfile,
           });
           const scopedLaunch = yield* agentScope.wrap({

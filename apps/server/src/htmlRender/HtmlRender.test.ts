@@ -196,6 +196,61 @@ describe("HtmlRender", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect(
+    "skips local image inlining when allowLocalImages is false and blocks internal, non-image, hardlinked, or oversized non-image targets",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const config = yield* ServerConfig.ServerConfig;
+        const htmlRender = yield* HtmlRender.HtmlRender;
+        const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-sec-" });
+        const pngHeader = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+        // allowLocalImages: false skips disk access entirely without throwing missing-image error.
+        const untouched = yield* htmlRender.prepare(`<img src="${directory}/nope.png">`, {
+          allowLocalImages: false,
+        });
+        expect(untouched).toContain(`src="${directory}/nope.png"`);
+
+        // Symlink pointing to a server-internal PNG is rejected.
+        yield* fileSystem.makeDirectory(config.secretsDir, { recursive: true });
+        const internalPng = path.join(config.secretsDir, "internal.png");
+        yield* fileSystem.writeFile(internalPng, pngHeader);
+        const internalLink = path.join(directory, "alias-internal.png");
+        yield* fileSystem.symlink(internalPng, internalLink);
+
+        // Symlink pointing to a non-image extension (even with PNG magic bytes) is rejected post-realpath.
+        const disguisedTarget = path.join(directory, "secret.txt");
+        yield* fileSystem.writeFile(disguisedTarget, pngHeader);
+        const disguisedLink = path.join(directory, "alias-secret.png");
+        yield* fileSystem.symlink(disguisedTarget, disguisedLink);
+
+        // Hardlinked image (nlink > 1) is rejected.
+        const original = path.join(directory, "original.png");
+        const hardlink = path.join(directory, "hardlink.png");
+        yield* fileSystem.writeFile(original, pngHeader);
+        yield* fileSystem.link(original, hardlink);
+
+        // Oversized non-image file (>10 MiB) must be treated as missing, not HtmlRenderImageTooLargeError.
+        const bigSecret = path.join(directory, "big-secret.png");
+        yield* fileSystem.writeFile(bigSecret, new Uint8Array(10 * 1024 * 1024 + 64).fill(0x41));
+
+        const error = yield* htmlRender
+          .prepare(
+            `<img src="${internalLink}"><img src="${disguisedLink}"><img src="${hardlink}"><img src="${bigSecret}">`,
+          )
+          .pipe(Effect.flip);
+        expect(error).toBeInstanceOf(HtmlRender.HtmlRenderImagesNotFoundError);
+        expect(error._tag === "HtmlRenderImagesNotFoundError" && error.paths).toEqual([
+          internalLink,
+          disguisedLink,
+          hardlink,
+          bigSecret,
+        ]);
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("publishes the prepared page as an html thread attachment", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -14,6 +14,7 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 import * as NodeBuffer from "node:buffer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { gitForWindowsBash, SpawnExecutableResolution } from "@t3tools/shared/shell";
+import { resolveAcpExecuteCwd } from "./clientPolicy.ts";
 
 const MAX_LIVE_TERMINALS = 16;
 const MAX_UNRELEASED_TERMINALS = 64;
@@ -145,7 +146,7 @@ function acpTerminalCommand(input: {
   readonly forceKillAfter: Duration.Input;
 }) {
   const options = {
-    cwd: input.request.cwd ?? input.defaultCwd,
+    cwd: resolveAcpExecuteCwd(input.request.cwd, input.defaultCwd) || input.defaultCwd,
     env: input.environment,
     forceKillAfter: input.forceKillAfter,
   };

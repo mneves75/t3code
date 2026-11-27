@@ -22,6 +22,7 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Sse from "effect/encoding/Sse";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import type * as HttpClientResponse from "effect/http/HttpClientResponse";
@@ -121,7 +122,9 @@ const fromStatus = (status: number, code: string | undefined, label: string) => 
 
 const make = Effect.gen(function* () {
   const links = yield* PeerLinks.PeerLinks;
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = HttpClient.transform(yield* HttpClient.HttpClient, (response) =>
+    Effect.provideService(response, FetchHttpClient.RequestInit, { redirect: "manual" }),
+  );
 
   /**
    * Asks the linked environment for `route` of the thread. The response stays open until the

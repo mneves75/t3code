@@ -1415,8 +1415,8 @@ it.effect(
   },
 );
 
-it.effect("guards bad-signature floods separately from valid run admission", () =>
-  withService(({ service, sql }) =>
+it.effect("throttles bad-signature logging without starving validly signed deliveries", () =>
+  withService(({ service, sql, launches }) =>
     Effect.gen(function* () {
       const { task } = yield* service.upsert(
         yield* webhookTaskInput({
@@ -1429,9 +1429,15 @@ it.effect("guards bad-signature floods separately from valid run admission", () 
       const results = yield* Effect.forEach(Array.from({ length: 75 }), () =>
         service.triggerWebhook(requestFor(task)),
       );
-      assert.equal(results.filter((result) => result._tag === "rejected_signature").length, 60);
-      assert.equal(results.filter((result) => result._tag === "rate_limited").length, 15);
-      assert.equal((yield* sql`SELECT * FROM scheduled_task_webhook_deliveries`).length, 51);
+      assert.equal(results.filter((result) => result._tag === "rejected_signature").length, 75);
+      assert.equal((yield* sql`SELECT * FROM scheduled_task_webhook_deliveries`).length, 50);
+
+      const signature = NodeCrypto.createHmac("sha256", "secret")
+        .update(pullRequestBody)
+        .digest("hex");
+      const valid = yield* service.triggerWebhook(requestFor(task, { headers: { signature } }));
+      assert.equal(valid._tag, "accepted");
+      yield* Queue.take(launches);
     }),
   ),
 );
@@ -1554,14 +1560,18 @@ it.effect(
             yield* Deferred.succeed(release, undefined);
             assert.equal((yield* Fiber.join(valid))._tag, "accepted");
             yield* Queue.take(launches);
-            // Only the valid reservation would have expired now; the rejection must still count.
+            // Only the rejection window tracks failed signatures; valid requests never consume or refund it.
             yield* TestClock.adjust("31 seconds");
-            for (let i = 0; i < 59; i++)
+            for (let i = 0; i < 65; i++)
               assert.equal(
                 (yield* service.triggerWebhook(requestFor(task)))._tag,
                 "rejected_signature",
               );
-            assert.equal((yield* service.triggerWebhook(requestFor(task)))._tag, "rate_limited");
+            assert.equal(
+              (yield* service.triggerWebhook(requestFor(task, { headers: { signature } })))._tag,
+              "accepted",
+            );
+            yield* Queue.take(launches);
           }),
         { frameGate: { started, release } },
       );

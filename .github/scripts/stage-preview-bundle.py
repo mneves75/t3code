@@ -12,6 +12,8 @@ REQUIRED_FILES = {
     "server/dist/client/index.html",
     "desktop/dist-electron/main.cjs",
 }
+FORBIDDEN_SUFFIXES = (".dylib", ".so", ".node")
+COPY_CHUNK_BYTES = 64 * 1024
 # Bound trusted-runner extraction even when a PR replaces the uploader.
 MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
 MAX_EXPANDED_BYTES = 2 * 1024 * 1024 * 1024
@@ -47,6 +49,12 @@ def stage_bundle(archive: Path, destination: Path):
                 allowed |= any(root == name or root.startswith(name + "/") for root in ROOTS)
             if not allowed:
                 raise ValueError(f"Unexpected preview path: {name!r}")
+            if any(part.casefold() == "node_modules" for part in parts):
+                raise ValueError(f"Forbidden node_modules path: {name!r}")
+            if not entry.is_dir() and any(
+                parts[-1].casefold().endswith(suffix) for suffix in FORBIDDEN_SUFFIXES
+            ):
+                raise ValueError(f"Forbidden native binary in preview bundle: {name!r}")
             kind = stat.S_IFMT(entry.external_attr >> 16)
             if kind not in (0, stat.S_IFDIR if entry.is_dir() else stat.S_IFREG):
                 raise ValueError(f"Non-regular preview entry: {name!r}")
@@ -59,14 +67,23 @@ def stage_bundle(archive: Path, destination: Path):
             raise ValueError("Preview bundle is missing required entry points")
         # Validate before writing into a fresh directory so existing links/files cannot be followed or overwritten.
         destination.mkdir(parents=True, exist_ok=False)
-        for entry in entries:
-            target = destination / entry.filename
-            if entry.is_dir():
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with bundle.open(entry) as source, target.open("xb") as output:
-                    shutil.copyfileobj(source, output)
+        remaining = MAX_EXPANDED_BYTES
+        try:
+            for entry in entries:
+                target = destination / entry.filename
+                if entry.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with bundle.open(entry) as source, target.open("xb") as output:
+                        while chunk := source.read(COPY_CHUNK_BYTES):
+                            remaining -= len(chunk)
+                            if remaining < 0:
+                                raise ValueError("Expanded preview bundle is too large")
+                            output.write(chunk)
+        except BaseException:
+            shutil.rmtree(destination, ignore_errors=True)
+            raise
 
 
 if __name__ == "__main__":

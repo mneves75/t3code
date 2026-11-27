@@ -26,10 +26,9 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as Stream from "effect/Stream";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import { openMediaFile } from "../assets/MediaFile.ts";
+import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "../assets/MediaFile.ts";
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import { createAttachmentId } from "../attachmentStore.ts";
 import { makeIsServerInternalPath } from "../auth/serverInternalPaths.ts";
@@ -149,12 +148,16 @@ export interface HtmlPreview {
 export class HtmlRender extends Context.Service<
   HtmlRender,
   {
-    readonly prepare: (html: string) => Effect.Effect<string, HtmlRenderPrepareError>;
+    readonly prepare: (
+      html: string,
+      options?: { readonly allowLocalImages?: boolean | undefined },
+    ) => Effect.Effect<string, HtmlRenderPrepareError>;
     readonly publish: (
       input: HtmlRenderSource & {
         readonly threadId: ThreadId;
         readonly title: string;
         readonly height: number;
+        readonly allowLocalImages?: boolean | undefined;
       },
     ) => Effect.Effect<
       HtmlRenderReference,
@@ -167,6 +170,7 @@ export class HtmlRender extends Context.Service<
       input: HtmlRenderSource & {
         readonly width?: number | undefined;
         readonly appearance?: ThemeAppearance | undefined;
+        readonly allowLocalImages?: boolean | undefined;
       },
     ) => Effect.Effect<
       HtmlPreview,
@@ -284,94 +288,26 @@ const afterDoctype = (text: string, from: number) => {
   return -1;
 };
 
-const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (html: string) {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const references = findLocalImages(html);
-  const files = yield* Effect.forEach(
-    [...new Set(references.map((reference) => reference.path))],
-    (path) =>
-      fileSystem.stat(filePathFor(path)).pipe(
-        Effect.map((info) => ({
-          path,
-          size: info.type === "File" ? Number(info.size) : undefined,
-        })),
-        Effect.orElseSucceed(() => ({ path, size: undefined })),
-      ),
-    { concurrency: 8 },
-  );
-  const oversized = files.find((file) => file.size !== undefined && file.size > MAX_IMAGE_BYTES);
-  if (oversized?.size !== undefined) {
-    return yield* new HtmlRenderImageTooLargeError({
-      path: oversized.path,
-      sizeBytes: oversized.size,
-    });
-  }
-  const sizes = new Map(files.map((file) => [file.path, file.size]));
-  const pageBytes = references.reduce((total, reference) => {
-    const size = sizes.get(reference.path);
-    return size === undefined
-      ? total
-      : total +
-          dataUriPrefix(reference.path).length +
-          Math.ceil(size / 3) * 4 -
-          Buffer.byteLength(reference.path);
-  }, Buffer.byteLength(html));
-  if (pageBytes > MAX_PAGE_BYTES) {
-    return yield* new HtmlRenderPageTooLargeError({ sizeBytes: pageBytes });
-  }
-  // Files can grow after stat; bound each read and stop when accumulated images cannot fit.
-  let readBytes = 0;
-  const images = yield* Effect.forEach(
-    files.filter((file) => file.size !== undefined),
-    (file) =>
-      Effect.gen(function* () {
-        const read = yield* fileSystem
-          .stream(filePathFor(file.path), { bytesToRead: MAX_IMAGE_BYTES + 1 })
-          .pipe(Stream.mkUint8Array, Effect.option);
-        if (Option.isNone(read) || !isImageBytes(read.value)) return [];
-        const bytes = read.value;
-        if (bytes.byteLength > MAX_IMAGE_BYTES) {
-          return yield* new HtmlRenderImageTooLargeError({
-            path: file.path,
-            sizeBytes: bytes.byteLength,
-          });
-        }
-        readBytes += Math.ceil(bytes.byteLength / 3) * 4;
-        if (readBytes > MAX_PAGE_BYTES) {
-          return yield* new HtmlRenderPageTooLargeError({ sizeBytes: readBytes });
-        }
-        return [{ path: file.path, bytes }];
-      }),
-    { concurrency: 4 },
-  ).pipe(Effect.map((entries) => entries.flat()));
-  const dataUris = new Map(
-    images.map(
-      (image) =>
-        [
-          image.path,
-          dataUriPrefix(image.path) + Buffer.from(image.bytes).toString("base64"),
-        ] as const,
-    ),
-  );
-  const parts: Array<string> = [];
-  let cursor = 0;
-  for (const reference of references) {
-    const dataUri = dataUris.get(reference.path);
-    if (dataUri === undefined) continue;
-    parts.push(html.slice(cursor, reference.start), dataUri);
-    cursor = reference.end;
-  }
-  parts.push(html.slice(cursor));
-  const inlined = parts.join("");
-  const inlinedBytes = Buffer.byteLength(inlined);
-  if (inlinedBytes > MAX_PAGE_BYTES) {
-    return yield* new HtmlRenderPageTooLargeError({ sizeBytes: inlinedBytes });
-  }
-  return {
-    html: inlined,
-    missing: files.filter((file) => !dataUris.has(file.path)).map((file) => file.path),
-  };
-});
+const readImageBytes = (filePath: string, file: OpenMediaFile) =>
+  Effect.tryPromise({
+    try: async () => {
+      const chunks: Array<Uint8Array> = [];
+      let total = 0;
+      const limit = MAX_IMAGE_BYTES + 1;
+      while (total < limit) {
+        const size = Math.min(64 * 1024, limit - total);
+        const chunk = new Uint8Array(size);
+        const { bytesRead } = await file.handle.read(chunk, 0, size, total);
+        if (bytesRead === 0) break;
+        chunks.push(chunk.subarray(0, bytesRead));
+        total += bytesRead;
+      }
+      return Buffer.concat(chunks, total);
+    },
+    catch: (cause) => new HtmlRenderFileError({ path: filePath, cause }),
+  });
+
+const IMAGE_FILE_EXTENSION = new RegExp(`\\.(?:${IMAGE_EXTENSIONS})$`, "i");
 
 const MIN_PREVIEW_WIDTH = 240;
 const MAX_PREVIEW_WIDTH = 1_600;
@@ -502,13 +438,115 @@ const make = Effect.gen(function* () {
   const readSource = (input: HtmlRenderSource) =>
     "path" in input ? readPageFile(input.path) : Effect.succeed(input.html);
 
-  // The bootstrap goes in first so its head scan never runs over inlined image data.
-  const inline = (html: string) =>
-    inlineLocalImages(injectHtmlRenderBootstrap(html)).pipe(Effect.provideContext(services));
+  const inlineLocalImages = Effect.fn("HtmlRender.inlineLocalImages")(function* (html: string) {
+    const references = findLocalImages(html);
+    const uniquePaths = [...new Set(references.map((reference) => reference.path))];
+    // Bound each read from the verified descriptor and stop once accumulated images cannot fit.
+    let readBytes = 0;
+    const images = yield* Effect.forEach(
+      uniquePaths,
+      (refPath) =>
+        Effect.scoped(
+          Effect.gen(function* () {
+            const candidate = filePathFor(refPath);
+            if (!path.isAbsolute(candidate) || isNetworkPath(candidate)) return [];
+            const realPath = yield* fileSystem.realPath(candidate).pipe(Effect.option);
+            if (
+              Option.isNone(realPath) ||
+              !IMAGE_FILE_EXTENSION.test(realPath.value) ||
+              (yield* isServerInternalPath(realPath.value))
+            ) {
+              return [];
+            }
+            const opened = yield* openMediaFile(realPath.value).pipe(Effect.option);
+            if (Option.isNone(opened) || opened.value === null || opened.value.info.nlink !== 1n) {
+              return [];
+            }
+            const file = opened.value;
+            const header = yield* readMediaFileHeader(realPath.value, file, 4096).pipe(
+              Effect.option,
+            );
+            // Verify image bytes before size errors so oversized non-images cannot be probed.
+            if (Option.isNone(header) || !isImageBytes(header.value)) return [];
+            if (file.info.size > BigInt(MAX_IMAGE_BYTES)) {
+              return yield* new HtmlRenderImageTooLargeError({
+                path: refPath,
+                sizeBytes: Number(file.info.size),
+              });
+            }
+            const bytes = yield* readImageBytes(realPath.value, file).pipe(Effect.option);
+            if (Option.isNone(bytes) || !isImageBytes(bytes.value)) return [];
+            if (bytes.value.byteLength > MAX_IMAGE_BYTES) {
+              return yield* new HtmlRenderImageTooLargeError({
+                path: refPath,
+                sizeBytes: bytes.value.byteLength,
+              });
+            }
+            readBytes += Math.ceil(bytes.value.byteLength / 3) * 4;
+            if (readBytes > MAX_PAGE_BYTES) {
+              return yield* new HtmlRenderPageTooLargeError({ sizeBytes: readBytes });
+            }
+            return [{ path: refPath, bytes: bytes.value }];
+          }),
+        ),
+      { concurrency: 4 },
+    ).pipe(Effect.map((entries) => entries.flat()));
+    const sizes = new Map(images.map((image) => [image.path, image.bytes.byteLength]));
+    const pageBytes = references.reduce((total, reference) => {
+      const size = sizes.get(reference.path);
+      return size === undefined
+        ? total
+        : total +
+            dataUriPrefix(reference.path).length +
+            Math.ceil(size / 3) * 4 -
+            Buffer.byteLength(reference.path);
+    }, Buffer.byteLength(html));
+    if (pageBytes > MAX_PAGE_BYTES) {
+      return yield* new HtmlRenderPageTooLargeError({ sizeBytes: pageBytes });
+    }
+    const dataUris = new Map(
+      images.map(
+        (image) =>
+          [
+            image.path,
+            dataUriPrefix(image.path) + Buffer.from(image.bytes).toString("base64"),
+          ] as const,
+      ),
+    );
+    const parts: Array<string> = [];
+    let cursor = 0;
+    for (const reference of references) {
+      const dataUri = dataUris.get(reference.path);
+      if (dataUri === undefined) continue;
+      parts.push(html.slice(cursor, reference.start), dataUri);
+      cursor = reference.end;
+    }
+    parts.push(html.slice(cursor));
+    const inlined = parts.join("");
+    const inlinedBytes = Buffer.byteLength(inlined);
+    if (inlinedBytes > MAX_PAGE_BYTES) {
+      return yield* new HtmlRenderPageTooLargeError({ sizeBytes: inlinedBytes });
+    }
+    return {
+      html: inlined,
+      missing: uniquePaths.filter((refPath) => !dataUris.has(refPath)),
+    };
+  });
 
-  const prepare = Effect.fn("HtmlRender.prepare")(function* (html: string) {
+  // The bootstrap goes in first so its head scan never runs over inlined image data.
+  const inline = (html: string, allowLocalImages = true) => {
+    const bootstrapped = injectHtmlRenderBootstrap(html);
+    return allowLocalImages
+      ? inlineLocalImages(bootstrapped)
+      : Effect.succeed({ html: bootstrapped, missing: [] as ReadonlyArray<string> });
+  };
+
+  const prepare = Effect.fn("HtmlRender.prepare")(function* (
+    html: string,
+    options?: { readonly allowLocalImages?: boolean | undefined },
+  ) {
     yield* rejectViewportHeight(html);
-    const inlined = yield* inline(html);
+    const inlined = yield* inline(html, options?.allowLocalImages);
     if (inlined.missing.length > 0) {
       return yield* new HtmlRenderImagesNotFoundError({ paths: inlined.missing });
     }
@@ -520,10 +558,11 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
       readonly title: string;
       readonly height: number;
+      readonly allowLocalImages?: boolean | undefined;
     },
   ) {
     const source = yield* readSource(input);
-    const html = yield* prepare(source);
+    const html = yield* prepare(source, { allowLocalImages: input.allowLocalImages });
     // The `-html` id suffix makes the asset route serve it as a sandboxed text/html document.
     const attachmentId = createAttachmentId(input.threadId, "html");
     const filePath =
@@ -580,6 +619,7 @@ const make = Effect.gen(function* () {
     input: HtmlRenderSource & {
       readonly width?: number | undefined;
       readonly appearance?: ThemeAppearance | undefined;
+      readonly allowLocalImages?: boolean | undefined;
     },
   ) {
     const width = Math.min(
@@ -589,7 +629,7 @@ const make = Effect.gen(function* () {
     const appearance = input.appearance ?? "dark";
     const source = yield* readSource(input);
     yield* rejectViewportHeight(source);
-    const inlined = yield* inline(source);
+    const inlined = yield* inline(source, input.allowLocalImages);
     const executable = yield* previewBrowser.executable;
     const theme = htmlRenderTheme(
       appearance === "light" ? T3_CODE_LIGHT_THEME_COLORS : T3_CODE_DARK_THEME_COLORS,

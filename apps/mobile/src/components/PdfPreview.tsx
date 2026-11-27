@@ -17,6 +17,10 @@ export function PdfPreview(props: { readonly uri: string }) {
       <WebView
         source={{ uri: props.uri }}
         originWhitelist={["*"]}
+        javaScriptEnabled={false}
+        onShouldStartLoadWithRequest={(request) =>
+          request.url.split("#", 1)[0] === props.uri.split("#", 1)[0]
+        }
         automaticallyAdjustContentInsets={false}
         decelerationRate={webViewDecelerationRate}
         contentInsetAdjustmentBehavior="never"

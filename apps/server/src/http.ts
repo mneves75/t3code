@@ -40,6 +40,7 @@ import {
   HttpServerRequest,
   HttpServerRespondable,
 } from "effect/http";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { OtlpTracer, OtlpSerialization } from "effect/observability";
@@ -72,6 +73,8 @@ import {
 import { requestUrl } from "./requestUrl.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+const OTLP_TRACES_PROXY_MAX_BODY_BYTES = 4 * 1024 * 1024;
+const OTLP_TRACES_PROXY_TIMEOUT = "5 seconds";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
 // Opaque origin blocks cookies, storage and API access while allowing scripts.
@@ -435,6 +438,15 @@ class DecodeOtlpTraceRecordsError extends Schema.TaggedError<DecodeOtlpTraceReco
   { cause: Schema.Defect() },
 ) {}
 
+function sanitizeOtlpTracesUrlForLog(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return "invalid-url";
+  }
+}
+
 // Tracing once-per-second renderer exports would create more spans than it forwards.
 export const layerOtlpTracesProxyRoute = HttpRouter.add(
   "POST",
@@ -462,18 +474,26 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
       return HttpServerResponse.empty({ status: 204 });
     }
 
-    return yield* httpClient
+    const proxyHttpClient = HttpClient.withScope(
+      HttpClient.transform(httpClient, (response) =>
+        Effect.provideService(response, FetchHttpClient.RequestInit, { redirect: "manual" }),
+      ),
+    );
+
+    return yield* proxyHttpClient
       .post(otlpTracesUrl, {
         body: serialization.traces(bodyJson),
         headers: otlpHeaders,
       })
       .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
+        Effect.timeout(OTLP_TRACES_PROXY_TIMEOUT),
+        Effect.scoped,
         Effect.as(HttpServerResponse.empty({ status: 204 })),
         Effect.tapError((cause) =>
           Effect.logWarning("Failed to export browser OTLP traces", {
-            cause,
-            otlpTracesUrl,
+            errorTag: cause._tag,
+            otlpTracesUrl: sanitizeOtlpTracesUrlForLog(otlpTracesUrl),
           }),
         ),
         Effect.orElseSucceed(() =>
@@ -481,6 +501,10 @@ export const layerOtlpTracesProxyRoute = HttpRouter.add(
         ),
       );
   }).pipe(
+    Effect.provideService(
+      HttpIncomingMessage.MaxBodySize,
+      ByteSize.bytes(OTLP_TRACES_PROXY_MAX_BODY_BYTES),
+    ),
     Effect.catchTags({
       EnvironmentAuthInvalidError: HttpServerRespondable.toResponse,
       EnvironmentInternalError: HttpServerRespondable.toResponse,

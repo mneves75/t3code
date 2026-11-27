@@ -17,6 +17,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
@@ -159,7 +160,12 @@ export const layerIssuer = Layer.effect(PeerClientPairingIssuer, makeIssuer);
 const make = Effect.gen(function* () {
   const links = yield* PeerLinks.PeerLinks;
   const auth = yield* EnvironmentAuth.EnvironmentAuth;
-  const httpClient = yield* HttpClient.HttpClient;
+  const httpClient = HttpClient.filterStatus(
+    HttpClient.transform(yield* HttpClient.HttpClient, (response) =>
+      Effect.provideService(response, FetchHttpClient.RequestInit, { redirect: "manual" }),
+    ),
+    (status) => status < 300 || status >= 400,
+  );
 
   /** What this environment's Connections calls the client that asked. */
   const clientLabelOf = (sessionId: AuthSessionId) =>

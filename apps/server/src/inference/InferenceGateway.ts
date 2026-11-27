@@ -670,7 +670,7 @@ const make = Effect.gen(function* () {
         if (Option.isSome(answered.success)) {
           upstream = answered.success.value;
           upstreamHttpStatus = upstream.status;
-          if (prepared.streaming || retried) break;
+          if (prepared.streaming) break;
           const buffered = yield* readUpstreamBounded(
             upstream,
             MAX_NON_STREAMING_RESPONSE_BYTES,
@@ -687,11 +687,11 @@ const make = Effect.gen(function* () {
           }
           const raw = new Uint8Array(buffered.success);
           meter.push(raw);
-          const attemptUsage = meter.finish();
-          if (raw.length > 1024 * 1024) {
+          if (retried || raw.length > 1024 * 1024) {
             bufferedReply = raw;
             break;
           }
+          const attemptUsage = meter.finish();
           const empty = upstream.status < 400 && meter.empty();
           const nextBody = empty
             ? retryBody

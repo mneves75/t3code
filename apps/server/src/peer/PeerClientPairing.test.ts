@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Loopback redirect fixture server for FetchHttpClient.
+import * as NodeHttp from "node:http";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
@@ -15,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -297,4 +300,75 @@ it.effect("a linked environment from before client pairing is never asked", () =
       expect(yield* Ref.get(b.bearers)).toEqual([]);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("does not follow 3xx redirects when asking a peer for a client pairing", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let followed = false;
+      const server = yield* Effect.acquireRelease(
+        Effect.promise(
+          () =>
+            new Promise<{ server: NodeHttp.Server; url: string }>((resolve) => {
+              const s = NodeHttp.createServer((req, res) => {
+                if (req.url === "/redirected-target") {
+                  followed = true;
+                  res.writeHead(200, { "content-type": "application/json" });
+                  res.end("{}");
+                  return;
+                }
+                res.writeHead(307, { location: "/redirected-target" });
+                res.end();
+              });
+              s.listen(0, "127.0.0.1", () => {
+                const address = s.address();
+                const port = typeof address === "object" && address ? address.port : 0;
+                resolve({ server: s, url: `http://127.0.0.1:${port}` });
+              });
+            }),
+        ),
+        ({ server: s }) =>
+          Effect.promise(() => new Promise<void>((resolve) => s.close(() => resolve()))),
+      );
+
+      const authContext = yield* Layer.build(layerEnvironmentAuth("t3-peer-link-redirect-auth-"));
+      const auth = Context.get(authContext, EnvironmentAuth.EnvironmentAuth);
+      const link = {
+        environmentId: box.environmentId,
+        label: box.label,
+        urls: [server.url],
+        access: "full-access" as const,
+        linkedAt: DateTime.makeUnsafe(0),
+        expiresAt: DateTime.makeUnsafe(3_600_000),
+        lastReachedAt: null,
+        lastError: null,
+      };
+      const mockLinks = Layer.mock(PeerLinks.PeerLinks)({
+        enabled: Effect.succeed(true),
+        get: () => Effect.succeedSome(link),
+        resolve: () =>
+          Effect.succeed({
+            link,
+            url: server.url,
+            token: "fixture-token",
+            capabilities: box.capabilities,
+          }),
+        recordOutcome: () => Effect.void,
+      });
+      const pairingCtx = yield* PeerClientPairing.layer.pipe(
+        Layer.provide(mockLinks),
+        Layer.provide(Layer.succeed(EnvironmentAuth.EnvironmentAuth, auth)),
+        Layer.provide(FetchHttpClient.layer),
+        Layer.build,
+      );
+      const pairing = Context.get(pairingCtx, PeerClientPairing.PeerClientPairing);
+      const phone = yield* auth.issueSession({ scopes: AuthStandardClientScopes, label: "Phone" });
+
+      expect(yield* pairing.request({ environmentId: box.environmentId }, phone)).toMatchObject({
+        type: "unsupported",
+        reason: "unreachable",
+      });
+      expect(followed).toBe(false);
+    }),
+  ),
 );

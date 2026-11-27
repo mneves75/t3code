@@ -53,6 +53,11 @@ const ALLOWED_WS_PATHS: ReadonlyArray<RegExp> = [
   /^\/vendor\/serve-emu\/ws$/,
 ];
 
+const UNSAFE_HUB_PATH_PATTERN = /\\|%(?:2f|5c|2e)/i;
+const hasUnsafeHubPath = (hubPath: string) =>
+  UNSAFE_HUB_PATH_PATTERN.test(hubPath) ||
+  hubPath.split("/").some((segment) => segment === "." || segment === "..");
+
 const DROPPED_REQUEST_HEADERS = new Set([
   "host",
   "connection",
@@ -198,6 +203,9 @@ const handler = Effect.gen(function* () {
     return HttpServerResponse.text("Bad Request", { status: 400 });
   }
   const hubPath = url.value.pathname.slice(DeviceService.DEVICE_HUB_ROUTE_PREFIX.length) || "/";
+  if (hasUnsafeHubPath(hubPath)) {
+    return HttpServerResponse.text("Not Found", { status: 404 });
+  }
   const upgrade = isWebSocketUpgrade(request);
   const matches = (paths: ReadonlyArray<RegExp>) => paths.some((pattern) => pattern.test(hubPath));
   const allowed = upgrade

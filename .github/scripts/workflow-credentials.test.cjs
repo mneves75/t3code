@@ -402,6 +402,131 @@ test("a fork preview label removed before the run builds nothing", async () => {
   assert.deepEqual(await runConsume("admin", 404), { outputs: { consumed: "false" }, removed: [] });
 });
 
+const desktopMacPreviewPublish = jobs("workflows/desktop-macos-preview-publish.yml");
+const desktopMacResolvePr = new (Object.getPrototypeOf(async () => {}).constructor)(
+  "github",
+  "context",
+  "core",
+  steps(desktopMacPreviewPublish.resolve)
+    .find((step) => step.startsWith("id: pr\n"))
+    .split(/^ {10}script: \|\n/m)[1]
+    .split(/^ {0,11}\S/m)[0]
+    .replace(/^ {12}/gm, ""),
+);
+
+async function runDesktopMacResolvePr({
+  conclusion = "success",
+  permission = "write",
+  timeline,
+  runCreatedAt = "2026-11-27T01:00:00Z",
+}) {
+  const outputs = {};
+  const headSha = "a".repeat(40);
+  const pull = {
+    number: 42,
+    state: "open",
+    head: { sha: headSha, ref: "feat", repo: { full_name: "fork/app" } },
+    labels: [{ name: "preview:mac" }],
+    user: { login: "author" },
+  };
+  await desktopMacResolvePr(
+    {
+      paginate: async (fn) => fn(),
+      rest: {
+        actions: {
+          listWorkflowRunArtifacts: async () => [{ id: 77, name: "js-bundle", expired: false }],
+        },
+        pulls: {
+          list: async () => [pull],
+          get: async () => ({ data: pull }),
+        },
+        issues: {
+          listEventsForTimeline: async () =>
+            timeline ?? [
+              {
+                event: "labeled",
+                created_at: "2026-11-27T00:59:00Z",
+                label: { name: "preview:mac" },
+                actor: { login: "labeler" },
+              },
+            ],
+        },
+        repos: {
+          getCollaboratorPermissionLevel: async ({ username }) => {
+            assert.equal(username, "labeler");
+            return { data: { permission } };
+          },
+        },
+      },
+    },
+    {
+      repo: { owner: "example", repo: "app" },
+      payload: {
+        workflow_run: {
+          id: 99,
+          conclusion,
+          created_at: runCreatedAt,
+          head_sha: headSha,
+          head_branch: "feat",
+          head_repository: { owner: { login: "fork" }, full_name: "fork/app" },
+        },
+      },
+    },
+    { info() {}, warning() {}, setOutput: (name, value) => (outputs[name] = value) },
+  );
+  return outputs;
+}
+
+test("macOS preview publish binds labeler write access to the run and commit without consuming newer approvals", async () => {
+  assert.doesNotMatch(desktopMacPreviewPublish.resolve, /workflow_run\.conclusion == 'success'/);
+  for (const [permission, eligible] of [
+    ["admin", "true"],
+    ["maintain", "true"],
+    ["write", "true"],
+    ["triage", "false"],
+    ["read", "false"],
+    ["none", "false"],
+  ]) {
+    const out = await runDesktopMacResolvePr({ permission });
+    assert.equal(out.eligible, eligible, permission);
+    assert.equal(out.consume_label, "true", permission);
+  }
+  const failed = await runDesktopMacResolvePr({ conclusion: "failure" });
+  assert.deepEqual(failed, { pr_number: "42", consume_label: "true", eligible: "false" });
+  // Cancelled runs and older runs superseded by a newer label must not consume the newer approval.
+  const cancelled = await runDesktopMacResolvePr({ conclusion: "cancelled" });
+  assert.deepEqual(cancelled, { pr_number: "42", consume_label: "false", eligible: "false" });
+  const newerApproval = await runDesktopMacResolvePr({
+    conclusion: "failure",
+    timeline: [
+      {
+        event: "labeled",
+        created_at: "2026-11-27T01:05:00Z",
+        label: { name: "preview:mac" },
+        actor: { login: "labeler" },
+      },
+    ],
+  });
+  assert.deepEqual(newerApproval, { pr_number: "42", consume_label: "false", eligible: "false" });
+  // Commits or force-pushes after the label invalidate approval.
+  const mutatedAfterLabel = await runDesktopMacResolvePr({
+    timeline: [
+      {
+        event: "labeled",
+        created_at: "2026-11-27T00:59:00Z",
+        label: { name: "preview:mac" },
+        actor: { login: "labeler" },
+      },
+      { event: "head_ref_force_pushed", created_at: "2026-11-27T00:59:30Z" },
+    ],
+  });
+  assert.equal(mutatedAfterLabel.eligible, "false");
+  assert.equal(mutatedAfterLabel.consume_label, "true");
+  const noEvent = await runDesktopMacResolvePr({ timeline: [] });
+  assert.equal(noEvent.eligible, "false");
+  assert.equal(noEvent.consume_label, "true");
+});
+
 test("a version override rewrites only the app version", () => {
   const config = read("../apps/mobile/app.config.ts");
   const next = setMobileVersion(config, "9.8.7");

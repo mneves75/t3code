@@ -455,4 +455,269 @@ describe("DatasetExtractor", () => {
         expect(trainJsonl).toContain("[withheld]");
       }).pipe(Effect.provide(makeTestLayer())),
   );
+
+  it.effect(
+    "redacts multiline and double-quoted secrets before JSON escaping without leaking into audit snippets or double-counting",
+    () =>
+      Effect.gen(function* () {
+        yield* runMigrations();
+        const sql = yield* SqlClient.SqlClient;
+        const extractor = yield* DatasetExtractor.DatasetExtractor;
+
+        yield* seedBasicThread({ threadId: "thread-json-escape", settled: true });
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_runs (
+            run_id, thread_id, ordinal, provider, provider_thread_id, status, requested_at, completed_at, payload_json
+          ) VALUES (
+            'run-esc-1', 'thread-json-escape', 1, 'codex', 'pt-esc', 'completed',
+            '2026-11-24T18:01:00.000Z', '2026-11-24T18:02:00.000Z', '{}'
+          )
+        `;
+
+        const quotedSecret = "quoted_super_secret_val_99";
+        const line2Secret = "line2_database_pass_value";
+        const oldStrSecret = "oldstr_secret_password_77";
+        const bearerSecret = "BearerTokenSecretValue_987654";
+        const dynamicKeySecret = "dyn_api_secret_value_55";
+
+        const items = [
+          {
+            id: "esc-1",
+            ord: 1,
+            type: "user_message",
+            payload: { messageId: "m-esc-u", text: "Inspect config files." },
+          },
+          {
+            id: "esc-2",
+            ord: 2,
+            type: "command_execution",
+            payload: {
+              input: `echo 'API_KEY="${quotedSecret}"'`,
+              output: `header line\nDB_PASSWORD="${line2Secret}"\nhttps://svc:${line2Secret}@db.internal/app`,
+              exitCode: 0,
+            },
+          },
+          {
+            id: "esc-3",
+            ord: 3,
+            type: "file_change",
+            payload: {
+              fileName: "config.env",
+              oldStr: `first=1\nCLIENT_SECRET="${oldStrSecret}"`,
+              newStr: "first=1\nCLIENT_SECRET=ok",
+            },
+          },
+          {
+            id: "esc-4",
+            ord: 4,
+            type: "dynamic_tool",
+            payload: {
+              toolName: "http_request",
+              input: {
+                API_KEY: dynamicKeySecret,
+                headers: { Authorization: `Bearer ${bearerSecret}` },
+              },
+              output: { ok: true, detail: `line1\nTOKEN="${quotedSecret}"` },
+            },
+          },
+          {
+            id: "esc-5",
+            ord: 5,
+            type: "assistant_message",
+            payload: { messageId: "m-esc-a", text: "Done inspecting.", streaming: false },
+          },
+        ];
+
+        for (const item of items) {
+          yield* sql`
+            INSERT INTO orchestration_v2_projection_turn_items (
+              turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
+              parent_item_id, ordinal, type, status, updated_at, payload_json
+            ) VALUES (
+              ${item.id}, 'thread-json-escape', 'run-esc-1', 'node-1', 'pt-esc', 'turn-esc-1',
+              NULL, ${item.ord}, ${item.type}, 'completed', '2026-11-24T18:02:00.000Z',
+              ${JSON.stringify(item.payload)}
+            )
+          `;
+        }
+
+        const preview = yield* extractor.preview({
+          objective: "sft",
+          filter: DEFAULT_FILTER,
+          redactionOptions: { ...DEFAULT_REDACTION, redactHighEntropy: false },
+        });
+
+        const serializedSample = JSON.stringify(preview.sampleSftRecords);
+        const serializedAudit = JSON.stringify(preview.redactionAudit);
+        for (const secret of [
+          quotedSecret,
+          line2Secret,
+          oldStrSecret,
+          bearerSecret,
+          dynamicKeySecret,
+        ]) {
+          expect(serializedSample).not.toContain(secret);
+          expect(serializedAudit).not.toContain(secret);
+        }
+        // Exactly 7 findings (quoted command, line2 env, url cred, oldStr env, dynamic API_KEY, Authorization header, dynamic output TOKEN).
+        expect(preview.redactionAudit.totalRedactions).toBe(7);
+      }).pipe(Effect.provide(makeTestLayer())),
+  );
+
+  it.effect(
+    "redacts PEM keys, JWTs, and URL credentials before deterministicClip truncates across the 60%/40% boundary",
+    () =>
+      Effect.gen(function* () {
+        yield* runMigrations();
+        const sql = yield* SqlClient.SqlClient;
+        const extractor = yield* DatasetExtractor.DatasetExtractor;
+
+        yield* seedBasicThread({ threadId: "thread-clip-redact", settled: true });
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_runs (
+            run_id, thread_id, ordinal, provider, provider_thread_id, status, requested_at, completed_at, payload_json
+          ) VALUES (
+            'run-clip-1', 'thread-clip-redact', 1, 'codex', 'pt-clip', 'completed',
+            '2026-11-24T18:01:00.000Z', '2026-11-24T18:02:00.000Z', '{}'
+          )
+        `;
+
+        // maxToolOutputChars = 400 -> head ~230 chars; place PEM, JWT, and URL credentials right across the clip boundary.
+        const pemBody = "MIIEowIBAAKCAQEAclipBoundaryPemSecretPayload1234567890";
+        const pemKey = `-----BEGIN RSA PRIVATE KEY-----\n${pemBody}\n-----END RSA PRIVATE KEY-----`;
+        const jwtPayload = "eyJzdWIiOiJjbGlwX2JvdW5kYXJ5X3VzZXIifQ";
+        const jwtToken = `eyJhbGciOiJIUzI1NiJ9.${jwtPayload}.signatureClipSecret1234567890`;
+        const urlPass = "ClipBoundaryDbPass99";
+        const urlCred = `postgres://clipuser:${urlPass}@db.internal:5432/prod`;
+
+        const items = [
+          {
+            id: "clip-1",
+            ord: 1,
+            type: "user_message",
+            payload: { messageId: "m-clip-u", text: "Dump logs." },
+          },
+          {
+            id: "clip-2",
+            ord: 2,
+            type: "command_execution",
+            payload: {
+              input: "cat key.pem",
+              output: `${"A".repeat(200)}\n${pemKey}\n${"B".repeat(400)}`,
+              exitCode: 0,
+            },
+          },
+          {
+            id: "clip-3",
+            ord: 3,
+            type: "file_change",
+            payload: {
+              fileName: "auth.log",
+              diffStr: `${"C".repeat(210)}\n${jwtToken}\n${urlCred}\n${"D".repeat(400)}`,
+            },
+          },
+          {
+            id: "clip-4",
+            ord: 4,
+            type: "assistant_message",
+            payload: { messageId: "m-clip-a", text: "Logs dumped.", streaming: false },
+          },
+        ];
+
+        for (const item of items) {
+          yield* sql`
+            INSERT INTO orchestration_v2_projection_turn_items (
+              turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
+              parent_item_id, ordinal, type, status, updated_at, payload_json
+            ) VALUES (
+              ${item.id}, 'thread-clip-redact', 'run-clip-1', 'node-1', 'pt-clip', 'turn-clip-1',
+              NULL, ${item.ord}, ${item.type}, 'completed', '2026-11-24T18:02:00.000Z',
+              ${JSON.stringify(item.payload)}
+            )
+          `;
+        }
+
+        const preview = yield* extractor.preview({
+          objective: "sft",
+          filter: { ...DEFAULT_FILTER, maxToolOutputChars: 400 },
+          redactionOptions: DEFAULT_REDACTION,
+        });
+
+        const serializedSample = JSON.stringify(preview.sampleSftRecords);
+        const serializedAudit = JSON.stringify(preview.redactionAudit);
+        for (const leaked of [pemBody, "BEGIN RSA PRIVATE KEY", jwtPayload, urlPass]) {
+          expect(serializedSample).not.toContain(leaked);
+          expect(serializedAudit).not.toContain(leaked);
+        }
+        expect(preview.redactionAudit.countsByCategory.pem_private_key).toBe(1);
+        expect(preview.redactionAudit.countsByCategory.jwt_bearer).toBe(1);
+        expect(preview.redactionAudit.countsByCategory.url_credentials).toBe(1);
+      }).pipe(Effect.provide(makeTestLayer())),
+  );
+
+  it.effect("redacts secrets and custom literals inside dynamic tool object keys", () =>
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const sql = yield* SqlClient.SqlClient;
+      const extractor = yield* DatasetExtractor.DatasetExtractor;
+
+      yield* seedBasicThread({ threadId: "thread-key-redact", settled: true });
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_runs (
+          run_id, thread_id, ordinal, provider, provider_thread_id, status, requested_at, completed_at, payload_json
+        ) VALUES (
+          'run-key-1', 'thread-key-redact', 1, 'codex', 'pt-key', 'completed',
+          '2026-11-24T18:01:00.000Z', '2026-11-24T18:02:00.000Z', '{}'
+        )
+      `;
+      const customKeySecret = "SecretProjectCodenameKey99";
+      const items = [
+        {
+          id: "key-1",
+          ord: 1,
+          type: "user_message",
+          payload: { messageId: "m-key-u", text: "Check tool output keys." },
+        },
+        {
+          id: "key-2",
+          ord: 2,
+          type: "dynamic_tool",
+          payload: {
+            toolName: "inspect",
+            input: { [customKeySecret]: "val", "[REDACTED:CUSTOM]": "preserved" },
+            output: { [`nested_${customKeySecret}`]: "ok" },
+          },
+        },
+        {
+          id: "key-3",
+          ord: 3,
+          type: "assistant_message",
+          payload: { messageId: "m-key-a", text: "Checked." },
+        },
+      ];
+      for (const item of items) {
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_turn_items (
+            turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
+            parent_item_id, ordinal, type, status, updated_at, payload_json
+          ) VALUES (
+            ${item.id}, 'thread-key-redact', 'run-key-1', 'node-1', 'pt-key', 'turn-key-1',
+            NULL, ${item.ord}, ${item.type}, 'completed', '2026-11-24T18:02:00.000Z',
+            ${JSON.stringify(item.payload)}
+          )
+        `;
+      }
+      const preview = yield* extractor.preview({
+        objective: "sft",
+        filter: DEFAULT_FILTER,
+        redactionOptions: { ...DEFAULT_REDACTION, customLiteralTerms: [customKeySecret] },
+      });
+      expect(preview.sampleSftRecords?.length).toBeGreaterThan(0);
+      const serialized = JSON.stringify(preview.sampleSftRecords);
+      expect(serialized).not.toContain(customKeySecret);
+      expect(serialized).toContain("[REDACTED:CUSTOM]");
+      expect(serialized).toContain("preserved");
+      expect(preview.redactionAudit.countsByCategory.high_entropy_secret).toBeGreaterThanOrEqual(2);
+    }).pipe(Effect.provide(makeTestLayer())),
+  );
 });

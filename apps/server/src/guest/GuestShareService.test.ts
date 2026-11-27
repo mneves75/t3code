@@ -774,7 +774,6 @@ it.effect("ends a running command's output once the owner stops sharing", () =>
       commandId: CommandId.make("close-during-command"),
       threadId,
     });
-    yield* TestClock.adjust("30 seconds");
     const frames = Array.from(yield* Fiber.join(collecting));
     assert.isTrue(frames.every((frame) => frame.running));
     assert.isTrue(Exit.isFailure(yield* Effect.exit(guestShares.commandOutput(session, command))));

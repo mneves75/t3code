@@ -213,6 +213,61 @@ describe("discoveryCandidates", () => {
     expect(bases).toContainEqual({ base: "http://rtx:8030/v1" });
     expect(bases.some((candidate) => candidate.base.includes("spark1"))).toBe(false);
   });
+
+  it("rejects injected host syntax and link-local or cloud-metadata targets while supporting bracketed IPv6", () => {
+    for (const invalidHost of [
+      "http://169.254.169.254",
+      "169.254.169.254:80/latest/meta-data#",
+      "spark1:8888",
+      "spark1/v1",
+      "user@spark1",
+      "spark1?a=1",
+      "spark1#frag",
+      "spark1 evil",
+      "169.254.169.254",
+      "169.254.0.1",
+      "2852039166",
+      "[fe80::1]",
+      "fe80::1",
+      "[::ffff:169.254.169.254]",
+      "::ffff:169.254.169.254",
+    ]) {
+      expect(InferenceDiscovery.parseBareHost(invalidHost)).toBeUndefined();
+      expect(
+        InferenceDiscovery.discoveryCandidates({
+          host: invalidHost,
+          registered,
+          listeningPorts: [8030],
+          hostname: "rtx",
+        }),
+      ).toEqual([]);
+    }
+
+    expect(
+      InferenceDiscovery.discoveryCandidates({
+        baseUrl: "http://169.254.169.254/latest/meta-data",
+        registered: [
+          [rtx, "http://[fe80::1]:8080/v1"],
+          [spark1, "http://[::ffff:169.254.169.254]:8080/v1"],
+        ],
+        listeningPorts: [],
+        hostname: "rtx",
+      }).some(
+        (c) =>
+          c.base.includes("169.254") || c.base.includes("fe80:") || c.base.includes("a9fe:a9fe"),
+      ),
+    ).toBe(false);
+
+    const ipv6Bases = InferenceDiscovery.discoveryCandidates({
+      host: "[fd00::1]",
+      registered: [],
+      listeningPorts: [],
+      hostname: "rtx",
+    }).map((candidate) => candidate.base);
+    expect(ipv6Bases).toEqual(
+      InferenceDiscovery.WELL_KNOWN_PORTS.map((port) => `http://[fd00::1]:${port}/v1`),
+    );
+  });
 });
 
 describe("macOS lsof listening port discovery", () => {
@@ -358,5 +413,36 @@ describe("macOS lsof listening port discovery", () => {
         ),
       ]),
     ),
+  );
+
+  it.effect("blocks hostnames whose DNS lookup resolves to link-local or cloud metadata IPs", () =>
+    Effect.gen(function* () {
+      expect(
+        yield* InferenceDiscovery.resolveAllowedProbeHost("metadata.attacker.test", async () => [
+          { address: "169.254.169.254" },
+        ]),
+      ).toBeUndefined();
+      expect(
+        yield* InferenceDiscovery.resolveAllowedProbeHost("dualstack.attacker.test", async () => [
+          { address: "10.0.0.5" },
+          { address: "fe80::1" },
+        ]),
+      ).toBeUndefined();
+      expect(
+        yield* InferenceDiscovery.resolveAllowedProbeHost("nxdomain.attacker.test", async () => {
+          throw new Error("ENOTFOUND");
+        }),
+      ).toBeUndefined();
+      expect(
+        yield* InferenceDiscovery.resolveAllowedProbeHost("aws-v6-imds.attacker.test", async () => [
+          { address: "fd00:ec2::254" },
+        ]),
+      ).toBeUndefined();
+      expect(
+        yield* InferenceDiscovery.resolveAllowedProbeHost("lan-box.internal", async () => [
+          { address: "10.0.0.5" },
+        ]),
+      ).toBe("10.0.0.5");
+    }),
   );
 });

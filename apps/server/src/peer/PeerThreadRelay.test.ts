@@ -328,3 +328,36 @@ it.effect("gives up on an answer whose body never arrives", () =>
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
+
+it.effect("treats 3xx redirects as unreachable without following them", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let followed = false;
+      const b = yield* servePeer(
+        box,
+        Layer.empty,
+        Layer.mergeAll(
+          HttpRouter.add(
+            "GET",
+            PEER_LINK_THREAD_ITEM_ROUTE,
+            Effect.succeed(HttpServerResponse.redirect("/redirected-target", { status: 302 })),
+          ),
+          HttpRouter.add(
+            "GET",
+            "/redirected-target",
+            Effect.sync(() => {
+              followed = true;
+              return HttpServerResponse.jsonUnsafe({ item: null });
+            }),
+          ),
+        ),
+      );
+      const a = yield* makeLaptop;
+      yield* linkTo(a.links, b);
+
+      const failure = yield* a.relay.item({ ...input, itemId: boxItem }).pipe(Effect.flip);
+      expect(failure).toMatchObject({ reason: "unreachable", label: "Box" });
+      expect(followed).toBe(false);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);

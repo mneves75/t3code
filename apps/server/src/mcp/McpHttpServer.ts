@@ -320,7 +320,12 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   ) => {
     const body = response.body;
     if (client === undefined || Option.isNone(sessions) || body._tag !== "Stream") return response;
-    if (request.headers["mcp-method"] === "events/stream") return response;
+    if (
+      request.headers["mcp-protocol-version"] === McpProtocol.v2026_07_28.protocolVersion &&
+      request.headers["mcp-method"] === "events/stream"
+    ) {
+      return response;
+    }
     const invalidated = sessions.value
       .awaitInvalidation(AuthSessionId.make(client.sessionId))
       .pipe(Effect.ignore);

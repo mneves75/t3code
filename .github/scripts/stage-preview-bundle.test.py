@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import stat
 import tempfile
 import unittest
@@ -51,6 +52,11 @@ class StagePreviewBundleTests(unittest.TestCase):
             "server/dist/back\\slash",
             "server/dist/file:stream",
             "server/dist/BIN.MJS",
+            "server/dist/node_modules/pkg/index.js",
+            "desktop/dist-electron/NODE_MODULES/evil.cjs",
+            "server/dist/native.dylib",
+            "server/dist/native.SO",
+            "desktop/dist-electron/addon.node",
         ]:
             with self.subTest(name=name):
                 self.bundle([(name, b"untrusted")])
@@ -82,6 +88,23 @@ class StagePreviewBundleTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.stage()
                 self.assertFalse(self.destination.exists())
+
+    def test_enforces_streaming_expanded_byte_cap_when_headers_underreport(self):
+        self.bundle([("server/dist/payload.js", b"x")])
+        original_open = zipfile.ZipFile.open
+
+        def oversized_open(zf, entry, *args, **kwargs):
+            if entry.filename == "server/dist/payload.js":
+                return io.BytesIO(b"x" * 200)
+            return original_open(zf, entry, *args, **kwargs)
+
+        with (
+            patch.object(staging, "MAX_EXPANDED_BYTES", 150),
+            patch.object(zipfile.ZipFile, "open", oversized_open),
+        ):
+            with self.assertRaisesRegex(ValueError, "Expanded preview bundle is too large"):
+                self.stage()
+        self.assertFalse(self.destination.exists())
 
     def test_refuses_existing_destination(self):
         self.bundle()

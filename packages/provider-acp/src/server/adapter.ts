@@ -111,6 +111,7 @@ import {
   acpMcpToolApprovalElicitationDisposition,
   acpChangedPathsOfToolCall,
   acpPermissionDisposition,
+  extractAcpExecuteApprovalTarget,
   mergeAcpChangedPaths,
   type AcpPermissionDisposition,
   makeAcpClientPolicyGrants,
@@ -2516,11 +2517,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             terminalEnvironmentBySessionId.set(sessionId, environment);
           }
         };
+        const defaultTerminalCwd = input.runtimePolicy.cwd ?? process.cwd();
         const clientTerminals: AcpClientTerminals | undefined =
           options.clientTerminals === undefined
             ? undefined
             : yield* makeAcpClientTerminals({
-                defaultCwd: input.runtimePolicy.cwd ?? process.cwd(),
+                defaultCwd: defaultTerminalCwd,
                 environment: options.clientTerminals.environment,
                 shellCommands: options.clientTerminals.shellCommands,
                 environmentForSession: (sessionId) => {
@@ -8070,25 +8072,37 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ),
           );
 
-        const guardClientTerminalCreate = clientPolicyContext.pipe(
-          Effect.flatMap(({ policy, turnKey }) => {
-            const disposition = acpClientExecuteDisposition(policy);
-            if (
-              disposition === "allow" ||
-              (disposition === "ask" && clientPolicyGrants.allowsExecute(turnKey))
-            ) {
-              return Effect.void;
-            }
-            return denyClientRequest("terminal/create", disposition);
-          }),
-        );
+        const guardClientTerminalCreate = (request: EffectAcpSchema.CreateTerminalRequest) =>
+          clientPolicyContext.pipe(
+            Effect.flatMap(({ policy, turnKey }) => {
+              const disposition = acpClientExecuteDisposition(policy);
+              if (
+                disposition === "allow" ||
+                (disposition === "ask" &&
+                  clientPolicyGrants.consumeExecute({
+                    turnKey,
+                    sessionId: request.sessionId,
+                    command: request.command,
+                    args: request.args,
+                    cwd: request.cwd,
+                    defaultCwd: defaultTerminalCwd,
+                    env: request.env,
+                  }))
+              ) {
+                return Effect.void;
+              }
+              return denyClientRequest("terminal/create", disposition);
+            }),
+          );
 
         const wireAcpRuntimeTerminalHandlers = Effect.fnUntraced(function* (
           targetRuntime: AcpSessionRuntime.AcpSessionRuntime["Service"],
         ) {
           if (clientTerminals === undefined) return;
           yield* targetRuntime.handleCreateTerminal((request) =>
-            guardClientTerminalCreate.pipe(Effect.andThen(clientTerminals.create(request))),
+            guardClientTerminalCreate(request).pipe(
+              Effect.andThen(clientTerminals.create(request)),
+            ),
           );
           yield* targetRuntime.handleTerminalOutput(clientTerminals.output);
           yield* targetRuntime.handleTerminalWaitForExit(clientTerminals.waitForExit);
@@ -8396,10 +8410,17 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   ? "accept"
                   : answered;
               if (decision === "accept" || decision === "acceptForSession") {
+                const executeTarget = extractAcpExecuteApprovalTarget(
+                  params.toolCall.rawInput,
+                  parsedPermission.toolCall?.command,
+                );
                 clientPolicyGrants.recordApproval({
                   toolKind: parsedPermission.kind,
                   scope: decision === "acceptForSession" ? "session" : "turn",
                   turnKey: String(context.providerTurnId),
+                  sessionId: params.sessionId,
+                  ...executeTarget,
+                  defaultCwd: defaultTerminalCwd,
                 });
               }
               const response = (() => {

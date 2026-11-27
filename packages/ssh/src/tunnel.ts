@@ -1625,6 +1625,9 @@ export const resolveLoopbackSshHttpBaseUrl = Effect.fn("ssh/tunnel.resolveLoopba
           throw new Error("Invalid SSH forwarded http base URL.");
         }
         const baseUrl = new URL(rawHttpBaseUrl);
+        if (baseUrl.protocol !== "http:" && baseUrl.protocol !== "https:") {
+          throw new Error("SSH desktop bridge only supports http or https forwarded URLs.");
+        }
         if (!isLoopbackHostname(baseUrl.hostname)) {
           throw new Error("SSH desktop bridge only supports loopback forwarded URLs.");
         }
@@ -1709,12 +1712,16 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
         }),
     ),
   );
+  // Explicit 127.0.0.1 bind and GatewayPorts=no keep user ssh_config from exposing the forward.
+  const localForward = `127.0.0.1:${input.localPort}:127.0.0.1:${input.remotePort}`;
   const directArgs = [
     ...baseSshArgs(input.resolvedTarget, {
       batchMode: input.authOptions.batchMode ?? "no",
     }),
     "-o",
     "ExitOnForwardFailure=yes",
+    "-o",
+    "GatewayPorts=no",
     "-o",
     "ControlMaster=no",
     "-o",
@@ -1728,13 +1735,11 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
     "-n",
     "-N",
     "-L",
-    `${input.localPort}:127.0.0.1:${input.remotePort}`,
+    localForward,
     "--",
     hostSpec,
   ];
   const { controlPath, scope } = input;
-  // The master's own GatewayPorts would otherwise decide the bind address.
-  const controlMasterForward = `127.0.0.1:${input.localPort}:127.0.0.1:${input.remotePort}`;
   const { args, stdin } =
     controlPath === null
       ? { args: directArgs, stdin: { stream: Stream.empty, endOnDone: true } }
@@ -1750,7 +1755,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
             "ControlMaster=no",
             "-T",
             "-L",
-            controlMasterForward,
+            localForward,
             "--",
             hostSpec,
             "sh -c 'exec cat >/dev/null'",
@@ -1767,13 +1772,7 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
     yield* Scope.addFinalizer(
       scope,
       runSshCommand(input.resolvedTarget, {
-        preHostArgs: [
-          ...controlMasterArgs(controlPath),
-          "-O",
-          "cancel",
-          "-L",
-          controlMasterForward,
-        ],
+        preHostArgs: [...controlMasterArgs(controlPath), "-O", "cancel", "-L", localForward],
       }).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(FileSystem.FileSystem, fileSystemService),

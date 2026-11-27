@@ -10,6 +10,7 @@ import {
 import {
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
+  T3_PI_EXTRA_ROOTS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_TOOL_PROFILE_ENV,
@@ -201,11 +202,14 @@ describe("pi T3 MCP injection", () => {
         [T3_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
         [T3_MCP_BEARER_ENV]: "stale-token",
         [T3_PI_MCP_EXTENSION_PATH_ENV]: "/stale/extension.ts",
+        [T3_PI_RUNTIME_MODE_ENV]: "full-access",
+        [T3_PI_EXTRA_ROOTS_ENV]: JSON.stringify(["/stale/root"]),
         [T3_PI_TOOL_PROFILE_ENV]: "lean",
       },
       mcpSession: undefined,
       extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
       runtimeMode: "auto-accept-edits",
+      extraRoots: ["/workspace/extra-a", " ", "/workspace/extra-b"],
     });
     assert.deepEqual(permissionOnly.args, [
       "--mode",
@@ -218,9 +222,25 @@ describe("pi T3 MCP injection", () => {
     assert.isUndefined(permissionOnly.env[T3_PI_TOOL_PROFILE_ENV]);
     assert.equal(permissionOnly.env[T3_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
     assert.equal(
+      permissionOnly.env[T3_PI_EXTRA_ROOTS_ENV],
+      JSON.stringify(["/workspace/extra-a", "/workspace/extra-b"]),
+    );
+    assert.equal(
       permissionOnly.env[T3_PI_MCP_EXTENSION_PATH_ENV],
       "/tmp/cache/pi-t3-mcp-extension.ts",
     );
+
+    const scrubbedDefaults = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: {
+        [T3_PI_RUNTIME_MODE_ENV]: "full-access",
+        [T3_PI_EXTRA_ROOTS_ENV]: JSON.stringify(["/stale/root"]),
+      },
+      mcpSession: undefined,
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+    });
+    assert.equal(scrubbedDefaults.env[T3_PI_RUNTIME_MODE_ENV], "approval-required");
+    assert.isUndefined(scrubbedDefaults.env[T3_PI_EXTRA_ROOTS_ENV]);
   });
 
   it.each([

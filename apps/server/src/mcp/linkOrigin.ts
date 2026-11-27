@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { assertFullAccess, type Caller } from "./threadAccess.ts";
 
 /**
@@ -18,15 +19,19 @@ import { assertFullAccess, type Caller } from "./threadAccess.ts";
 /** The link a caller acts for: its own session, or the link that started its thread. */
 export const callerLinkOrigin = (
   caller: Pick<Caller, "scope" | "caller">,
-): OrchestrationV2LinkOrigin | undefined =>
-  caller.caller?.linkOrigin ??
-  (caller.scope.client?.linked === true
-    ? {
-        sessionId: caller.scope.client.sessionId,
-        label: caller.scope.client.label,
-        access: caller.scope.client.access,
-      }
-    : undefined);
+): OrchestrationV2LinkOrigin | undefined => {
+  if (caller.caller?.linkOrigin !== undefined) return caller.caller.linkOrigin;
+  if (caller.scope.client?.linked !== true) return undefined;
+  const ceiling = McpInvocationContext.clientModeCeiling(caller.scope.client);
+  return {
+    sessionId: caller.scope.client.sessionId,
+    label: caller.scope.client.label,
+    access:
+      caller.scope.client.access === "read-only" || ceiling.interactionMode === "plan"
+        ? "read-only"
+        : ceiling.runtimeMode,
+  };
+};
 
 /** The link that fences a caller, if any: one paired below full access. */
 export const fencingLinkOrigin = (caller: Pick<Caller, "scope" | "caller">) => {

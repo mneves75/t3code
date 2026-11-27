@@ -328,8 +328,22 @@ export function acpMcpToolApprovalElicitationDisposition(
   ) {
     return undefined;
   }
-  // T3's authenticated MCP endpoint enforces scope; only explicit approval mode needs a user prompt.
-  return acpPolicyRequiresApproval(runtimePolicy) ? "ask" : "allow";
+  if (
+    acpPolicyRequiresApproval(runtimePolicy) ||
+    runtimePolicy.runtimeMode === "approval-required" ||
+    runtimePolicy.runtimeMode === "auto-accept-edits"
+  ) {
+    return "ask";
+  }
+  const sandboxType = unknownRecord(runtimePolicy.sandboxPolicy)?.type;
+  if (
+    sandboxType !== undefined &&
+    sandboxType !== "dangerFullAccess" &&
+    sandboxType !== "externalSandbox"
+  ) {
+    return "ask";
+  }
+  return "allow";
 }
 
 export function acpClientExecuteDisposition(
@@ -338,32 +352,181 @@ export function acpClientExecuteDisposition(
   return acpOperationDisposition(runtimePolicy, { kind: "execute", changedPaths: [] });
 }
 
+export interface AcpExecuteApprovalTarget {
+  readonly command?: string | undefined;
+  readonly args?: ReadonlyArray<string> | undefined;
+  readonly cwd?: string | null | undefined;
+}
+
+export function extractAcpExecuteApprovalTarget(
+  rawInput: unknown,
+  fallbackCommand?: string | undefined,
+  fallbackCwd?: string | null | undefined,
+): AcpExecuteApprovalTarget {
+  const record = unknownRecord(rawInput);
+  if (record === undefined) {
+    return {
+      ...(fallbackCommand !== undefined && fallbackCommand.length > 0
+        ? { command: fallbackCommand }
+        : {}),
+      ...(fallbackCwd !== undefined ? { cwd: fallbackCwd } : {}),
+    };
+  }
+  if (record.cwd !== undefined && record.cwd !== null && typeof record.cwd !== "string") {
+    return {};
+  }
+  const cwd =
+    typeof record.cwd === "string" && record.cwd.trim().length > 0 ? record.cwd : fallbackCwd;
+  if (
+    record.args !== undefined &&
+    record.args !== null &&
+    (!Array.isArray(record.args) || !record.args.every((entry) => typeof entry === "string"))
+  ) {
+    return {};
+  }
+  const args = Array.isArray(record.args) ? (record.args as ReadonlyArray<string>) : undefined;
+  if (typeof record.command === "string" && record.command.length > 0) {
+    return {
+      command: record.command,
+      ...(args !== undefined ? { args } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
+    };
+  }
+  if (
+    Array.isArray(record.command) &&
+    record.command.length > 0 &&
+    record.command.every((entry) => typeof entry === "string")
+  ) {
+    const [command, ...commandArgs] = record.command as ReadonlyArray<string>;
+    return {
+      command,
+      args: commandArgs,
+      ...(cwd !== undefined ? { cwd } : {}),
+    };
+  }
+  if (typeof record.executable === "string" && record.executable.length > 0) {
+    return {
+      command: record.executable,
+      ...(args !== undefined ? { args } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
+    };
+  }
+  return {
+    ...(fallbackCommand !== undefined && fallbackCommand.length > 0
+      ? { command: fallbackCommand }
+      : {}),
+    ...(cwd !== undefined ? { cwd } : {}),
+  };
+}
+
 export interface AcpApprovalGrantInput {
   /** The approved request's ACP tool kind, after ID-only requests take their tracked call's kind. */
   readonly toolKind: string;
   readonly scope: "session" | "turn";
   readonly turnKey: string;
+  readonly sessionId: string;
+  readonly command?: string | undefined;
+  readonly args?: ReadonlyArray<string> | undefined;
+  readonly cwd?: string | null | undefined;
+  readonly defaultCwd?: string | undefined;
+}
+
+export interface AcpTerminalGrantCheckInput {
+  readonly turnKey: string | null;
+  readonly sessionId: string;
+  readonly command: string;
+  readonly args?: ReadonlyArray<string> | undefined;
+  readonly cwd?: string | null | undefined;
+  readonly defaultCwd?: string | undefined;
+  readonly env?: ReadonlyArray<unknown> | undefined;
 }
 
 export interface AcpClientPolicyGrants {
   readonly recordApproval: (input: AcpApprovalGrantInput) => void;
-  readonly allowsExecute: (turnKey: string | null) => boolean;
+  readonly consumeExecute: (input: AcpTerminalGrantCheckInput) => boolean;
 }
 
-/** ACP cannot link commands to terminals; approved execute requests grant execution for the turn or accepted session. */
+export function resolveAcpExecuteCwd(
+  cwd: string | null | undefined,
+  defaultCwd: string | undefined,
+): string {
+  if (typeof cwd === "string" && cwd.trim().length > 0) {
+    if (NodePath.isAbsolute(cwd)) return NodePath.resolve(cwd);
+    if (defaultCwd !== undefined && defaultCwd.trim().length > 0) {
+      return NodePath.resolve(defaultCwd, cwd);
+    }
+    return cwd;
+  }
+  return defaultCwd !== undefined && defaultCwd.trim().length > 0
+    ? NodePath.resolve(defaultCwd)
+    : "";
+}
+
+function executeGrantKey(input: {
+  readonly turnKey: string;
+  readonly sessionId: string;
+  readonly command: string;
+  readonly args?: ReadonlyArray<string> | undefined;
+  readonly cwd?: string | null | undefined;
+  readonly defaultCwd?: string | undefined;
+}): string {
+  return JSON.stringify([
+    input.turnKey,
+    input.sessionId,
+    input.command,
+    input.args ?? [],
+    resolveAcpExecuteCwd(input.cwd, input.defaultCwd),
+  ]);
+}
+
+/** Turn-scoped execute approvals yield single-use command-bound grants; session-scoped approvals stay bound to the approved sessionId. */
 export function makeAcpClientPolicyGrants(): AcpClientPolicyGrants {
-  let sessionExecute = false;
-  let turnExecute: string | null = null;
+  const sessionExecuteIds = new Set<string>();
+  let turnGrantTurnKey: string | null = null;
+  const turnGrants = new Map<string, number>();
   return {
     recordApproval: (input) => {
       // Other kinds also show as command cards, but approving them must not open terminals.
       if (input.toolKind !== "execute") return;
       if (input.scope === "session") {
-        sessionExecute = true;
-      } else {
-        turnExecute = input.turnKey;
+        sessionExecuteIds.add(input.sessionId);
+        return;
       }
+      if (turnGrantTurnKey !== input.turnKey) {
+        turnGrants.clear();
+        turnGrantTurnKey = input.turnKey;
+      }
+      if (typeof input.command !== "string" || input.command.length === 0) return;
+      const key = executeGrantKey({
+        turnKey: input.turnKey,
+        sessionId: input.sessionId,
+        command: input.command,
+        args: input.args,
+        cwd: input.cwd,
+        defaultCwd: input.defaultCwd,
+      });
+      turnGrants.set(key, (turnGrants.get(key) ?? 0) + 1);
     },
-    allowsExecute: (turnKey) => sessionExecute || (turnKey !== null && turnExecute === turnKey),
+    consumeExecute: (input) => {
+      if ((input.env?.length ?? 0) > 0) return false;
+      if (sessionExecuteIds.has(input.sessionId)) return true;
+      if (input.turnKey === null || turnGrantTurnKey !== input.turnKey) return false;
+      const key = executeGrantKey({
+        turnKey: input.turnKey,
+        sessionId: input.sessionId,
+        command: input.command,
+        args: input.args,
+        cwd: input.cwd,
+        defaultCwd: input.defaultCwd,
+      });
+      const count = turnGrants.get(key) ?? 0;
+      if (count <= 0) return false;
+      if (count === 1) {
+        turnGrants.delete(key);
+      } else {
+        turnGrants.set(key, count - 1);
+      }
+      return true;
+    },
   };
 }

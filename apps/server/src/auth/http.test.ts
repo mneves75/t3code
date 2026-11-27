@@ -265,3 +265,78 @@ it.live("checks token-endpoint DPoP proofs without writing replay state", () =>
     );
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
+
+it.effect("requires standard client scopes to mint a full-access peer-link pairing token", () =>
+  Effect.gen(function* () {
+    const random = yield* SecureRandom.SecureRandom;
+    const unusedSecretStore = ServerSecretStore.ServerSecretStore.of({
+      get: () => Effect.succeedNone,
+      set: () => Effect.void,
+      create: () => Effect.void,
+      getOrCreateRandom: () => Effect.die("Not used by these routes."),
+      remove: () => Effect.void,
+    });
+    const requestContext = Context.make(SecureRandom.SecureRandom, random).pipe(
+      Context.add(ServerSecretStore.ServerSecretStore, unusedSecretStore),
+    );
+    return yield* Effect.acquireUseRelease(
+      Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
+      (environment) =>
+        Effect.promise(async () => {
+          const ownerLogin = await environment.handler(
+            postJson("/api/auth/browser-session", { credential: DEV_TOKEN }),
+            requestContext,
+          );
+          expect(ownerLogin.status).toBe(200);
+          const ownerCookie = ownerLogin.headers.getSetCookie()[0]!.split(";", 1)[0]!;
+
+          // Mint a narrow session holding access:write + MCP full-access scopes, without settings:write.
+          const narrowPairing = await environment.handler(
+            postJson(
+              "/api/auth/pairing-token",
+              {
+                scopes: [
+                  "access:write",
+                  "orchestration:read",
+                  "orchestration:operate",
+                  "filesystem:read",
+                  "source-control:write",
+                ],
+              },
+              { cookie: ownerCookie },
+            ),
+            requestContext,
+          );
+          expect(narrowPairing.status).toBe(200);
+          const { credential } = (await narrowPairing.json()) as { credential: string };
+          const narrowLogin = await environment.handler(
+            postJson("/api/auth/browser-session", { credential }),
+            requestContext,
+          );
+          expect(narrowLogin.status).toBe(200);
+          const narrowCookie = narrowLogin.headers.getSetCookie()[0]!.split(";", 1)[0]!;
+
+          const denied = await environment.handler(
+            postJson(
+              "/api/auth/pairing-token",
+              { purpose: "peer-link", access: "full-access" },
+              { cookie: narrowCookie },
+            ),
+            requestContext,
+          );
+          expect(denied.status).toBe(403);
+
+          const allowed = await environment.handler(
+            postJson(
+              "/api/auth/pairing-token",
+              { purpose: "peer-link", access: "full-access" },
+              { cookie: ownerCookie },
+            ),
+            requestContext,
+          );
+          expect(allowed.status).toBe(200);
+        }),
+      (environment) => Effect.promise(() => environment.dispose()),
+    );
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);

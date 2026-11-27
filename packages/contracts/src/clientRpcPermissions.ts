@@ -166,6 +166,9 @@ export function clientRpcRequiredScopes(
     const held = mcpClientScopes(decodeLinkPairing(input).access);
     return [AuthAccessWriteScope, ...held];
   }
+  if (method === WS_METHODS.serverCheckSecretSource) {
+    return [AuthSettingsWriteScope, AuthProvidersManageScope];
+  }
   if (method === WS_METHODS.guestShareCreate) {
     return [AuthAccessWriteScope, AuthOrchestrationReadScope];
   }

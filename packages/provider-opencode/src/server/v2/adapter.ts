@@ -1,5 +1,6 @@
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
+import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
 
 import {
@@ -458,29 +459,33 @@ const sessionRules = (
   paths: ReadonlyArray<Rule>,
   grants: ReadonlyArray<Rule>,
   mcpServerName: string | null,
-): ReadonlyArray<Rule> => [
-  ...(policy.runtimeMode === "full-access"
-    ? [rule("*", "allow")]
-    : [
-        rule("shell", "ask"),
-        rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
-        rule("external_directory", "ask"),
-        // The thread's other folders count as workspace; `edit` still decides whether writes ask.
-        // A glob character in the path would allow sibling folders, so such a root keeps asking.
-        ...(policy.workspace?.extraRoots ?? [])
-          .filter((root) => !/[*?]/.test(root))
-          .map((root): Rule => ({
-            action: "external_directory",
-            resource: `${root.replace(/\/$/, "")}/*`,
-            effect: "allow",
-          })),
-      ]),
-  ...grants,
-  // Plan edits are re-allowed only for plan paths; free-tier sessions refuse denied shell/read.
-  ...(policy.interactionMode === "plan" ? [rule("edit", "deny")] : []),
-  ...paths,
-  ...mcpRules(mcpServerName),
-];
+): ReadonlyArray<Rule> => {
+  const allowedPaths =
+    policy.interactionMode === "plan" ? paths : paths.filter((entry) => entry.action !== "edit");
+  return [
+    ...(policy.runtimeMode === "full-access"
+      ? [rule("*", "allow")]
+      : [
+          rule("shell", "ask"),
+          rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
+          rule("external_directory", "ask"),
+          // The thread's other folders count as workspace; `edit` still decides whether writes ask.
+          // A glob character in the path would allow sibling folders, so such a root keeps asking.
+          ...(policy.workspace?.extraRoots ?? [])
+            .filter((root) => !/[*?]/.test(root))
+            .map((root): Rule => ({
+              action: "external_directory",
+              resource: `${root.replace(/\/$/, "")}/*`,
+              effect: "allow",
+            })),
+        ]),
+    ...grants,
+    // Plan edits are re-allowed only for plan paths; free-tier sessions refuse denied shell/read.
+    ...(policy.interactionMode === "plan" ? [rule("edit", "deny")] : []),
+    ...allowedPaths,
+    ...mcpRules(mcpServerName),
+  ];
+};
 
 const sameRules = (left: ReadonlyArray<Rule> | undefined, right: ReadonlyArray<Rule>) =>
   left?.length === right.length &&
@@ -569,12 +574,112 @@ const formGone = {
   SessionNotFoundError: () => Effect.void,
 };
 
-const agentPaths = (rules: ReadonlyArray<Rule>) =>
+const OPENCODE_WORKSPACE_PLAN_PATH_PATTERN = /^\.opencode\/plans(?:\/[^/]+)+$/;
+
+const normalizePosixPath = (value: string): string => value.replace(/\\/g, "/").replace(/\/+$/, "");
+
+const isWithinDirectory = (candidate: string, directory: string): boolean => {
+  const normalizedDir = normalizePosixPath(directory);
+  if (normalizedDir.length === 0) return false;
+  return candidate === normalizedDir || candidate.startsWith(`${normalizedDir}/`);
+};
+
+const opencodeInternalRoots = (
+  action: "edit" | "external_directory",
+  homeDirectory: string = NodeOS.homedir(),
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ReadonlyArray<string> => {
+  const suffixes = action === "edit" ? ["plans"] : ["tool-output", "plans"];
+  const bases = new Set<string>();
+  const normalizedHome = normalizePosixPath(homeDirectory);
+  if (normalizedHome.length > 0) {
+    bases.add(`${normalizedHome}/.local/share/opencode`);
+    bases.add(`${normalizedHome}/.local/state/opencode`);
+    bases.add(`${normalizedHome}/.config/opencode`);
+    bases.add(`${normalizedHome}/.cache/opencode`);
+    bases.add(`${normalizedHome}/Library/Application Support/opencode`);
+    bases.add(`${normalizedHome}/Library/Caches/opencode`);
+    bases.add(`${normalizedHome}/AppData/Local/opencode`);
+    bases.add(`${normalizedHome}/AppData/Roaming/opencode`);
+  }
+  for (const key of [
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "LOCALAPPDATA",
+    "APPDATA",
+  ]) {
+    const raw = env[key]?.trim();
+    if (raw) {
+      const normalized = normalizePosixPath(raw);
+      if (normalized.length > 0) bases.add(`${normalized}/opencode`);
+    }
+  }
+  const roots: Array<string> = [];
+  for (const base of bases) {
+    for (const suffix of suffixes) {
+      roots.push(`${base}/${suffix}`);
+    }
+  }
+  return roots;
+};
+
+const isAllowedAgentPathResource = (
+  action: "edit" | "external_directory",
+  resource: string,
+  workspaceDirectory?: string,
+  homeDirectory?: string,
+  env?: Readonly<Record<string, string | undefined>>,
+): boolean => {
+  const normalized = resource.replace(/\\/g, "/");
+  if (
+    normalized.trim().length === 0 ||
+    normalized.includes("\0") ||
+    /(?:^|\/)\.\.(?:$|\/)/.test(normalized)
+  ) {
+    return false;
+  }
+  const hasTrailingSingleStar = normalized.endsWith("/*");
+  const base = hasTrailingSingleStar ? normalized.slice(0, -2) : normalized;
+  if (base.length === 0 || /[*?]/.test(base)) {
+    return false;
+  }
+  const isAbsolute = base.startsWith("/") || /^[A-Za-z]:\//.test(base);
+  if (isAbsolute) {
+    if (workspaceDirectory !== undefined && isWithinDirectory(base, workspaceDirectory)) {
+      const relative = base.slice(normalizePosixPath(workspaceDirectory).length + 1);
+      return (
+        !hasTrailingSingleStar &&
+        action === "edit" &&
+        OPENCODE_WORKSPACE_PLAN_PATH_PATTERN.test(relative)
+      );
+    }
+    const roots = opencodeInternalRoots(action, homeDirectory, env);
+    return roots.some((root) => isWithinDirectory(base, root));
+  }
+  return (
+    !hasTrailingSingleStar && action === "edit" && OPENCODE_WORKSPACE_PLAN_PATH_PATTERN.test(base)
+  );
+};
+
+export const agentPaths = (
+  rules: ReadonlyArray<Rule>,
+  workspaceDirectory?: string,
+  homeDirectory?: string,
+  env?: Readonly<Record<string, string | undefined>>,
+) =>
   rules.filter(
     (entry) =>
       entry.effect === "allow" &&
-      entry.resource !== "*" &&
-      (entry.action === "edit" || entry.action === "external_directory"),
+      (entry.action === "edit" || entry.action === "external_directory") &&
+      isAllowedAgentPathResource(
+        entry.action,
+        entry.resource,
+        workspaceDirectory,
+        homeDirectory,
+        env,
+      ),
   );
 
 const ref = (nativeId: string, strength: "strong" | "weak" = "strong") => ({
@@ -4163,7 +4268,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         );
         if (listed._tag === "None") return [];
         known = new Map(
-          listed.value.data.map((agent) => [agent.id, agentPaths(agent.permissions)]),
+          listed.value.data.map((agent) => [agent.id, agentPaths(agent.permissions, directory)]),
         );
         agentRules.set(directory, known);
       }

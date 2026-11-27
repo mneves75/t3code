@@ -217,6 +217,12 @@ const threadOf = (event: OrchestrationV2DomainEvent): OrchestrationV2AppThread |
   }
 };
 
+const endsShare = (shareId: GuestShareId) => (event: OrchestrationV2DomainEvent) => {
+  if (event.type === "thread.archived" || event.type === "thread.deleted") return true;
+  const updated = threadOf(event);
+  return updated !== null && updated.guestShare?.id !== shareId;
+};
+
 /** A guest sees that a file changed, never the text of the change, whatever its status. */
 const withoutFileText = (item: OrchestrationV2TurnItem): OrchestrationV2TurnItem => {
   if (item.type !== "file_change") return item;
@@ -559,21 +565,17 @@ const make = Effect.gen(function* () {
     if (initialView === null) return yield* inactive;
 
     const ended: GuestStreamEvent = { type: "ended" };
-    const endsShare = (event: OrchestrationV2DomainEvent) => {
-      if (event.type === "thread.archived" || event.type === "thread.deleted") return true;
-      const updated = threadOf(event);
-      return updated !== null && updated.guestShare?.id !== share.id;
-    };
+    const shareEnded = endsShare(share.id);
     const live = orchestrator
       .streamStoredEventsFrom({ threadId: thread.id, afterSequence: snapshot.snapshotSequence })
       .pipe(
         Stream.map(threadStreamEventItem),
         // Ending the source here flushes what the coalescer holds, so `ended` is not held back.
-        Stream.takeUntil((item) => endsShare(item.event)),
+        Stream.takeUntil((item) => shareEnded(item.event)),
         coalesceThreadLiveStream,
         Stream.map((item): ReadonlyArray<GuestStreamEvent> => {
           if (item.kind !== "event") return [];
-          if (endsShare(item.event)) return [ended];
+          if (shareEnded(item.event)) return [ended];
           if (item.event.type === "turn-item.updated") rememberSent(share.id, [item.event.payload]);
           const shown =
             item.event.type === "turn-item.updated"
@@ -655,7 +657,7 @@ const make = Effect.gen(function* () {
     session: string,
     itemId: string,
   ) {
-    const { thread } = yield* authorize(session, "session");
+    const { thread, share } = yield* authorize(session, "session");
     const id = TurnItemId.make(itemId);
     const item =
       (yield* orchestrator
@@ -668,7 +670,7 @@ const make = Effect.gen(function* () {
             Effect.map((page) => page.items[0]?.item ?? null),
             Effect.mapError(() => unavailable),
           ));
-    return item === null ? yield* unavailable : { thread, item };
+    return item === null ? yield* unavailable : { thread, share, item };
   });
 
   const render = Effect.fn("GuestShareService.render")(function* (session: string, itemId: string) {
@@ -708,12 +710,35 @@ const make = Effect.gen(function* () {
     session: string,
     itemId: string,
   ) {
-    const { item } = yield* threadItem(session, itemId);
+    const { thread, share, item } = yield* threadItem(session, itemId);
     if (item.type !== "command_execution") return yield* unavailable;
+    const afterSequence = yield* orchestrator
+      .getThreadEventSequence(thread.id)
+      .pipe(Effect.mapError(() => inactive));
+    // Recheck after capturing the cursor so a share close before it cannot be missed.
+    const current = yield* authorize(session, "session");
+    if (current.share.id !== share.id) return yield* inactive;
+    const shareEnded = endsShare(share.id);
+    const untilShareEnds = orchestrator
+      .streamStoredEventsFrom({ threadId: thread.id, afterSequence })
+      .pipe(
+        Stream.filter((stored) => shareEnded(stored.event)),
+        Stream.runHead,
+        Effect.asVoid,
+        // Fall back to untilRevoked's periodic check if the event stream drops.
+        Effect.catchCause(() => Effect.never),
+      );
+    const untilExpiry = Effect.sleep(
+      Math.max(0, Date.parse(share.expiresAt) - DateTime.toEpochMillis(yield* DateTime.now)),
+    );
+    const revoked = Effect.raceFirst(
+      untilRevoked(session),
+      Effect.raceFirst(untilShareEnds, untilExpiry),
+    );
     return commandOutputs.subscribe({ threadId: item.threadId, itemId: item.id }).pipe(
       // A lost hub stream ends the output; the row reloads it when reopened.
       Stream.catchCause(() => Stream.empty),
-      Stream.interruptWhen(untilRevoked(session)),
+      Stream.interruptWhen(revoked),
     );
   });
 

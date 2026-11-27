@@ -603,6 +603,25 @@ describe("AcpRuntimeModel", () => {
     expect(request.detail).toBe("\rgit status\r");
     expect(request.toolCall?.command).toBe("git status");
     expect(detail({ kind: "execute", rawInput: { command: " \r\n" } })).toBe("Ran command");
+    // Separate args (quoted when containing spaces) and cwd are always disclosed in approval detail.
+    expect(
+      detail({
+        kind: "execute",
+        rawInput: { command: "git", args: ["commit", "-m", "two words"], cwd: "/repo/sub" },
+      }),
+    ).toBe('git commit -m "two words" (cwd: /repo/sub)');
+    expect(
+      detail({
+        kind: "execute",
+        rawInput: { command: "echo /tmp", cwd: "/tmp" },
+      }),
+    ).toBe("echo /tmp (cwd: /tmp)");
+    expect(
+      detail({
+        kind: "execute",
+        rawInput: { command: "cmd", args: [""], cwd: "/cwd" },
+      }),
+    ).toBe('cmd "" (cwd: /cwd)');
   });
 
   it("keeps explicitly cleared permission request fields over the tracked tool call", () => {

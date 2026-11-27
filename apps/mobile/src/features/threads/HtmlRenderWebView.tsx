@@ -75,6 +75,7 @@ function readOverflowMessage(data: string): Overflow | null {
 }
 
 const withoutFragment = (url: string) => url.split("#", 1)[0];
+const ALLOWED_SUBFRAME_URL = /^(?:https?:\/\/|about:(?:blank|srcdoc)$)/i;
 
 export function HtmlRenderWebView(props: {
   readonly uri: string;
@@ -126,6 +127,7 @@ export function HtmlRenderWebView(props: {
         key={generation}
         ref={webView}
         source={source}
+        originWhitelist={["*"]}
         accessibilityLabel={props.title}
         style={{ flex: 1, backgroundColor: "transparent" }}
         allowsInlineMediaPlayback
@@ -140,7 +142,7 @@ export function HtmlRenderWebView(props: {
         nestedScrollEnabled={props.nested && overflow.y}
         overScrollMode={props.nested ? "never" : "always"}
         onShouldStartLoadWithRequest={(request) =>
-          request.isTopFrame === false ||
+          (request.isTopFrame === false && ALLOWED_SUBFRAME_URL.test(request.url)) ||
           withoutFragment(request.url) === withoutFragment(props.uri)
         }
         onOpenWindow={(event) => {

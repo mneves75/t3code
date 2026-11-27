@@ -73,6 +73,7 @@ interface XmlNode {
   hasTextChoice?: boolean;
   markupCompatibility?: boolean;
   hasSelectedChoice?: boolean;
+  hasPrunedChoiceTabs?: boolean;
   epubTable?: boolean;
 }
 
@@ -142,16 +143,15 @@ function isXhtmlTemplate(
   );
 }
 
-function xml(source: string, extension: string): XmlNode {
+function xml(source: string, extension: string, budget: { nodes: number } = { nodes: 0 }): XmlNode {
   const odf = [".odt", ".ods", ".odp"].includes(extension);
   const root: XmlNode = { name: "root", attrs: {}, children: [] };
   const stack = [root];
   let rootTagName: string | undefined;
-  let nodes = 0;
   const parser = new SaxesParser();
   if (extension === ".epub") Object.assign(parser.ENTITIES, characterEntities);
   parser.on("opentag", (tag) => {
-    if (++nodes > 200_000 || stack.length > 128) throw new Truncation("XML structure limit");
+    if (++budget.nodes > 200_000 || stack.length > 128) throw new Truncation("XML structure limit");
     rootTagName ??= tag.name;
     const node: XmlNode = {
       name: tag.name.split(":").at(-1)!,
@@ -281,7 +281,11 @@ function retainCompatibilityFallback(parent: XmlNode, fallback: XmlNode): boolea
     parent.children.pop();
     return false;
   }
-  if (fallback.hasText || hasInlineTab(fallback, ["tab", "ptab"])) {
+  if (
+    !parent.hasPrunedChoiceTabs &&
+    (fallback.hasText || hasInlineTab(fallback, ["tab", "ptab"]))
+  ) {
+    parent.hasPrunedChoiceTabs = true;
     parent.children = parent.children.filter(
       (child) =>
         typeof child === "string" || child.name !== "Choice" || !hasInlineTab(child, ["ptab"]),
@@ -471,12 +475,12 @@ function* epubTable(node: XmlNode): Generator<TextPart, void> {
     for (const row of rowGroup ? children(part) : [part]) {
       if (row.name !== "tr") continue;
       rowIndex++;
+      if (rowIndex > 10_000) throw new Truncation("Row limit");
       const cells = children(row)
         .filter((cell) => cell.name === "td" || cell.name === "th")
         .map((cell) => ({ cell, rowSpan: epubSpan(cell.attrs.rowspan) }));
       const lastText = cells.findLastIndex(({ cell }) => hasCellText(cell));
-      if (lastText >= 0 && ++rowCount > 10_000) throw new Truncation("Row limit");
-      if (lastText >= 0 && rowCount === 1) yield LINE_START;
+      if (lastText >= 0 && ++rowCount === 1) yield LINE_START;
       // An empty cell can still reserve columns in later rows.
       const lastCell = Math.max(
         lastText,
@@ -933,15 +937,24 @@ async function* document(path: string, extension: string): AsyncGenerator<TextPa
     const notes: string[] = [];
     const skip = (name: string) =>
       notes.push(`\n[Skipped document part: ${name} (missing or invalid XML).]\n`);
+    const xmlBudget = { nodes: 0 };
+    const parsed = new Map<string, XmlNode>();
     const read = (name: string): XmlNode => {
+      const key = part(name);
+      const cached = parsed.get(key);
+      if (cached !== undefined) return cached;
       try {
-        const data = files.get(part(name));
+        const data = files.get(key);
         if (!data) throw new Error("Missing document part");
-        return xml(data, extension);
+        const tree = xml(data, extension, xmlBudget);
+        parsed.set(key, tree);
+        return tree;
       } catch (error) {
         if (error instanceof Truncation) throw error;
         skip(name);
-        return { name: "root", attrs: {}, children: [] };
+        const empty: XmlNode = { name: "root", attrs: {}, children: [] };
+        parsed.set(key, empty);
+        return empty;
       }
     };
     const partRels = (name: string) =>

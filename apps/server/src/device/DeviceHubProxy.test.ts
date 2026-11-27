@@ -368,3 +368,16 @@ it("rejects unsupported Duo routes", async () => {
   expect(response.status).toBe(404);
   expect(requests).toEqual([]);
 });
+
+it.each([
+  "http://t3.test/api/device-hub/vendor/serve-sim/helper/..%2f..%2fexec/health",
+  "http://t3.test/api/device-hub/vendor/serve-sim/helper/%2e%2e/health",
+  "http://t3.test/api/device-hub/vendor/serve-sim/helper/foo%5cbar/health",
+  "http://t3.test/api/device-hub/vendor/serve-sim/helper/./health",
+  "http://t3.test/api/device-hub/vendor/serve-sim/helper/../health",
+])("rejects path traversal route %s with 404", async (url) => {
+  const { handler, requests } = fixture([AuthOrchestrationOperateScope]);
+  const response = await handler(new Request(url));
+  expect(response.status).toBe(404);
+  expect(requests).toEqual([]);
+});

@@ -21,6 +21,7 @@ import {
   PI_T3_MCP_EXTENSION_SOURCE,
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
+  T3_PI_EXTRA_ROOTS_ENV,
   T3_PI_RUNTIME_MODE_ENV,
   T3_PI_MCP_EXTENSION_PATH_ENV,
   T3_PI_TOOL_PROFILE_ENV,
@@ -345,6 +346,7 @@ export function buildPiRpcLaunch(input: {
   /** Loaded alone, even under --no-extensions, when T3's full extension is not. */
   readonly gatewayExtensionPath?: string | undefined;
   readonly runtimeMode?: "approval-required" | "auto-accept-edits" | "auto" | "full-access";
+  readonly extraRoots?: ReadonlyArray<string> | undefined;
   readonly toolProfile?: McpToolProfile;
 }): {
   readonly args: ReadonlyArray<string>;
@@ -400,7 +402,11 @@ export function buildPiRpcLaunch(input: {
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
   delete environment[T3_PI_MCP_EXTENSION_PATH_ENV];
+  delete environment[T3_PI_RUNTIME_MODE_ENV];
+  delete environment[T3_PI_EXTRA_ROOTS_ENV];
   delete environment[T3_PI_TOOL_PROFILE_ENV];
+
+  const extraRoots = (input.extraRoots ?? []).filter((root) => root.trim().length > 0);
 
   return {
     args,
@@ -409,11 +415,16 @@ export function buildPiRpcLaunch(input: {
       ...(hasT3Extension && input.extensionPath !== undefined
         ? { [T3_PI_MCP_EXTENSION_PATH_ENV]: input.extensionPath }
         : {}),
-      ...(hasT3Extension && input.runtimeMode !== undefined
+      ...(hasT3Extension
         ? {
             [T3_PI_RUNTIME_MODE_ENV]:
-              input.runtimeMode === "auto" ? "approval-required" : input.runtimeMode,
+              input.runtimeMode === undefined || input.runtimeMode === "auto"
+                ? "approval-required"
+                : input.runtimeMode,
           }
+        : {}),
+      ...(hasT3Extension && extraRoots.length > 0
+        ? { [T3_PI_EXTRA_ROOTS_ENV]: JSON.stringify(extraRoots) }
         : {}),
       ...(hasT3Mcp && input.toolProfile !== undefined
         ? { [T3_PI_TOOL_PROFILE_ENV]: input.toolProfile }

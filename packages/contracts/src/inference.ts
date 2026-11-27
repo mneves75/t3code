@@ -8,6 +8,9 @@ import {
 } from "./baseSchemas.ts";
 
 const INFERENCE_SERVER_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
+// Bare hostname, IPv4, bracketed IPv6, or unbracketed IPv6 (2+ colons); never scheme, port, path, userinfo, or whitespace.
+const INFERENCE_DISCOVERY_HOST_PATTERN =
+  /^(?:\[[0-9a-fA-F:.]+\]|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*:[0-9a-fA-F:.]*|[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.?)$/;
 
 /** A user-registered model server (Ollama, LM Studio, llama.cpp, vLLM, MLX, ...) this environment can reach. */
 export const InferenceServerId = TrimmedNonEmptyString.check(
@@ -146,9 +149,15 @@ export const InferenceDiscoveredServer = Schema.Struct({
 });
 export type InferenceDiscoveredServer = typeof InferenceDiscoveredServer.Type;
 
+export const InferenceDiscoveryHost = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(255),
+  Schema.isPattern(INFERENCE_DISCOVERY_HOST_PATTERN),
+);
+export type InferenceDiscoveryHost = typeof InferenceDiscoveryHost.Type;
+
 export const InferenceDiscoveryInput = Schema.Struct({
   /** Search only this host, as repairing one server does. */
-  host: Schema.optional(TrimmedNonEmptyString),
+  host: Schema.optional(InferenceDiscoveryHost),
   /** An address the user typed, checked as well. */
   baseUrl: Schema.optional(TrimmedNonEmptyString),
 });

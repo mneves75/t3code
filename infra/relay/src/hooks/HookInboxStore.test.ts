@@ -178,20 +178,74 @@ describe("HookInboxStore", () => {
     ),
   );
 
-  it.effect("refuses a request that would pass the byte cap", () =>
+  it.effect("refuses a request that would pass the per-hook or total byte cap", () =>
     withInbox(
       Effect.gen(function* () {
-        const big = new Uint8Array(HookInboxStore.HOOK_INBOX_MAX_BYTES - 10);
-        expect(
-          yield* HookInboxStore.hold(yield* hook("big", { body: big }), BASE_URL),
-        ).not.toBeNull();
-        const small = new Uint8Array(11);
+        const perHookFull = new Uint8Array(HookInboxStore.HOOK_INBOX_MAX_BYTES_PER_HOOK - 10);
         expect(
           yield* HookInboxStore.hold(
-            yield* hook("small", { rawHookId: "x", hookKey: "x", body: small }),
+            yield* hook("h0-big", { rawHookId: "hook-0", hookKey: "hook-0", body: perHookFull }),
+            BASE_URL,
+          ),
+        ).not.toBeNull();
+        expect(
+          yield* HookInboxStore.hold(
+            yield* hook("h0-over", {
+              rawHookId: "hook-0",
+              hookKey: "hook-0",
+              body: new Uint8Array(11),
+            }),
             BASE_URL,
           ),
         ).toBeNull();
+
+        // Fill remaining global capacity across distinct hooks within each hook's own byte cap.
+        const maxPerHook = new Uint8Array(HookInboxStore.HOOK_INBOX_MAX_BYTES_PER_HOOK);
+        const fullHooks =
+          Math.floor(
+            HookInboxStore.HOOK_INBOX_MAX_BYTES / HookInboxStore.HOOK_INBOX_MAX_BYTES_PER_HOOK,
+          ) - 1;
+        for (let index = 1; index <= fullHooks; index++) {
+          const name = `hook-${index}`;
+          expect(
+            yield* HookInboxStore.hold(
+              yield* hook(`big-${index}`, { rawHookId: name, hookKey: name, body: maxPerHook }),
+              BASE_URL,
+            ),
+          ).not.toBeNull();
+        }
+        expect(
+          yield* HookInboxStore.hold(
+            yield* hook("total-over", {
+              rawHookId: "hook-extra",
+              hookKey: "hook-extra",
+              body: new Uint8Array(11),
+            }),
+            BASE_URL,
+          ),
+        ).toBeNull();
+      }),
+    ),
+  );
+
+  it.effect("allows a legitimate hook to enqueue even after many distinct unknown hook keys", () =>
+    withInbox(
+      Effect.gen(function* () {
+        for (let index = 0; index < 40; index++) {
+          const name = `unknown-${index}`;
+          expect(
+            yield* HookInboxStore.hold(
+              yield* hook(`req-${index}`, { rawHookId: name, hookKey: name }),
+              BASE_URL,
+            ),
+          ).not.toBeNull();
+        }
+        expect(
+          yield* HookInboxStore.hold(
+            yield* hook("legit-first", { rawHookId: "real-hook", hookKey: "real-hook" }),
+            BASE_URL,
+          ),
+        ).not.toBeNull();
       }),
     ),
   );

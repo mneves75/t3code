@@ -1,3 +1,5 @@
+import * as NodeDnsPromises from "node:dns/promises";
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
 import type {
@@ -25,7 +27,7 @@ import * as Settings from "../serverSettings.ts";
 import {
   PROTOCOL_PATHS,
   detectMlxEngine,
-  parseBaseUrl,
+  parseBaseUrl as parseRegistryBaseUrl,
   readModelList,
 } from "./InferenceServerRegistry.ts";
 
@@ -77,6 +79,141 @@ const PROC_TABLES = ["/proc/net/tcp", "/proc/net/tcp6"];
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 const LSOF_LOCAL_LISTENER =
   /\bTCP\s+(?:\*|127\.0\.0\.1|localhost|\[::1\]|\[::\]|0\.0\.0\.0):(\d+)\s+\(LISTEN\)/;
+const BARE_HOSTNAME_PATTERN =
+  /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.?$/;
+
+const LINK_LOCAL_V4 = new NodeNet.BlockList();
+LINK_LOCAL_V4.addSubnet("169.254.0.0", 16, "ipv4");
+
+const LINK_LOCAL_V6 = new NodeNet.BlockList();
+LINK_LOCAL_V6.addSubnet("fe80::", 10, "ipv6");
+LINK_LOCAL_V6.addSubnet("::ffff:169.254.0.0", 112, "ipv6");
+LINK_LOCAL_V6.addAddress("fd00:ec2::254", "ipv6");
+
+function isLinkLocalHost(hostname: string): boolean {
+  const bare =
+    hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  const family = NodeNet.isIP(bare);
+  if (family === 4) return LINK_LOCAL_V4.check(bare, "ipv4");
+  if (family === 6) return LINK_LOCAL_V6.check(bare, "ipv6");
+  return false;
+}
+
+/** Validates a bare hostname or IP literal (supporting bracketed IPv6) and rejects link-local IPs. */
+export function parseBareHost(raw: string): string | undefined {
+  if (raw.length === 0 || raw.length > 255 || /\s/.test(raw)) return undefined;
+  let formatted: string;
+  if (raw.startsWith("[") || raw.endsWith("]")) {
+    if (!raw.startsWith("[") || !raw.endsWith("]")) return undefined;
+    if (!NodeNet.isIPv6(raw.slice(1, -1))) return undefined;
+    formatted = raw;
+  } else if (NodeNet.isIPv6(raw)) {
+    formatted = `[${raw}]`;
+  } else if (BARE_HOSTNAME_PATTERN.test(raw)) {
+    formatted = raw;
+  } else {
+    return undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(`http://${formatted}/`);
+  } catch {
+    return undefined;
+  }
+  if (
+    url.port !== "" ||
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    isLinkLocalHost(url.hostname)
+  ) {
+    return undefined;
+  }
+  return url.hostname;
+}
+
+const DNS_LOOKUP_TIMEOUT = Duration.seconds(2);
+
+function hostnameOfUrl(raw: string): string | undefined {
+  try {
+    return new URL(raw).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Resolves non-loopback hostnames, rejects any address in link-local/metadata ranges (fail-closed
+ * on resolution errors), and returns a validated address to pin on HTTP probes against DNS rebinding.
+ */
+export const resolveAllowedProbeHost = (
+  hostname: string,
+  lookup: (host: string) => Promise<ReadonlyArray<{ readonly address: string }>> = (host) =>
+    NodeDnsPromises.lookup(host, { all: true }),
+): Effect.Effect<string | undefined> => {
+  const bare =
+    hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  if (NodeNet.isIP(bare) !== 0) {
+    return Effect.succeed(isLinkLocalHost(bare) ? undefined : bare);
+  }
+  if (LOOPBACK_HOSTS.has(bare.toLowerCase())) {
+    return Effect.succeed(bare);
+  }
+  return Effect.tryPromise({
+    try: () => lookup(bare),
+    catch: () => "dns_failed" as const,
+  }).pipe(
+    Effect.timeoutOption(DNS_LOOKUP_TIMEOUT),
+    Effect.map((result) => {
+      if (Option.isNone(result) || result.value.length === 0) return undefined;
+      if (!result.value.every((entry) => !isLinkLocalHost(entry.address))) return undefined;
+      return result.value[0]!.address;
+    }),
+    Effect.orElseSucceed(() => undefined),
+  );
+};
+
+function pinHttpUrlToResolvedIp(
+  rawUrl: string,
+  resolvedIp: string,
+): { readonly url: string; readonly hostHeader?: string } {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" || NodeNet.isIP(resolvedIp) === 0) {
+      return { url: rawUrl };
+    }
+    const bare =
+      parsed.hostname.startsWith("[") && parsed.hostname.endsWith("]")
+        ? parsed.hostname.slice(1, -1)
+        : parsed.hostname;
+    if (NodeNet.isIP(bare) !== 0 || LOOPBACK_HOSTS.has(bare.toLowerCase())) {
+      return { url: rawUrl };
+    }
+    const originalHost = parsed.host;
+    parsed.hostname = NodeNet.isIPv6(resolvedIp) ? `[${resolvedIp}]` : resolvedIp;
+    return { url: parsed.toString(), hostHeader: originalHost };
+  } catch {
+    return { url: rawUrl };
+  }
+}
+
+function parseBaseUrl(raw: string) {
+  const endpoint = parseRegistryBaseUrl(raw);
+  if ("error" in endpoint) return endpoint;
+  try {
+    if (isLinkLocalHost(new URL(endpoint.base).hostname)) {
+      return {
+        error: "Link-local and cloud metadata addresses are not allowed.",
+        display: endpoint.display,
+      };
+    }
+  } catch {
+    return { error: "The base URL is not a valid URL.", display: endpoint.display };
+  }
+  return endpoint;
+}
 
 /** Parses local TCP LISTEN ports from `lsof -nP -iTCP -sTCP:LISTEN` output on macOS. */
 export function parseLsofListeningPorts(raw: string): ReadonlyArray<number> {
@@ -128,8 +265,13 @@ export function discoveryCandidates(input: {
   readonly listeningPorts: ReadonlyArray<number>;
   readonly hostname: string;
 }): ReadonlyArray<Candidate> {
+  const target = input.host === undefined ? undefined : parseBareHost(input.host);
+  if (input.host !== undefined && target === undefined) return [];
   const candidates = new Map<string, Candidate>();
-  const add = (base: string, registeredServerId?: InferenceServerId, osAssigned = false) => {
+  const add = (rawBase: string, registeredServerId?: InferenceServerId, osAssigned = false) => {
+    const endpoint = parseBaseUrl(rawBase);
+    if (!("base" in endpoint)) return;
+    const base = endpoint.base;
     const key = endpointKey(base, input.hostname);
     if (key === undefined) return;
     const existing = candidates.get(key);
@@ -146,7 +288,6 @@ export function discoveryCandidates(input: {
       ...(osAssigned ? { osAssigned: true } : {}),
     });
   };
-  const target = input.host?.toLowerCase();
   const sameHost = (host: string) =>
     target === undefined ||
     host.toLowerCase() === target ||
@@ -280,8 +421,15 @@ export const make = Effect.gen(function* () {
 
   // Untraced: one per candidate port; the discover span covers them. Reading stops at the cap,
   // so an unrelated service answering with a large body cannot fill memory.
-  const get = Effect.fnUntraced(function* (url: string) {
-    return yield* client.execute(HttpClientRequest.get(url)).pipe(
+  const get = Effect.fnUntraced(function* (url: string, resolvedIp?: string) {
+    const target = resolvedIp === undefined ? { url } : pinHttpUrlToResolvedIp(url, resolvedIp);
+    const req =
+      target.hostHeader === undefined
+        ? HttpClientRequest.get(target.url)
+        : HttpClientRequest.get(target.url).pipe(
+            HttpClientRequest.setHeader("host", target.hostHeader),
+          );
+    return yield* client.execute(req).pipe(
       Effect.flatMap((response) => {
         let read = 0;
         return response.stream.pipe(
@@ -305,26 +453,36 @@ export const make = Effect.gen(function* () {
   });
 
   // An empty POST costs no generation: a served route rejects it as invalid.
-  const served = Effect.fnUntraced(function* (url: string) {
-    return yield* client
-      .execute(
-        HttpClientRequest.post(url).pipe(HttpClientRequest.bodyText("{}", "application/json")),
-      )
-      .pipe(
-        Effect.map(
-          (response) =>
-            response.status === 400 ||
-            response.status === 422 ||
-            (response.status >= 200 && response.status < 300),
-        ),
-        Effect.timeoutOption(PROBE_TIMEOUT),
-        Effect.map((result) => Option.getOrElse(result, () => false)),
-        Effect.orElseSucceed(() => false),
-      );
+  const served = Effect.fnUntraced(function* (url: string, resolvedIp?: string) {
+    const target = resolvedIp === undefined ? { url } : pinHttpUrlToResolvedIp(url, resolvedIp);
+    const baseReq = HttpClientRequest.post(target.url).pipe(
+      HttpClientRequest.bodyText("{}", "application/json"),
+    );
+    const req =
+      target.hostHeader === undefined
+        ? baseReq
+        : HttpClientRequest.setHeader(baseReq, "host", target.hostHeader);
+    return yield* client.execute(req).pipe(
+      Effect.map(
+        (response) =>
+          response.status === 400 ||
+          response.status === 422 ||
+          (response.status >= 200 && response.status < 300),
+      ),
+      Effect.timeoutOption(PROBE_TIMEOUT),
+      Effect.map((result) => Option.getOrElse(result, () => false)),
+      Effect.orElseSucceed(() => false),
+    );
   });
 
-  const probe = Effect.fnUntraced(function* (candidate: Candidate) {
-    const listed = yield* get(`${candidate.base}/models`);
+  const probe = Effect.fnUntraced(function* (
+    candidate: Candidate,
+    resolvedHosts: ReadonlyMap<string, string | undefined>,
+  ) {
+    const candidateHost = hostnameOfUrl(candidate.base);
+    const resolvedIp = candidateHost === undefined ? undefined : resolvedHosts.get(candidateHost);
+    if (resolvedIp === undefined) return undefined;
+    const listed = yield* get(`${candidate.base}/models`, resolvedIp);
     if (listed === undefined) return undefined;
     const common = {
       baseUrl: candidate.base,
@@ -347,11 +505,13 @@ export const make = Effect.gen(function* () {
         Effect.forEach(
           PROTOCOL_PATHS.filter(([protocol]) => AGENT_PROTOCOLS.includes(protocol)),
           ([protocol, path]) =>
-            served(`${candidate.base}/${path}`).pipe(Effect.map((ok) => (ok ? [protocol] : []))),
+            served(`${candidate.base}/${path}`, resolvedIp).pipe(
+              Effect.map((ok) => (ok ? [protocol] : [])),
+            ),
           { concurrency: "unbounded" },
         ).pipe(Effect.map((found) => found.flat())),
         list.engine === undefined && "origin" in origin
-          ? get(`${origin.origin}/health`)
+          ? get(`${origin.origin}/health`, resolvedIp)
           : Effect.undefined,
       ],
       { concurrency: "unbounded" },
@@ -386,8 +546,12 @@ export const make = Effect.gen(function* () {
           ([id, config]) => [id as InferenceServerId, config.baseUrl] as const,
         )
       : [];
+    const targetHost = input.host === undefined ? undefined : parseBareHost(input.host);
+    if (input.host !== undefined && targetHost === undefined) {
+      return { servers: [], searchedListeningPorts: false };
+    }
     const hostname = NodeOS.hostname();
-    const searchesThisMachine = input.host === undefined || isThisMachine(input.host, hostname);
+    const searchesThisMachine = targetHost === undefined || isThisMachine(targetHost, hostname);
     const listeners = searchesThisMachine
       ? yield* listeningPorts
       : { searched: false, ports: [] as ReadonlyArray<number> };
@@ -398,12 +562,24 @@ export const make = Effect.gen(function* () {
       listeningPorts: listeners.ports,
       hostname,
     });
+    const uniqueHosts = new Set<string>();
+    for (const candidate of candidates) {
+      const host = hostnameOfUrl(candidate.base);
+      if (host !== undefined) uniqueHosts.add(host);
+    }
+    const resolvedHosts = new Map<string, string | undefined>(
+      yield* Effect.forEach(
+        [...uniqueHosts],
+        (host) => resolveAllowedProbeHost(host).pipe(Effect.map((ip) => [host, ip] as const)),
+        { concurrency: 8 },
+      ),
+    );
     const found = yield* Ref.make<ReadonlyArray<InferenceDiscoveredServer>>([]);
     // A slow host cannot hold the answer back; whatever answered by the deadline is shown.
     yield* Effect.forEach(
       candidates,
       (candidate) =>
-        probe(candidate).pipe(
+        probe(candidate, resolvedHosts).pipe(
           Effect.flatMap((server) =>
             server === undefined ? Effect.void : Ref.update(found, (all) => [...all, server]),
           ),

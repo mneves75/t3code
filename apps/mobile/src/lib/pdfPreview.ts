@@ -10,6 +10,20 @@ export function isPdfPreviewUri(uri: string): boolean {
   }
 }
 
+export function isAllowedLinkedPdfUri(nextUri: string, baseUri: string): boolean {
+  if (!isPdfPreviewUri(nextUri)) return false;
+  try {
+    const base = new URL(baseUri);
+    const next = new URL(nextUri);
+    if (base.protocol !== "http:" && base.protocol !== "https:") return false;
+    if (next.origin !== base.origin) return false;
+    const assetPrefix = /^\/api\/assets\/[^/]+\//.exec(base.pathname)?.[0];
+    return assetPrefix !== undefined && next.pathname.startsWith(assetPrefix);
+  } catch {
+    return false;
+  }
+}
+
 export function pdfInitialPage(uri: string): number {
   const page = Number(new URLSearchParams(uri.split("#", 2)[1]).get("page"));
   return Number.isSafeInteger(page) && page > 0 ? page : 1;

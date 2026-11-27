@@ -10,6 +10,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as Base64 from "effect/encoding/Base64";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
@@ -320,39 +321,121 @@ export const layer = Layer.effect(AccountDeletion, make);
 
 // Svix, which signs Clerk webhooks, rejects timestamps more than five minutes off.
 const SVIX_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60;
+export const CLERK_WEBHOOK_MAX_BODY_BYTES = 256 * 1_024;
+const SVIX_MAX_ID_LENGTH = 256;
+const SVIX_MAX_SIGNATURE_HEADER_LENGTH = 2_048;
+const SVIX_MAX_SIGNATURES = 8;
+const HMAC_SHA256_BYTES = 32;
 
-/** Verifies Svix's `v1` HMAC-SHA256 signature over `<id>.<timestamp>.<body>`. */
-const verifyClerkSignature = Effect.fn("relay.account_deletion.verify_clerk_signature")(
-  function* (
-    signingSecret: Redacted.Redacted<string>,
-    headers: HttpServerRequest.HttpServerRequest["headers"],
-    body: string,
+interface ParsedSvixHeaders {
+  readonly id: string;
+  readonly timestamp: string;
+  readonly tags: ReadonlyArray<Uint8Array>;
+}
+
+const parseSvixHeaders = Effect.fn("relay.account_deletion.parse_svix_headers")(function* (
+  headers: HttpServerRequest.HttpServerRequest["headers"],
+): Effect.fn.Return<ParsedSvixHeaders | null> {
+  const id = headers["svix-id"];
+  const timestamp = headers["svix-timestamp"];
+  const signatures = headers["svix-signature"];
+  if (
+    !id ||
+    !timestamp ||
+    !signatures ||
+    id.length > SVIX_MAX_ID_LENGTH ||
+    /[\s\r\n]/.test(id) ||
+    signatures.length > SVIX_MAX_SIGNATURE_HEADER_LENGTH ||
+    !/^\d{1,16}$/.test(timestamp)
   ) {
-    const id = headers["svix-id"];
-    const timestamp = headers["svix-timestamp"];
-    const signatures = headers["svix-signature"];
-    if (!id || !timestamp || !signatures) return false;
-    const signedAtSeconds = Number(timestamp);
-    const nowSeconds = (yield* Clock.currentTimeMillis) / 1_000;
-    if (
-      !Number.isInteger(signedAtSeconds) ||
-      Math.abs(nowSeconds - signedAtSeconds) > SVIX_TIMESTAMP_TOLERANCE_SECONDS
-    ) {
-      return false;
+    return null;
+  }
+  const signedAtSeconds = Number(timestamp);
+  const nowSeconds = (yield* Clock.currentTimeMillis) / 1_000;
+  if (
+    !Number.isSafeInteger(signedAtSeconds) ||
+    Math.abs(nowSeconds - signedAtSeconds) > SVIX_TIMESTAMP_TOLERANCE_SECONDS
+  ) {
+    return null;
+  }
+  const entries = signatures.split(" ");
+  if (entries.length === 0 || entries.length > SVIX_MAX_SIGNATURES) {
+    return null;
+  }
+  const tags: Array<Uint8Array> = [];
+  for (const entry of entries) {
+    const [version, encoded, extra] = entry.split(",");
+    if (version !== "v1" || !encoded || extra !== undefined) continue;
+    const tag = Base64.decode(encoded);
+    if (Result.isSuccess(tag) && tag.success.byteLength === HMAC_SHA256_BYTES) {
+      tags.push(tag.success);
     }
+  }
+  return tags.length > 0 ? { id, timestamp, tags } : null;
+});
+
+class ClerkWebhookBodyTooLarge extends Schema.TaggedError<ClerkWebhookBodyTooLarge>()(
+  "ClerkWebhookBodyTooLarge",
+  {},
+) {}
+
+class ClerkWebhookBodyInvalid extends Schema.TaggedError<ClerkWebhookBodyInvalid>()(
+  "ClerkWebhookBodyInvalid",
+  { cause: Schema.Defect() },
+) {}
+
+const hasNoBody = (request: HttpServerRequest.HttpServerRequest) =>
+  request.source instanceof Request && request.source.body === null;
+
+const readCappedText = (request: HttpServerRequest.HttpServerRequest, maxBytes: number) =>
+  Effect.suspend(() => {
+    if (hasNoBody(request)) {
+      return Effect.succeed("");
+    }
+    const chunks: Array<Uint8Array> = [];
+    let total = 0;
+    return request.stream.pipe(
+      Stream.runForEach((chunk) => {
+        total += chunk.byteLength;
+        if (total > maxBytes) {
+          return Effect.fail(new ClerkWebhookBodyTooLarge());
+        }
+        chunks.push(chunk);
+        return Effect.void;
+      }),
+      Effect.flatMap(() =>
+        Effect.try({
+          try: () => {
+            const bytes = new Uint8Array(total);
+            let offset = 0;
+            for (const chunk of chunks) {
+              bytes.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+            return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+          },
+          catch: (cause) => new ClerkWebhookBodyInvalid({ cause }),
+        }),
+      ),
+    );
+  });
+
+/** Verifies Svix's `v1` HMAC-SHA256 signature over `<id>.<timestamp>.<body>` with one MAC pass. */
+const verifyClerkSignature = Effect.fn("relay.account_deletion.verify_clerk_signature")(
+  function* (signingSecret: Redacted.Redacted<string>, svix: ParsedSvixHeaders, body: string) {
     const keyBytes = Base64.decode(Redacted.value(signingSecret).replace(/^whsec_/, ""));
     if (Result.isFailure(keyBytes)) return false;
     const mac = yield* Mac.Mac;
     const key = yield* Mac.key(Mac.hmacSha256, keyBytes.success);
-    const signed = new TextEncoder().encode(`${id}.${timestamp}.${body}`);
-    // The header lists space-separated `<version>,<base64 tag>` entries, one per active secret.
-    for (const entry of signatures.split(" ")) {
-      const [version, encoded] = entry.split(",");
-      if (version !== "v1" || encoded === undefined) continue;
-      const tag = Base64.decode(encoded);
-      if (Result.isSuccess(tag) && (yield* mac.verify(key, tag.success, signed))) return true;
+    const expected = yield* mac.sign(
+      key,
+      new TextEncoder().encode(`${svix.id}.${svix.timestamp}.${body}`),
+    );
+    let matched = false;
+    for (const tag of svix.tags) {
+      if (Mac.timingSafeEqual(expected, tag)) matched = true;
     }
-    return false;
+    return matched;
   },
   Effect.orElseSucceed(() => false),
 );
@@ -372,11 +455,25 @@ export const handleClerkWebhook = Effect.fn("relay.account_deletion.clerk_webhoo
   if (signingSecret === undefined) {
     return HttpServerResponse.empty({ status: 404 });
   }
-  const body = yield* request.text.pipe(Effect.orElseSucceed(() => null));
-  if (body === null) {
-    return HttpServerResponse.empty({ status: 400 });
+  const svix = yield* parseSvixHeaders(request.headers);
+  if (svix === null) {
+    yield* Effect.annotateCurrentSpan({ "relay.clerk_webhook.rejected": true });
+    return HttpServerResponse.empty({ status: 401 });
   }
-  if (!(yield* verifyClerkSignature(signingSecret, request.headers, body))) {
+  const declaredLength = Number(request.headers["content-length"] ?? "0");
+  if (Number.isFinite(declaredLength) && declaredLength > CLERK_WEBHOOK_MAX_BODY_BYTES) {
+    return HttpServerResponse.empty({ status: 413 });
+  }
+  const bodyResult = yield* readCappedText(request, CLERK_WEBHOOK_MAX_BODY_BYTES).pipe(
+    Effect.result,
+  );
+  if (Result.isFailure(bodyResult)) {
+    return HttpServerResponse.empty({
+      status: bodyResult.failure._tag === "ClerkWebhookBodyTooLarge" ? 413 : 400,
+    });
+  }
+  const body = bodyResult.success;
+  if (!(yield* verifyClerkSignature(signingSecret, svix, body))) {
     yield* Effect.annotateCurrentSpan({ "relay.clerk_webhook.rejected": true });
     return HttpServerResponse.empty({ status: 401 });
   }

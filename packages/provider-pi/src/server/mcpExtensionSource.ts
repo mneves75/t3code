@@ -13,6 +13,7 @@ export const PI_T3_MCP_EXTENSION_FILENAME = "pi-t3-mcp-extension.ts";
 export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
+export const T3_PI_EXTRA_ROOTS_ENV = "T3_PI_EXTRA_ROOTS";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
 export const T3_PI_TOOL_PROFILE_ENV = "T3_PI_TOOL_PROFILE";
 export const PI_T3_SERVICE_TIER_COMMAND = "t3-service-tier";
@@ -23,6 +24,7 @@ export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 export const PI_T3_MCP_EXTENSION_SOURCE = `\
 import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import { Type } from "typebox";
@@ -30,6 +32,7 @@ import { Type } from "typebox";
 const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
+const EXTRA_ROOTS_ENV = ${JSON.stringify(T3_PI_EXTRA_ROOTS_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const TOOL_PROFILE_ENV = ${JSON.stringify(T3_PI_TOOL_PROFILE_ENV)};
 const LEAN_TOOLS = new Set(${JSON.stringify(LEAN_MCP_TOOL_NAMES)});
@@ -71,7 +74,108 @@ function runtimeMode(): RuntimeMode {
     value === "auto" ||
     value === "full-access"
     ? value
-    : "full-access";
+    : "approval-required";
+}
+
+function checkableFilePath(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.trim().length === 0 || value.includes("\\0")) {
+    return undefined;
+  }
+  if (NodePath.isAbsolute(value)) return value;
+  if (value.startsWith("~") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) return undefined;
+  if (NodePath.sep === "/" && value.includes("\\\\")) return undefined;
+  return value;
+}
+
+function extractFileChangePath(input: unknown): string | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined;
+  const record = input as Record<string, unknown>;
+  let found: string | undefined;
+  for (const key of ["path", "file_path", "filePath"]) {
+    const value = record[key];
+    if (value === undefined || value === null) continue;
+    const checked = checkableFilePath(value);
+    if (checked === undefined || (found !== undefined && found !== checked)) return undefined;
+    found = checked;
+  }
+  return found;
+}
+
+function resolveContainmentPath(targetPath: string, cwd: string): string {
+  if (NodePath.isAbsolute(targetPath)) return targetPath;
+  return cwd + (cwd.endsWith(NodePath.sep) ? "" : NodePath.sep) + targetPath;
+}
+
+// Canonicalize existing ancestors via realpathSync.native; fail closed on dangling symlinks and I/O errors.
+function canonicalPathForContainment(targetPath: string): string | undefined {
+  let candidate = targetPath;
+  const missingSuffix: string[] = [];
+
+  while (true) {
+    try {
+      return NodePath.resolve(NodeFS.realpathSync.native(candidate), ...missingSuffix);
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
+        return undefined;
+      }
+    }
+
+    try {
+      NodeFS.lstatSync(candidate);
+      return undefined;
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
+        return undefined;
+      }
+    }
+
+    const parent = NodePath.dirname(candidate);
+    if (parent === candidate) return undefined;
+    missingSuffix.unshift(NodePath.basename(candidate));
+    candidate = parent;
+  }
+}
+
+function allowedExtraRoots(): string[] {
+  const raw = env(EXTRA_ROOTS_ENV);
+  if (raw === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((entry): entry is string => checkableFilePath(entry) !== undefined)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function pathIsWithinAllowedRoot(canonicalPath: string, canonicalRoot: string): boolean {
+  const relative = NodePath.relative(canonicalRoot, canonicalPath);
+  if (
+    relative === "" ||
+    relative === ".." ||
+    relative.startsWith(".." + NodePath.sep) ||
+    NodePath.isAbsolute(relative)
+  ) {
+    return false;
+  }
+  return !relative.split(/[\\\\/]+/).some((segment) => segment.toLowerCase() === ".git");
+}
+
+function canAutoAcceptFileChange(input: unknown, cwd: unknown): boolean {
+  const checkedCwd = checkableFilePath(cwd);
+  const rawTarget = extractFileChangePath(input);
+  if (checkedCwd === undefined || rawTarget === undefined) return false;
+  const canonicalCwd = canonicalPathForContainment(checkedCwd);
+  if (canonicalCwd === undefined) return false;
+  const roots = [canonicalCwd];
+  for (const extraRoot of allowedExtraRoots()) {
+    const canonicalRoot = canonicalPathForContainment(resolveContainmentPath(extraRoot, checkedCwd));
+    if (canonicalRoot !== undefined) roots.push(canonicalRoot);
+  }
+  const canonicalTarget = canonicalPathForContainment(resolveContainmentPath(rawTarget, checkedCwd));
+  if (canonicalTarget === undefined) return false;
+  return roots.some((root) => pathIsWithinAllowedRoot(canonicalTarget, root));
 }
 
 // T3 keys "Always allow this session" on this text, so a cut summary ends with the
@@ -386,7 +490,11 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     if ((event.toolName === "tool_search" ? hasBuiltinToolSearch() : READ_ONLY_TOOLS.has(event.toolName)) || isReadOnlyMcpTool(event.toolName)) {
       return;
     }
-    if (mode === "auto-accept-edits" && FILE_CHANGE_TOOLS.has(event.toolName)) {
+    if (
+      mode === "auto-accept-edits" &&
+      FILE_CHANGE_TOOLS.has(event.toolName) &&
+      canAutoAcceptFileChange(event.input, ctx.cwd)
+    ) {
       return;
     }
     const approved = await ctx.ui.confirm(

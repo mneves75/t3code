@@ -53,7 +53,7 @@ import {
   makeRestoreMissingWorktree,
   ThreadWorktreeRestore,
 } from "../workspace/restoreMissingWorktree.ts";
-import type * as TaskFolders from "../workspace/TaskFolders.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
@@ -969,7 +969,18 @@ export const layer: Layer.Layer<
           return;
         }
       }
-      const recreateResult = yield* Effect.result(restoreMissingWorktree(projection.thread));
+      const maxRuntimeMode = serverSettings.managedPolicy?.limits?.maxRuntimeMode;
+      const projectCommands =
+        providerMessage.createdBy === "agent" || projection.thread.createdBy === "agent"
+          ? TaskFolders.projectCommandsForAgent(
+              projection.thread.linkOrigin,
+              projection.thread,
+              maxRuntimeMode,
+            )
+          : TaskFolders.projectCommandsForLink(projection.thread.linkOrigin);
+      const recreateResult = yield* Effect.result(
+        restoreMissingWorktree(projection.thread, { projectCommands }),
+      );
       if (recreateResult._tag === "Failure") {
         if (input.willRetry === true) return yield* recreateResult.failure;
         yield* settleStartFailure({
@@ -986,7 +997,7 @@ export const layer: Layer.Layer<
         (recreatedBeforeDispatch?.worktreePath === projection.thread.worktreePath
           ? recreatedBeforeDispatch
           : undefined);
-      if (recreated !== undefined) {
+      if (recreated !== undefined && projectCommands === "permitted") {
         const { project, worktreePath } = recreated;
         // Opening the setup terminal takes its own workspace lease.
         return {

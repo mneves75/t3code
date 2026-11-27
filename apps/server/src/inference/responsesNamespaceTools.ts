@@ -124,6 +124,8 @@ function restoreEvent(names: NamespaceNames, event: unknown): unknown {
 
 const EMPTY = new Uint8Array(0);
 const DATA_PREFIX = /^data: ?/;
+const MAX_STREAMING_LINE_BYTES = 16 * 1024 * 1024;
+const MAX_NON_STREAMING_BODY_BYTES = 16 * 1024 * 1024;
 
 export interface ResponseRestorer {
   readonly push: (chunk: Uint8Array) => Uint8Array;
@@ -133,12 +135,28 @@ export interface ResponseRestorer {
 
 /**
  * Rewrites only SSE `data:` lines that mention a flattened namespace and passes every other byte
- * through. A line split across chunks is held until its newline arrives.
+ * through. A line split across chunks is held until its newline arrives, up to the line/body cap.
  */
 export function makeResponseRestorer(names: NamespaceNames, streaming: boolean): ResponseRestorer {
   const markers = [...new Set([...names.values()].map(({ namespace }) => namespace + SEPARATOR))];
   const mentions = (bytes: Buffer) => markers.some((marker) => bytes.includes(marker));
-  let pending: Buffer = Buffer.alloc(0);
+  let pendingChunks: Array<Buffer> = [];
+  let pendingBytes = 0;
+
+  const takePending = (): Buffer => {
+    if (pendingBytes === 0) return Buffer.alloc(0);
+    const combined =
+      pendingChunks.length === 1 ? pendingChunks[0]! : Buffer.concat(pendingChunks, pendingBytes);
+    pendingChunks = [];
+    pendingBytes = 0;
+    return combined;
+  };
+
+  const appendPending = (seg: Buffer) => {
+    if (seg.length === 0) return;
+    pendingChunks.push(Buffer.from(seg));
+    pendingBytes += seg.length;
+  };
 
   const rewriteJson = (text: string): string | undefined => {
     try {
@@ -148,45 +166,64 @@ export function makeResponseRestorer(names: NamespaceNames, streaming: boolean):
     }
   };
 
-  const rewriteLines = (block: Buffer): Uint8Array => {
-    if (!mentions(block)) return block;
-    const parts: Array<Buffer> = [];
-    let offset = 0;
-    while (offset < block.length) {
-      const newline = block.indexOf(10, offset);
-      const end = newline === -1 ? block.length : newline + 1;
-      const line = block.subarray(offset, end);
-      offset = end;
-      const text = line.toString("utf8");
-      const prefix = DATA_PREFIX.exec(text)?.[0];
-      if (prefix === undefined || !mentions(line)) {
-        parts.push(line);
-        continue;
-      }
-      const tail = /\r?\n?$/.exec(text)![0];
-      const json = rewriteJson(text.slice(prefix.length, text.length - tail.length));
-      parts.push(json === undefined ? line : Buffer.from(`${prefix}${json}${tail}`, "utf8"));
+  const rewriteLine = (line: Buffer): Buffer => {
+    if (!mentions(line)) return line;
+    const text = line.toString("utf8");
+    const prefix = DATA_PREFIX.exec(text)?.[0];
+    if (prefix === undefined) return line;
+    const tail = /\r?\n?$/.exec(text)![0];
+    const json = rewriteJson(text.slice(prefix.length, text.length - tail.length));
+    return json === undefined ? line : Buffer.from(`${prefix}${json}${tail}`, "utf8");
+  };
+
+  const pushNonStreaming = (bytes: Buffer): Uint8Array => {
+    if (pendingBytes + bytes.length > MAX_NON_STREAMING_BODY_BYTES) {
+      pendingChunks = [];
+      pendingBytes = 0;
+      throw new RangeError("Inference response body exceeded namespace restorer limit.");
     }
-    return Buffer.concat(parts);
+    appendPending(bytes);
+    return EMPTY;
+  };
+
+  const pushStreaming = (bytes: Buffer): Uint8Array => {
+    const out: Array<Buffer> = [];
+    let offset = 0;
+    while (offset < bytes.length) {
+      const newline = bytes.indexOf(10, offset);
+      if (newline === -1) {
+        const tail = bytes.subarray(offset);
+        if (pendingBytes + tail.length > MAX_STREAMING_LINE_BYTES) {
+          pendingChunks = [];
+          pendingBytes = 0;
+          throw new RangeError("Inference SSE event line exceeded namespace restorer limit.");
+        }
+        appendPending(tail);
+        break;
+      }
+      const segment = bytes.subarray(offset, newline + 1);
+      offset = newline + 1;
+      if (pendingBytes + segment.length > MAX_STREAMING_LINE_BYTES) {
+        pendingChunks = [];
+        pendingBytes = 0;
+        throw new RangeError("Inference SSE event line exceeded namespace restorer limit.");
+      }
+      const line = pendingBytes === 0 ? segment : Buffer.concat([takePending(), segment]);
+      out.push(rewriteLine(line));
+    }
+    if (out.length === 0) return EMPTY;
+    return out.length === 1 ? out[0]! : Buffer.concat(out);
   };
 
   const push = (chunk: Uint8Array): Uint8Array => {
     const bytes = Buffer.from(chunk.buffer, chunk.byteOffset, chunk.byteLength);
-    const data = pending.length === 0 ? bytes : Buffer.concat([pending, bytes]);
-    if (!streaming) {
-      pending = Buffer.from(data);
-      return EMPTY;
-    }
-    const end = data.lastIndexOf(10);
-    pending = Buffer.from(data.subarray(end + 1));
-    return end === -1 ? EMPTY : rewriteLines(data.subarray(0, end + 1));
+    return streaming ? pushStreaming(bytes) : pushNonStreaming(bytes);
   };
 
   const flush = (): Uint8Array => {
-    const rest = pending;
-    pending = Buffer.alloc(0);
+    const rest = takePending();
     if (rest.length === 0) return EMPTY;
-    if (streaming) return rewriteLines(rest);
+    if (streaming) return rewriteLine(rest);
     if (!mentions(rest)) return rest;
     const json = rewriteJson(rest.toString("utf8"));
     return json === undefined ? rest : Buffer.from(json, "utf8");

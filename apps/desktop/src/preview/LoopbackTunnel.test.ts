@@ -356,27 +356,56 @@ it.effect.each([
     }),
 );
 
-it.effect("serves a SOCKS client on Windows without looking up its owner", () =>
+const OWN_WINDOWS_SID = "S-1-5-21-100-200-300-1001";
+const OTHER_WINDOWS_SID = "S-1-5-21-100-200-300-1002";
+
+it.effect.each([
+  { client: "own", output: `${OWN_WINDOWS_SID}\t${OWN_WINDOWS_SID}\r\n`, served: true },
+  {
+    client: "another user's",
+    output: `${OWN_WINDOWS_SID}\t${OTHER_WINDOWS_SID}\r\n`,
+    served: false,
+  },
+  { client: "lookup failure", output: "", served: false },
+] as const)(
+  "serves a SOCKS client on Windows only when its owning SID matches this user: $client",
+  ({ output, served }) =>
+    Effect.gen(function* () {
+      const decoy = yield* listenDecoy;
+      const endpoint = yield* listenEndpoint;
+      const commands: Array<string> = [];
+      const proxyPort = yield* routeThroughTunnel(
+        `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
+        Layer.mergeAll(
+          Layer.succeed(HostProcess.Platform, "win32"),
+          Layer.succeed(HostProcess.UserId, undefined),
+          Layer.succeed(HostProcess.Environment, { SystemRoot: "C:\\Windows" }),
+          systemTools((command) => {
+            commands.push(command);
+            return output;
+          }),
+        ),
+      );
+      const { reply } = yield* socksConnect(proxyPort, "localhost", addressPort(decoy.server));
+      expect(reply[1] === 0).toBe(served);
+      expect(endpoint.requests.length).toBe(served ? 1 : 0);
+      expect(decoy.connections()).toBe(0);
+      expect(commands).toEqual(["C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"]);
+    }),
+);
+
+it.effect("refuses a SOCKS client on an unknown platform", () =>
   Effect.gen(function* () {
     const decoy = yield* listenDecoy;
     const endpoint = yield* listenEndpoint;
-    const commands: Array<string> = [];
     const proxyPort = yield* routeThroughTunnel(
       `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
-      Layer.mergeAll(
-        Layer.succeed(HostProcess.Platform, "win32"),
-        Layer.succeed(HostProcess.UserId, undefined),
-        systemTools((command) => {
-          commands.push(command);
-          return "";
-        }),
-      ),
+      Layer.succeed(HostProcess.Platform, "freebsd"),
     );
     const { reply } = yield* socksConnect(proxyPort, "localhost", addressPort(decoy.server));
-    expect(reply[1]).toBe(0);
-    expect(endpoint.requests.length).toBe(1);
+    expect(reply[1]).not.toBe(0);
+    expect(endpoint.requests).toEqual([]);
     expect(decoy.connections()).toBe(0);
-    expect(commands).toEqual([]);
   }),
 );
 

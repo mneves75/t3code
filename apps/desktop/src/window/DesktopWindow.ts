@@ -302,6 +302,53 @@ export function isSameOriginRendererNavigation(input: {
   }
 }
 
+const MAIN_FRAME_ALLOWED_PERMISSIONS = new Set([
+  "clipboard-read",
+  "clipboard-sanitized-write",
+  "fullscreen",
+  "local-fonts",
+  "local-network",
+  "local-network-access",
+  "loopback-network",
+  "media",
+  "notifications",
+]);
+const SUBFRAME_ALLOWED_PERMISSIONS = new Set(["fullscreen"]);
+
+function isTrustedApplicationOrigin(applicationUrl: string, rawUrl: string | undefined): boolean {
+  return (
+    typeof rawUrl === "string" &&
+    rawUrl.length > 0 &&
+    isSameOriginRendererNavigation({ applicationUrl, navigationUrl: rawUrl })
+  );
+}
+
+function isMainWindowPermissionAllowed(input: {
+  readonly applicationUrl: string;
+  readonly isTargetWebContents: boolean;
+  readonly permission: string;
+  readonly isMainFrame: boolean;
+  readonly requestingUrl: string | undefined;
+  readonly origins: ReadonlyArray<string | undefined>;
+}): boolean {
+  if (!input.isTargetWebContents) return false;
+  if (!input.isMainFrame) {
+    return SUBFRAME_ALLOWED_PERMISSIONS.has(input.permission);
+  }
+  if (!MAIN_FRAME_ALLOWED_PERMISSIONS.has(input.permission)) return false;
+  if (!isTrustedApplicationOrigin(input.applicationUrl, input.requestingUrl)) return false;
+  for (const origin of input.origins) {
+    if (
+      origin !== undefined &&
+      origin.length > 0 &&
+      !isTrustedApplicationOrigin(input.applicationUrl, origin)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function isRetryableDevelopmentRendererLoadFailure(input: {
   readonly applicationUrl: string;
   readonly errorCode: number;
@@ -794,10 +841,33 @@ export const make = Effect.gen(function* () {
       }
       return { action: "deny" };
     });
-    // Chromium asks this before handing a navigation to an OS protocol handler, and grants it
-    // when nothing answers. External links are opened through ElectronShell only.
-    window.webContents.session.setPermissionRequestHandler((_contents, permission, callback) =>
-      callback(permission !== "openExternal"),
+    // Chromium grants permissions by default when nothing answers, including handing navigations
+    // to OS protocol handlers. Gate both request and check handlers to explicit allowlists.
+    window.webContents.session.setPermissionRequestHandler(
+      (contents, permission, callback, details) => {
+        const securityOrigin = "securityOrigin" in details ? details.securityOrigin : undefined;
+        callback(
+          isMainWindowPermissionAllowed({
+            applicationUrl,
+            isTargetWebContents: contents === window.webContents,
+            permission,
+            isMainFrame: details.isMainFrame,
+            requestingUrl: details.requestingUrl,
+            origins: [securityOrigin],
+          }),
+        );
+      },
+    );
+    window.webContents.session.setPermissionCheckHandler(
+      (contents, permission, requestingOrigin, details) =>
+        isMainWindowPermissionAllowed({
+          applicationUrl,
+          isTargetWebContents: contents === window.webContents,
+          permission,
+          isMainFrame: details.isMainFrame === true,
+          requestingUrl: details.requestingUrl || requestingOrigin,
+          origins: [requestingOrigin, details.securityOrigin],
+        }),
     );
     window.webContents.on("will-navigate", (event, url) => {
       if (

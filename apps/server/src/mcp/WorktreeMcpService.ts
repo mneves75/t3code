@@ -28,6 +28,7 @@ import * as ThreadManagementService from "../orchestration-v2/ThreadManagementSe
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsStatusBroadcaster from "../vcs/VcsStatusBroadcaster.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import type { McpInvocationScope, McpThreadInvocationScope } from "./McpInvocationContext.ts";
@@ -190,6 +191,12 @@ const make = Effect.gen(function* () {
       // A thread that cannot be read might be below Full access.
       Effect.orElseSucceed((): TaskFolders.ProjectCommands => "agent-below-full-access"),
     );
+    const withProjectHooks = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Effect.flatMap(projectCommandsNow, (commands) =>
+        commands === "permitted"
+          ? effect
+          : Effect.provideService(effect, GitVcsDriver.RepositoryHooks, { _tag: "none" }),
+      );
 
     // A project that tracks repositories moves into a task folder: its own folder, which need
     // not be a repository, and a worktree of each tracked one.
@@ -279,15 +286,15 @@ const make = Effect.gen(function* () {
               GitCommandError | TaskFolderError
             > =>
               taskPlan === null
-                ? gitWorkflow
-                    .createWorktree({
+                ? withProjectHooks(
+                    gitWorkflow.createWorktree({
                       cwd: projectCwd,
                       refName: worktreeBaseRef,
                       newRefName: input.branch,
                       baseRefName,
                       path: null,
-                    })
-                    .pipe(Effect.map((created) => ({ ...created.worktree, taskFolder: null })))
+                    }),
+                  ).pipe(Effect.map((created) => ({ ...created.worktree, taskFolder: null })))
                 : taskFolders
                     .create({
                       plan: taskPlan,
@@ -328,19 +335,21 @@ const make = Effect.gen(function* () {
         const removeCreatedWorktree = Effect.suspend(
           (): Effect.Effect<unknown, GitCommandError | TaskFolderError> =>
             createdTaskFolder === null
-              ? gitWorkflow
-                  .removeWorktree({ cwd: projectCwd, path: worktreePath, force: true })
-                  .pipe(
-                    Effect.andThen(
-                      Effect.suspend(() =>
-                        gitWorkflow.deleteLocalBranch({
-                          cwd: projectCwd,
-                          refName: worktree.refName,
-                          force: true,
-                        }),
+              ? withProjectHooks(
+                  gitWorkflow
+                    .removeWorktree({ cwd: projectCwd, path: worktreePath, force: true })
+                    .pipe(
+                      Effect.andThen(
+                        Effect.suspend(() =>
+                          gitWorkflow.deleteLocalBranch({
+                            cwd: projectCwd,
+                            refName: worktree.refName,
+                            force: true,
+                          }),
+                        ),
                       ),
                     ),
-                  )
+                )
               : taskFolders.remove({
                   root: createdTaskFolder,
                   force: true,

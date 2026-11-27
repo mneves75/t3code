@@ -274,4 +274,56 @@ describe("Training MCP Toolkit", () => {
         expect(getRes).toEqual({ job: sampleJob });
       }),
   );
+
+  it.effect(
+    "blocks mutating and extracting training tools when managed policy lowers runtimeModeCeiling below full-access",
+    () =>
+      Effect.gen(function* () {
+        const layer = handlersWith(
+          {
+            previewDataset: () => Effect.die("should not run"),
+            createDataset: () => Effect.die("should not run"),
+            startJob: () => Effect.die("should not run"),
+            cancelJob: () => Effect.die("should not run"),
+            runEval: () => Effect.die("should not run"),
+            getJob: () => Effect.succeed({ job: sampleJob }),
+          },
+          {
+            runtimeModeCeiling: "auto",
+            client: {
+              ...fullAccess,
+              narrowedTo: { runtimeMode: "auto", interactionMode: "default" },
+            },
+          },
+        );
+
+        const [previewRes, createRes, startRes, cancelRes, evalRes, getRes] = yield* Effect.all([
+          invokeTool("training_preview_dataset", {
+            objective: "sft",
+            filter: sampleFilter,
+            redactionOptions: sampleRedaction,
+          }),
+          invokeTool("training_create_dataset", {
+            name: "Ceiling Blocked DS",
+            objective: "sft",
+            filter: sampleFilter,
+            redactionOptions: sampleRedaction,
+          }),
+          invokeTool("training_start_job", { config: sampleJobConfig }),
+          invokeTool("training_cancel_job", { jobId: TrainingJobId.make("job-1") }),
+          invokeTool("training_run_eval", {
+            artifactId: TrainingArtifactId.make("art-1"),
+            suite: "heldout_perplexity",
+          }),
+          invokeTool("training_get_job", { jobId: TrainingJobId.make("job-1") }),
+        ]).pipe(Effect.provide(layer));
+
+        expect(previewRes).toMatchObject({ code: "capability_denied" });
+        expect(createRes).toMatchObject({ code: "capability_denied" });
+        expect(startRes).toMatchObject({ code: "capability_denied" });
+        expect(cancelRes).toMatchObject({ code: "capability_denied" });
+        expect(evalRes).toMatchObject({ code: "capability_denied" });
+        expect(getRes).toEqual({ job: sampleJob });
+      }),
+  );
 });

@@ -52,7 +52,7 @@ import {
 
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { parseGitCloneProgressLine } from "../project/gitCloneProgress.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -880,10 +880,16 @@ const make = Effect.gen(function* () {
               ok ? undefined : (detail ?? "submodule checkout failed"),
             ),
         };
+        const withProjectHooks = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          Effect.flatMap(projectCommandsNow, (commands) =>
+            commands === "permitted"
+              ? effect
+              : Effect.provideService(effect, GitVcsDriver.RepositoryHooks, { _tag: "none" }),
+          );
         const worktree =
           taskPlan === null
-            ? (yield* git
-                .createWorktree(
+            ? (yield* withProjectHooks(
+                git.createWorktree(
                   {
                     cwd: project.workspaceRoot,
                     refName: startRef,
@@ -892,23 +898,23 @@ const make = Effect.gen(function* () {
                     path: null,
                   },
                   { progress },
-                )
-                .pipe(
-                  Effect.catchIf(
-                    (error) => error.reason === "ref_not_found",
-                    (cause) =>
-                      Effect.fail(
-                        new ThreadLaunchBaseRefError({
-                          projectId: project.id,
-                          projectTitle: project.title,
-                          workspaceRoot: project.workspaceRoot,
-                          baseRef: requestedBaseRef,
-                          cause,
-                        }),
-                      ),
-                  ),
-                  Effect.mapError(mapError(input, "provision-worktree", threadId)),
-                )).worktree
+                ),
+              ).pipe(
+                Effect.catchIf(
+                  (error) => error.reason === "ref_not_found",
+                  (cause) =>
+                    Effect.fail(
+                      new ThreadLaunchBaseRefError({
+                        projectId: project.id,
+                        projectTitle: project.title,
+                        workspaceRoot: project.workspaceRoot,
+                        baseRef: requestedBaseRef,
+                        cause,
+                      }),
+                    ),
+                ),
+                Effect.mapError(mapError(input, "provision-worktree", threadId)),
+              )).worktree
             : yield* taskFolders
                 .create({
                   plan: taskPlan,
@@ -1227,25 +1233,32 @@ const make = Effect.gen(function* () {
             const remove = Effect.suspend(
               (): Effect.Effect<void, GitCommandError | TaskFolderError> =>
                 removedTaskFolder === null
-                  ? git
-                      .removeWorktree({
-                        cwd: project.workspaceRoot,
-                        path: removedPath,
-                        force: true,
-                      })
-                      .pipe(
-                        Effect.andThen(
-                          removedBranch === null
-                            ? Effect.void
-                            : git
-                                .deleteLocalBranch({
-                                  cwd: project.workspaceRoot,
-                                  refName: removedBranch,
-                                  force: true,
-                                })
-                                .pipe(Effect.ignoreCause({ log: true })),
-                        ),
-                      )
+                  ? Effect.flatMap(projectCommandsNow, (commands) => {
+                      const removeSingle = git
+                        .removeWorktree({
+                          cwd: project.workspaceRoot,
+                          path: removedPath,
+                          force: true,
+                        })
+                        .pipe(
+                          Effect.andThen(
+                            removedBranch === null
+                              ? Effect.void
+                              : git
+                                  .deleteLocalBranch({
+                                    cwd: project.workspaceRoot,
+                                    refName: removedBranch,
+                                    force: true,
+                                  })
+                                  .pipe(Effect.ignoreCause({ log: true })),
+                          ),
+                        );
+                      return commands === "permitted"
+                        ? removeSingle
+                        : Effect.provideService(removeSingle, GitVcsDriver.RepositoryHooks, {
+                            _tag: "none",
+                          });
+                    })
                   : taskFolders
                       .remove({
                         root: removedTaskFolder,

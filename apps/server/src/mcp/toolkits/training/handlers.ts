@@ -15,21 +15,17 @@ const mapTrainingError = (error: TrainingOperationError): OrchestratorMcpFailure
   });
 
 export const layer = McpToolAccess.toLayer(TrainingToolkit, {
-  training_preview_dataset: McpToolAccess.writesOwnerWork(
-    "preview local training datasets",
-    (input) =>
-      Effect.flatMap(TrainingService.TrainingService, (training) =>
-        training.previewDataset(input).pipe(Effect.mapError(mapTrainingError)),
-      ),
+  training_preview_dataset: McpToolAccess.writesEnvironment((input) =>
+    Effect.flatMap(TrainingService.TrainingService, (training) =>
+      training.previewDataset(input).pipe(Effect.mapError(mapTrainingError)),
+    ),
   ),
-  training_create_dataset: McpToolAccess.writesOwnerWork(
-    "create local training datasets",
-    (input) =>
-      Effect.flatMap(TrainingService.TrainingService, (training) =>
-        training.createDataset(input).pipe(Effect.mapError(mapTrainingError)),
-      ),
+  training_create_dataset: McpToolAccess.writesEnvironment((input) =>
+    Effect.flatMap(TrainingService.TrainingService, (training) =>
+      training.createDataset(input).pipe(Effect.mapError(mapTrainingError)),
+    ),
   ),
-  training_start_job: McpToolAccess.writesOwnerWork("start local fine-tuning jobs", (input) =>
+  training_start_job: McpToolAccess.writesEnvironment((input) =>
     Effect.flatMap(TrainingService.TrainingService, (training) =>
       training.startJob(input).pipe(Effect.mapError(mapTrainingError)),
     ),
@@ -39,12 +35,12 @@ export const layer = McpToolAccess.toLayer(TrainingToolkit, {
       training.getJob(input).pipe(Effect.mapError(mapTrainingError)),
     ),
   ),
-  training_cancel_job: McpToolAccess.writesOwnerWork("cancel local fine-tuning jobs", (input) =>
+  training_cancel_job: McpToolAccess.writesEnvironment((input) =>
     Effect.flatMap(TrainingService.TrainingService, (training) =>
       training.cancelJob(input).pipe(Effect.mapError(mapTrainingError)),
     ),
   ),
-  training_run_eval: McpToolAccess.writesOwnerWork("run local model evaluations", (input) =>
+  training_run_eval: McpToolAccess.writesEnvironment((input) =>
     Effect.flatMap(TrainingService.TrainingService, (training) =>
       training.runEval(input).pipe(Effect.mapError(mapTrainingError)),
     ),

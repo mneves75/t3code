@@ -76,6 +76,85 @@ describe("Clerk webhook", () => {
       expect(requested).toEqual([]);
       expect(yield* respond(clerkRequest(userDeleted))).toBe(200);
       expect(requested).toEqual(["user_1"]);
+
+      // Rejects oversized signatures, stale timestamps, and > 256 KiB bodies without queuing.
+      const tooManySignatures = Array.from(
+        { length: 9 },
+        () => `v1,${Base64.encode(new Uint8Array(32))}`,
+      ).join(" ");
+      expect(
+        (yield* AccountDeletion.handleClerkWebhook(
+          HttpServerRequest.fromWeb(
+            new Request("https://relay.test/v1/webhooks/clerk", {
+              method: "POST",
+              headers: {
+                "svix-id": "msg_many",
+                "svix-timestamp": String(SIGNED_AT_SECONDS),
+                "svix-signature": tooManySignatures,
+              },
+              body: "{}",
+            }),
+          ),
+        )).status,
+      ).toBe(401);
+
+      let streamRead = false;
+      const staleStream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          streamRead = true;
+          controller.close();
+        },
+      });
+      expect(
+        (yield* AccountDeletion.handleClerkWebhook(
+          HttpServerRequest.fromWeb(
+            new Request("https://relay.test/v1/webhooks/clerk", {
+              method: "POST",
+              headers: {
+                "svix-id": "msg_stale",
+                "svix-timestamp": String(SIGNED_AT_SECONDS - 301),
+                "svix-signature": `v1,${Base64.encode(new Uint8Array(32))}`,
+              },
+              body: staleStream,
+              duplex: "half",
+            } as RequestInit),
+          ),
+        )).status,
+      ).toBe(401);
+      expect(streamRead).toBe(false);
+
+      expect(
+        (yield* AccountDeletion.handleClerkWebhook(
+          HttpServerRequest.fromWeb(
+            new Request("https://relay.test/v1/webhooks/clerk", {
+              method: "POST",
+              headers: {
+                "svix-id": "msg_declared_large",
+                "svix-timestamp": String(SIGNED_AT_SECONDS),
+                "svix-signature": `v1,${Base64.encode(new Uint8Array(32))}`,
+                "content-length": String(AccountDeletion.CLERK_WEBHOOK_MAX_BODY_BYTES + 1),
+              },
+              body: "{}",
+            }),
+          ),
+        )).status,
+      ).toBe(413);
+
+      expect(
+        (yield* AccountDeletion.handleClerkWebhook(
+          HttpServerRequest.fromWeb(
+            new Request("https://relay.test/v1/webhooks/clerk", {
+              method: "POST",
+              headers: {
+                "svix-id": "msg_stream_large",
+                "svix-timestamp": String(SIGNED_AT_SECONDS),
+                "svix-signature": `v1,${Base64.encode(new Uint8Array(32))}`,
+              },
+              body: new Uint8Array(AccountDeletion.CLERK_WEBHOOK_MAX_BODY_BYTES + 1),
+            }),
+          ),
+        )).status,
+      ).toBe(413);
     }).pipe(
       Effect.provideService(RelayConfiguration.RelayConfiguration, config),
       Effect.provide(

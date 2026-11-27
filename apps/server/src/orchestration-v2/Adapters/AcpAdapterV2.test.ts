@@ -7338,7 +7338,7 @@ describe("AcpAdapterV2", () => {
             }).pipe(Effect.andThen(makeRuntime(input))),
         },
         selfInvocation,
-        clientTerminals: {},
+        clientTerminals: { shellCommands: true },
       });
       const threadId = ThreadId.make("thread-acp-id-only-permission");
       const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -7423,8 +7423,7 @@ describe("AcpAdapterV2", () => {
       const terminalExit = yield* createTerminal(
         {
           sessionId: "mock-session-1",
-          command: process.execPath,
-          args: ["-e", ""],
+          command: "git status",
         },
         { requestId: "id-only-permission-terminal", method: "terminal/create" },
       ).pipe(Effect.exit);
@@ -7436,6 +7435,17 @@ describe("AcpAdapterV2", () => {
         },
         { prompt: "git status", requestKind: "command", terminalCreated: granted },
       );
+      if (granted) {
+        const unmatchedExit = yield* createTerminal(
+          {
+            sessionId: "mock-session-1",
+            command: process.execPath,
+            args: ["-e", ""],
+          },
+          { requestId: "id-only-permission-terminal-unmatched", method: "terminal/create" },
+        ).pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(unmatchedExit));
+      }
 
       yield* runtime.interruptTurn({ providerThread, providerTurnId });
       yield* Fiber.join(turnFiber);

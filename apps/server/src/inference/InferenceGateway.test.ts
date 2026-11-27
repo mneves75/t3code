@@ -1112,3 +1112,45 @@ it.effect("returns 404 for Object.prototype property names on /v1/ routes (T3-03
     }
   }),
 );
+
+it.effect("enforces the non-streaming response byte limit on retried attempts", () =>
+  Effect.gen(function* () {
+    const { start, exchanges, gate, records, settledOnce } = yield* makeLifecycle();
+    yield* Deferred.succeed(gate, undefined);
+    const { handler, respond } = yield* start({
+      model: "m",
+      stream: false,
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    // First attempt completes empty so the gateway triggers its one safe non-streaming retry.
+    const first = yield* Queue.take(exchanges);
+    yield* respond(
+      first,
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: "" }, finish_reason: "stop" }] }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    const second = yield* Queue.take(exchanges);
+    const oversized = "x".repeat(4 * 1024 * 1024 + 1024);
+    yield* respond(
+      second,
+      new Response(oversized, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const response = yield* Fiber.join(handler);
+    expect(response.status).toBe(502);
+    const firstAttempt = yield* Queue.take(records);
+    expect(firstAttempt).toMatchObject({ status: "failed", failureCause: "empty-completed" });
+    const record = yield* settledOnce({ [rtx]: 2 });
+    expect(record).toMatchObject({ status: "failed", failureCause: "transport" });
+  }),
+);

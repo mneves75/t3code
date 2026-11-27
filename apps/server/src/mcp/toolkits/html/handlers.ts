@@ -22,14 +22,17 @@ const toFailure = (error: { readonly _tag: string; readonly message: string }) =
     message: error.message,
   });
 
-// The server reads the file for the caller, so only a thread that reads files without asking may
-// pass a path; a supervised thread passes the HTML its provider already let it read.
+// The server reads files for the caller, so only full-access threads may pass a path or inline local images.
 const pageSource = Effect.fn("HtmlToolkit.pageSource")(function* (input: {
   readonly html?: string | undefined;
   readonly path?: string | undefined;
 }) {
   if (input.html !== undefined && input.path === undefined) {
-    return { html: input.html } satisfies HtmlRender.HtmlRenderSource;
+    const { limits } = yield* loadCaller();
+    return {
+      html: input.html,
+      allowLocalImages: limits.runtimeMode === "full-access",
+    } satisfies HtmlRender.HtmlRenderSource & { readonly allowLocalImages: boolean };
   }
   if (input.path === undefined || input.html !== undefined) {
     return yield* new OrchestratorMcpFailure({
@@ -44,7 +47,10 @@ const pageSource = Effect.fn("HtmlToolkit.pageSource")(function* (input: {
       message: "Pass html instead of path: only full-access threads may pass a path.",
     });
   }
-  return { path: input.path } satisfies HtmlRender.HtmlRenderSource;
+  return {
+    path: input.path,
+    allowLocalImages: true,
+  } satisfies HtmlRender.HtmlRenderSource & { readonly allowLocalImages: boolean };
 });
 
 const handlers = {

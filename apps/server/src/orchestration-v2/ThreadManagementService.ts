@@ -76,6 +76,7 @@ import { contextBoundaryOrdinal } from "./contextBoundary.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import { checkOutput, outputRequestProblem } from "./runOutput.ts";
 import { routineSpan } from "@t3tools/shared/observability";
 
@@ -954,8 +955,16 @@ const make = Effect.gen(function* () {
     // Turn start would fail on its own after the send reported success; a replay keeps its answer.
     // A live steer and a receipt replay without a target turn need no workspace.
     if (!missingSteeringTarget && dispatchMode.type !== "steer_active") {
+      const projectCommands =
+        input.createdBy === "agent" || target.thread.createdBy === "agent"
+          ? TaskFolders.projectCommandsForAgent(
+              target.thread.linkOrigin,
+              target.thread,
+              serverSettings.managedPolicy?.limits?.maxRuntimeMode,
+            )
+          : TaskFolders.projectCommandsForLink(target.thread.linkOrigin);
       yield* worktreeRestore
-        .restore(target.thread)
+        .restore(target.thread, { projectCommands })
         .pipe(
           Effect.catch((cause) =>
             hasReceipt(input.commandId).pipe(

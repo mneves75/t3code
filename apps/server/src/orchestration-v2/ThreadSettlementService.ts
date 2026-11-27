@@ -36,6 +36,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import {
@@ -830,6 +831,15 @@ export const make = Effect.gen(function* () {
           }),
         );
         if (parent?.worktreePath === worktreePath) return;
+      }
+      if (
+        TaskFolders.projectCommandsForAgent(
+          thread.linkOrigin,
+          thread,
+          settingsService.managedPolicy?.limits?.maxRuntimeMode,
+        ) !== "permitted"
+      ) {
+        return;
       }
       const run = yield* projectScripts.runForThread({
         threadId,

@@ -17,6 +17,7 @@ import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { scratchFolderRoot } from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
@@ -193,10 +194,19 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
     });
   });
 
-  return Effect.fn("restoreMissingWorktree")(function* (thread: WorktreeThread) {
+  return Effect.fn("restoreMissingWorktree")(function* (
+    thread: WorktreeThread,
+    options?: { readonly projectCommands?: TaskFolders.ProjectCommands },
+  ) {
     const { worktreePath, branch } = thread;
     if (worktreePath === null) return;
     if (branch === null) return yield* recreateScratchFolder(thread, worktreePath);
+    const projectCommands =
+      options?.projectCommands ?? TaskFolders.projectCommandsForLink(thread.linkOrigin);
+    const withProjectHooks = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      projectCommands === "permitted"
+        ? effect
+        : Effect.provideService(effect, GitVcsDriver.RepositoryHooks, { _tag: "none" });
     // A task folder can miss one repository's worktree while the thread's own folder is there.
     const taskFolder = yield* taskFolders.find(worktreePath).pipe(Effect.orElseSucceed(() => null));
     if (taskFolder !== null) {
@@ -204,7 +214,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
         .restore({
           taskFolder,
           branch,
-          projectCommands: TaskFolders.projectCommandsForLink(thread.linkOrigin),
+          projectCommands,
           recreate: (checkout) =>
             Effect.logWarning("recreating missing worktree", {
               threadId: thread.id,
@@ -216,11 +226,13 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
                 leftover ? clearLeftovers(checkout.worktreePath) : Effect.void,
               ),
               Effect.andThen(
-                recreateMissingWorktree({
-                  cwd: checkout.repositoryPath,
-                  worktreePath: checkout.worktreePath,
-                  branch,
-                }),
+                withProjectHooks(
+                  recreateMissingWorktree({
+                    cwd: checkout.repositoryPath,
+                    worktreePath: checkout.worktreePath,
+                    branch,
+                  }),
+                ),
               ),
             ),
         })
@@ -246,7 +258,11 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
       branch,
     });
     yield* (leftover ? clearLeftovers(worktreePath) : Effect.void).pipe(
-      Effect.andThen(recreateMissingWorktree({ cwd: project.workspaceRoot, worktreePath, branch })),
+      Effect.andThen(
+        withProjectHooks(
+          recreateMissingWorktree({ cwd: project.workspaceRoot, worktreePath, branch }),
+        ),
+      ),
       Effect.mapError((cause) =>
         cause._tag === "WorktreeRecreateNoBaseError"
           ? cause
@@ -262,6 +278,7 @@ export class ThreadWorktreeRestore extends Context.Service<
   {
     readonly restore: (
       thread: WorktreeThread,
+      options?: { readonly projectCommands?: TaskFolders.ProjectCommands },
     ) => Effect.Effect<void, WorktreeRecreateError | WorktreeRecreateNoBaseError>;
     /** A checkout this service recreated for the thread whose setup has not run yet. */
     readonly takeRecreated: (threadId: ThreadId) => Effect.Effect<RecreatedWorktree | undefined>;
@@ -277,19 +294,22 @@ export const layerThreadWorktreeRestore = Layer.effect(
     // Sends restore before dispatch, so turn start finds the checkout present and runs setup from here.
     const recreated = new Map<ThreadId, RecreatedWorktree>();
     return {
-      restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread: WorktreeThread) {
+      restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (
+        thread: WorktreeThread,
+        options?: { readonly projectCommands?: TaskFolders.ProjectCommands },
+      ) {
         const result = yield* thread.worktreePath === null
-          ? restore(thread)
-          : withWorkspaceLease(path.resolve(thread.worktreePath), restore(thread));
+          ? restore(thread, options)
+          : withWorkspaceLease(path.resolve(thread.worktreePath), restore(thread, options));
         if (result !== undefined) recreated.set(thread.id, result);
       }),
-      takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function* (
-        threadId: ThreadId,
-      ) {
-        const result = recreated.get(threadId);
-        recreated.delete(threadId);
-        return result;
-      }),
+      takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")((threadId: ThreadId) =>
+        Effect.sync(() => {
+          const result = recreated.get(threadId);
+          recreated.delete(threadId);
+          return result;
+        }),
+      ),
     };
   }),
 );

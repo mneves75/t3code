@@ -857,16 +857,32 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const withProjectHooks = <A, E, R>(
+    projectCommands: ProjectCommandsNow,
+    effect: Effect.Effect<A, E, R>,
+  ) =>
+    Effect.flatMap(
+      typeof projectCommands === "string" ? Effect.succeed(projectCommands) : projectCommands,
+      (commands) =>
+        commands === "permitted"
+          ? effect
+          : Effect.provideService(effect, GitVcsDriver.RepositoryHooks, { _tag: "none" }),
+    );
+
   const removeCheckout = Effect.fnUntraced(function* (
     checkout: TaskFolderCheckout,
     force: boolean,
     deleteBranch: string | undefined,
+    projectCommands: ProjectCommandsNow,
   ) {
-    yield* git.removeWorktree({
-      cwd: checkout.repositoryPath,
-      path: checkout.worktreePath,
-      force,
-    });
+    yield* withProjectHooks(
+      projectCommands,
+      git.removeWorktree({
+        cwd: checkout.repositoryPath,
+        path: checkout.worktreePath,
+        force,
+      }),
+    );
     if (deleteBranch !== undefined) {
       yield* git
         .deleteLocalBranch({ cwd: checkout.repositoryPath, refName: deleteBranch, force: true })
@@ -959,6 +975,7 @@ const make = Effect.gen(function* () {
         checkout,
         force,
         keepBranchIn.has(checkout.repositoryPath) ? undefined : input.deleteBranch,
+        input.projectCommands,
       ).pipe(
         Effect.as(true),
         Effect.tap(() => Effect.sync(() => removed.push(checkout.worktreePath))),
@@ -1058,6 +1075,7 @@ const make = Effect.gen(function* () {
     branch: string,
     startFromOrigin: boolean,
     baseBranch: string | undefined,
+    projectCommands: ProjectCommandsNow,
     recordBranch: <A, E>(exit: Exit.Exit<A, E>) => Effect.Effect<void>,
   ) {
     const worktreePath = mapped(taskFolder, repository.path);
@@ -1070,15 +1088,16 @@ const make = Effect.gen(function* () {
       return null;
     yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
     const start = yield* repositoryStart(repository.path, startFromOrigin, baseBranch);
-    yield* git
-      .createWorktree({
+    yield* withProjectHooks(
+      projectCommands,
+      git.createWorktree({
         cwd: repository.path,
         refName: start.refName,
         newRefName: branch,
         baseRefName: start.baseRefName,
         path: worktreePath,
-      })
-      .pipe(Effect.onExit(recordBranch));
+      }),
+    ).pipe(Effect.onExit(recordBranch));
     return {
       repository: {
         repositoryPath: repository.path,
@@ -1240,8 +1259,9 @@ const make = Effect.gen(function* () {
         }
         if (taskPlan.projectIsRepository) {
           yield* fileSystem.makeDirectory(path.dirname(empty.projectPath), { recursive: true });
-          yield* git
-            .createWorktree(
+          yield* withProjectHooks(
+            input.projectCommands,
+            git.createWorktree(
               {
                 cwd: taskPlan.projectRoot,
                 refName: input.projectStart.refName,
@@ -1250,8 +1270,8 @@ const make = Effect.gen(function* () {
                 path: empty.projectPath,
               },
               input.projectProgress === undefined ? {} : { progress: input.projectProgress },
-            )
-            .pipe(Effect.onExit(recordBranch(taskPlan.projectRoot)));
+            ),
+          ).pipe(Effect.onExit(recordBranch(taskPlan.projectRoot)));
         } else {
           yield* linkFolder(taskPlan.projectRoot, empty.projectPath, taskPlan.trackedRepositories);
         }
@@ -1281,6 +1301,7 @@ const make = Effect.gen(function* () {
                     branch,
                     input.startFromOrigin,
                     input.baseBranch,
+                    input.projectCommands,
                     recordBranch(repository.path),
                   )
               ).pipe(
@@ -1475,26 +1496,30 @@ const make = Effect.gen(function* () {
           .pipe(Effect.mapError(fail("add-repository", "Could not list branches")))).includes(
           branch,
         );
-        yield* Effect.gen(function* () {
-          yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
-          if (existing) {
-            // The thread's branch is already there, so it is checked out, not started again.
-            yield* git.createWorktree({
-              cwd: repositoryPath,
-              refName: branch,
-              path: worktreePath,
-            });
-          } else {
-            const start = yield* repositoryStart(repositoryPath, startFromOrigin);
-            yield* git.createWorktree({
-              cwd: repositoryPath,
-              refName: start.refName,
-              newRefName: branch,
-              baseRefName: start.baseRefName,
-              path: worktreePath,
-            });
-          }
-        }).pipe(
+        const addProjectCommands = projectCommandsForLink(thread.linkOrigin);
+        yield* withProjectHooks(
+          addProjectCommands,
+          Effect.gen(function* () {
+            yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
+            if (existing) {
+              // The thread's branch is already there, so it is checked out, not started again.
+              yield* git.createWorktree({
+                cwd: repositoryPath,
+                refName: branch,
+                path: worktreePath,
+              });
+            } else {
+              const start = yield* repositoryStart(repositoryPath, startFromOrigin);
+              yield* git.createWorktree({
+                cwd: repositoryPath,
+                refName: start.refName,
+                newRefName: branch,
+                baseRefName: start.baseRefName,
+                path: worktreePath,
+              });
+            }
+          }),
+        ).pipe(
           Effect.onError(() => relink),
           Effect.mapError(fail("add-repository", `Could not create the ${folder.name} worktree`)),
         );
@@ -1513,6 +1538,7 @@ const make = Effect.gen(function* () {
                 { repositoryPath, worktreePath },
                 true,
                 existing ? undefined : branch,
+                addProjectCommands,
               ).pipe(Effect.ignoreCause({ log: true }), Effect.andThen(relink)),
             ),
           );
@@ -1672,7 +1698,7 @@ const make = Effect.gen(function* () {
       yield* fileSystem
         .makeDirectory(path.dirname(checkout.worktreePath), { recursive: true })
         .pipe(Effect.mapError(restoreFailed));
-      yield* recreate(checkout);
+      yield* withProjectHooks(projectCommands, recreate(checkout));
     });
     if (taskFolder.projectIsWorktree) {
       yield* recreateMissing({

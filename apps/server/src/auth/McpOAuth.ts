@@ -426,22 +426,24 @@ const make = Effect.gen(function* () {
   });
 
   const approvingSession: McpOAuth["Service"]["approvingSession"] = (request, authorization) =>
-    environmentAuth.authenticateHttpRequest(request).pipe(
-      Effect.flatMap((session) =>
-        // Approving manages access, and a session may only hand out scopes it holds.
-        session.scopes.includes(AuthAccessWriteScope) &&
-        session.scopes.includes(AuthOrchestrationReadScope)
-          ? // The hosted app may get a fresh credential per call, all bound to one browser key.
-            csrfToken(
-              session.proofKeyThumbprint === undefined
-                ? session.sessionId
-                : `dpop:${session.proofKeyThumbprint}`,
-              authorization,
-            ).pipe(Effect.map((token) => ({ csrfToken: token, scopes: session.scopes })))
-          : Effect.undefined,
-      ),
-      Effect.orElseSucceed(() => undefined),
-    );
+    authorization.client.peerLink
+      ? Effect.undefined
+      : environmentAuth.authenticateHttpRequest(request).pipe(
+          Effect.flatMap((session) =>
+            // Approving manages access, and a session may only hand out scopes it holds.
+            session.scopes.includes(AuthAccessWriteScope) &&
+            session.scopes.includes(AuthOrchestrationReadScope)
+              ? // The hosted app may get a fresh credential per call, all bound to one browser key.
+                csrfToken(
+                  session.proofKeyThumbprint === undefined
+                    ? session.sessionId
+                    : `dpop:${session.proofKeyThumbprint}`,
+                  authorization,
+                ).pipe(Effect.map((token) => ({ csrfToken: token, scopes: session.scopes })))
+              : Effect.undefined,
+          ),
+          Effect.orElseSucceed(() => undefined),
+        );
 
   const mintCode = Effect.fn("McpOAuth.mintCode")(function* (
     authorization: AuthorizationRequest,
@@ -497,6 +499,11 @@ const make = Effect.gen(function* () {
           ),
         );
     } else {
+      if (input.authorization.client.peerLink) {
+        return yield* new McpOAuthPageError({
+          description: "Linking another environment requires a pairing code.",
+        });
+      }
       const session = yield* approvingSession(input.request, input.authorization);
       if (
         session === undefined ||

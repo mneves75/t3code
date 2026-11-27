@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- Loopback redirect fixture server for FetchHttpClient.
+import * as NodeHttp from "node:http";
 import { NodeHttpServer } from "@effect/platform-node";
 import { expect, it } from "@effect/vitest";
 import {
@@ -19,7 +21,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as TestClock from "effect/testing/TestClock";
-import { HttpClient, HttpClientResponse } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
 
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
@@ -446,4 +448,80 @@ it.effect("bounds the session handshake, not a tool call that waits longer", () 
     yield* Deferred.succeed(answer, undefined);
     expect(yield* Fiber.join(waiting)).toEqual({ modes: "approval-required/plan" });
   }),
+);
+
+it.effect("refuses redirects instead of forwarding link credentials", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let followed = false;
+      const server = yield* Effect.acquireRelease(
+        Effect.promise(
+          () =>
+            new Promise<{ server: NodeHttp.Server; url: string }>((resolve) => {
+              const s = NodeHttp.createServer((req, res) => {
+                if (req.url === "/redirected-target") {
+                  followed = true;
+                  res.writeHead(200, { "content-type": "application/json" });
+                  res.end(probeResult);
+                  return;
+                }
+                res.writeHead(302, { location: "/redirected-target" });
+                res.end();
+              });
+              s.listen(0, "127.0.0.1", () => {
+                const address = s.address();
+                const port = typeof address === "object" && address ? address.port : 0;
+                resolve({ server: s, url: `http://127.0.0.1:${port}` });
+              });
+            }),
+        ),
+        ({ server: s }) =>
+          Effect.promise(() => new Promise<void>((resolve) => s.close(() => resolve()))),
+      );
+
+      const box = descriptorOf("environment-box", "Box");
+      const context = yield* Layer.build(
+        PeerMcpClient.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              FetchHttpClient.layer,
+              Layer.mock(PeerLinks.PeerLinks)({
+                resolve: () =>
+                  Effect.succeed({
+                    link: {
+                      environmentId: box.environmentId,
+                      label: box.label,
+                      urls: [server.url],
+                      access: "auto",
+                      linkedAt: DateTime.makeUnsafe(0),
+                      expiresAt: DateTime.makeUnsafe(1),
+                      lastReachedAt: null,
+                      lastError: null,
+                    },
+                    url: server.url,
+                    token: "fixture",
+                    capabilities: box.capabilities,
+                  }),
+                recordOutcome: () => Effect.void,
+              }),
+            ),
+          ),
+        ),
+      );
+      const failure = yield* Context.get(context, PeerMcpClient.PeerMcpClient)
+        .call({
+          environmentId: box.environmentId,
+          tool: "probe",
+          arguments: {},
+          limits: { runtimeMode: "approval-required", interactionMode: "plan" },
+          success: Result,
+        })
+        .pipe(Effect.flip);
+      expect(followed).toBe(false);
+      expect(failure).toMatchObject({
+        code: "orchestration_error",
+        message: expect.stringContaining("HTTP 302"),
+      });
+    }),
+  ),
 );

@@ -249,6 +249,33 @@ const lsofConnectionOwner = (output: string, client: ConnectionEnd, listener: Co
   return undefined;
 };
 
+const WINDOWS_SID_PATTERN = /^S-\d+-\d+(?:-\d+)+$/;
+const WINDOWS_CONNECTION_OWNER_SCRIPT = [
+  "param([string]$ca,[int]$cp,[string]$la,[int]$lp)",
+  "$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+  "$conn = Get-NetTCPConnection -LocalAddress $ca -LocalPort $cp -RemoteAddress $la -RemotePort $lp -State Established -ErrorAction Stop | Select-Object -First 1",
+  "$owner = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + [int]$conn.OwningProcess) -ErrorAction Stop | Invoke-CimMethod -MethodName GetOwnerSid -ErrorAction Stop",
+  'if ($owner.ReturnValue -eq 0 -and $owner.Sid) { Write-Output ($current + "`t" + $owner.Sid) }',
+].join("; ");
+
+const isValidPort = (port: number) => Number.isInteger(port) && port > 0 && port <= 65535;
+const isValidIp = (address: string) => Result.isSuccess(NetAddress.ipFromString(address));
+
+const windowsConnectionOwnedByCurrentUser = (output: string) => {
+  const line = output.trim();
+  if (!line || line.includes("\n") || line.includes("\r")) return false;
+  const parts = line.split("\t");
+  if (parts.length !== 2) return false;
+  const [currentSid, ownerSid] = parts;
+  return (
+    currentSid !== undefined &&
+    ownerSid !== undefined &&
+    WINDOWS_SID_PATTERN.test(currentSid) &&
+    WINDOWS_SID_PATTERN.test(ownerSid) &&
+    currentSid === ownerSid
+  );
+};
+
 const pump =
   /* Runs for the life of the connection; a span per direction adds no diagnostic value. */
   Effect.fnUntraced(function* (
@@ -337,6 +364,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const platform = yield* HostProcess.Platform;
   const userId = yield* HostProcess.UserId;
+  const environment = yield* HostProcess.Environment;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const random = yield* SecureRandom.SecureRandom;
   const net = yield* NetService.NetService;
@@ -409,11 +437,38 @@ const make = Effect.gen(function* () {
     return owner !== undefined && owner === userId;
   });
 
-  // Neither Chromium's SOCKS client nor a plain forwarded port can authenticate, so on Linux and
-  // macOS a listener serves only clients of this OS user, and a connection whose owner cannot be
-  // read is refused. Windows and other platforms have no owner check.
+  const isOwnWindowsConnection = Effect.fn("LoopbackTunnel.isOwnWindowsConnection")(function* (
+    client: ConnectionEnd,
+    listener: ConnectionEnd,
+  ) {
+    if (
+      !isValidIp(client.address) ||
+      !isValidIp(listener.address) ||
+      !isValidPort(client.port) ||
+      !isValidPort(listener.port)
+    ) {
+      return false;
+    }
+    const windowsRoot = environment.SystemRoot ?? environment.WINDIR;
+    const powershell = windowsRoot
+      ? `${windowsRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+      : "powershell.exe";
+    const output = yield* commandOutput(powershell, [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-WindowStyle",
+      "Hidden",
+      "-Command",
+      `& { ${WINDOWS_CONNECTION_OWNER_SCRIPT} } '${client.address}' ${client.port} '${listener.address}' ${listener.port}`,
+    ]);
+    return windowsConnectionOwnedByCurrentUser(output);
+  });
+
+  // Neither Chromium's SOCKS client nor a plain forwarded port can authenticate, so a listener
+  // serves only clients of this OS user, and unknown platforms or lookup failures fail closed.
   const isOwnConnection = Effect.fn("LoopbackTunnel.isOwnConnection")(function* () {
-    if (platform !== "linux" && platform !== "darwin") return true;
+    if (platform !== "linux" && platform !== "darwin" && platform !== "win32") return false;
     const connection = yield* Effect.serviceOption(NodeSocket.NetSocket);
     if (Option.isNone(connection)) return false;
     const { remoteAddress, remotePort, localAddress, localPort } = connection.value;
@@ -422,9 +477,9 @@ const make = Effect.gen(function* () {
     const plain = (address: string) => address.replace(/^::ffff:/i, "");
     const client = { address: plain(remoteAddress), port: remotePort };
     const listener = { address: plain(localAddress), port: localPort };
-    return platform === "linux"
-      ? yield* isOwnLinuxConnection(client, listener)
-      : yield* isOwnMacConnection(client, listener);
+    if (platform === "linux") return yield* isOwnLinuxConnection(client, listener);
+    if (platform === "darwin") return yield* isOwnMacConnection(client, listener);
+    return yield* isOwnWindowsConnection(client, listener);
   });
 
   /** Serves one SOCKS connection; never falls back to a direct local connection. */
