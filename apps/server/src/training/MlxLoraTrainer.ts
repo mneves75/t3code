@@ -366,9 +366,9 @@ function buildMlxTestEvalArgv(input: {
     "--data",
     input.datasetDir,
     "--test",
-    ...(input.adapterPath !== null && input.adapterPath.length > 0
-      ? ["--adapter-path", input.adapterPath]
-      : []),
+    // mlx_lm defaults --adapter-path to "adapters" unless given "" for base-model eval.
+    "--adapter-path",
+    input.adapterPath ?? "",
     ...(input.maxSeqLength !== undefined ? ["--max-seq-length", String(input.maxSeqLength)] : []),
     ...(input.batchSize !== undefined ? ["--batch-size", String(input.batchSize)] : []),
     ...(input.trustRemoteCode ? ["--trust-remote-code"] : []),
